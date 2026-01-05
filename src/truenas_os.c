@@ -173,7 +173,7 @@ static PyObject *py_iter_mount(PyObject *obj,
 }
 
 PyDoc_STRVAR(py_statx__doc__,
-"statx(dirfd, pathname, flags=0, mask=STATX_BASIC_STATS|STATX_BTIME)\n"
+"statx(dirfd, path, flags=0, mask=STATX_BASIC_STATS|STATX_BTIME)\n"
 "--\n\n"
 "Get extended file attributes.\n\n"
 "The statx() system call returns detailed information about a file,\n"
@@ -183,7 +183,7 @@ PyDoc_STRVAR(py_statx__doc__,
 "----------\n"
 "dirfd : int\n"
 "    Directory file descriptor (use AT_FDCWD for current directory)\n"
-"pathname : str\n"
+"path : str\n"
 "    Path to the file (can be relative to dirfd)\n"
 "flags : int, optional\n"
 "    Flags controlling the behavior (AT_* constants), default=0\n"
@@ -200,35 +200,35 @@ static PyObject *py_statx(PyObject *obj,
 			  PyObject *args,
 			  PyObject *kwargs)
 {
-	const char *pathname;
+	const char *path;
 	int dirfd = AT_FDCWD;
 	int flags = 0;
 	unsigned int mask = STATX_BASIC_STATS | STATX_BTIME;
-	const char *kwnames[] = { "pathname", "dir_fd", "flags", "mask", NULL };
+	const char *kwnames[] = { "path", "dir_fd", "flags", "mask", NULL };
 
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s|iiI",
 					 discard_const_p(char *, kwnames),
-					 &pathname, &dirfd, &flags, &mask)) {
+					 &path, &dirfd, &flags, &mask)) {
 		return NULL;
 	}
 
-	return do_statx(dirfd, pathname, flags, mask);
+	return do_statx(dirfd, path, flags, mask);
 }
 
 PyDoc_STRVAR(py_openat2__doc__,
-"openat2(dirfd, pathname, flags, mode=0, resolve=0)\n"
+"openat2(path, flags, dir_fd=AT_FDCWD, mode=0, resolve=0)\n"
 "--\n\n"
 "Extended openat with path resolution control.\n\n"
 "The openat2() system call is an extension of openat(2) and provides\n"
 "additional control over path resolution through the resolve parameter.\n\n"
 "Parameters\n"
 "----------\n"
-"dirfd : int\n"
-"    Directory file descriptor (use AT_FDCWD for current directory)\n"
-"pathname : str\n"
-"    Path to the file (can be relative to dirfd)\n"
+"path : str\n"
+"    Path to the file (can be relative to dir_fd)\n"
 "flags : int\n"
 "    File creation and status flags (O_* constants from os module)\n"
+"dir_fd : int, optional\n"
+"    Directory file descriptor, default=AT_FDCWD (current directory)\n"
 "mode : int, optional\n"
 "    File mode (permissions) for O_CREAT/O_TMPFILE, default=0\n"
 "resolve : int, optional\n"
@@ -241,8 +241,8 @@ PyDoc_STRVAR(py_openat2__doc__,
 "    RESOLVE_NO_XDEV: Block mount-point crossings\n"
 "    RESOLVE_NO_MAGICLINKS: Block traversal through procfs magic-links\n"
 "    RESOLVE_NO_SYMLINKS: Block traversal through all symlinks\n"
-"    RESOLVE_BENEATH: Block escaping the dirfd (no .. or absolute paths)\n"
-"    RESOLVE_IN_ROOT: Scope all jumps to / and .. inside dirfd\n"
+"    RESOLVE_BENEATH: Block escaping the dir_fd (no .. or absolute paths)\n"
+"    RESOLVE_IN_ROOT: Scope all jumps to / and .. inside dir_fd\n"
 "    RESOLVE_CACHED: Only complete if resolution can use cached lookup\n"
 );
 
@@ -250,39 +250,40 @@ static PyObject *py_openat2(PyObject *obj,
 			    PyObject *args,
 			    PyObject *kwargs)
 {
-	int dirfd;
-	const char *pathname;
+	const char *path;
 	uint64_t flags;
+	int dir_fd = AT_FDCWD;
 	uint64_t mode = 0;
 	uint64_t resolve = 0;
-	const char *kwnames[] = { "dirfd", "pathname", "flags", "mode", "resolve", NULL };
+	const char *kwnames[] = { "path", "flags", "dir_fd", "mode", "resolve", NULL };
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "isK|KK",
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "sK|iKK",
 					 discard_const_p(char *, kwnames),
-					 &dirfd, &pathname, &flags, &mode, &resolve)) {
+					 &path, &flags, &dir_fd, &mode, &resolve)) {
 		return NULL;
 	}
 
-	return do_openat2(dirfd, pathname, flags, mode, resolve);
+	return do_openat2(dir_fd, path, flags, mode, resolve);
 }
 
 PyDoc_STRVAR(py_move_mount__doc__,
-"move_mount(from_dirfd, from_pathname, to_dirfd, to_pathname, flags=0)\n"
+"move_mount(*, from_path, to_path, from_dirfd=AT_FDCWD, to_dirfd=AT_FDCWD, flags=0)\n"
 "--\n\n"
 "Move a mount from one place to another.\n\n"
 "The move_mount() system call moves a mount from one place to another;\n"
 "it can also be used to attach an unattached mount created by fsmount(2)\n"
 "or open_tree(2).\n\n"
+"All parameters are keyword-only for safety.\n\n"
 "Parameters\n"
 "----------\n"
-"from_dirfd : int\n"
-"    Directory file descriptor for source (use AT_FDCWD for current directory)\n"
-"from_pathname : str\n"
+"from_path : str\n"
 "    Source path (can be relative to from_dirfd)\n"
-"to_dirfd : int\n"
-"    Directory file descriptor for destination (use AT_FDCWD for current directory)\n"
-"to_pathname : str\n"
+"to_path : str\n"
 "    Destination path (can be relative to to_dirfd)\n"
+"from_dirfd : int, optional\n"
+"    Directory file descriptor for source, default=AT_FDCWD (current directory)\n"
+"to_dirfd : int, optional\n"
+"    Directory file descriptor for destination, default=AT_FDCWD (current directory)\n"
 "flags : int, optional\n"
 "    Movement flags (MOVE_MOUNT_* constants), default=0\n\n"
 "Returns\n"
@@ -303,22 +304,34 @@ static PyObject *py_move_mount(PyObject *obj,
 			       PyObject *args,
 			       PyObject *kwargs)
 {
-	int from_dirfd;
-	const char *from_pathname;
-	int to_dirfd;
-	const char *to_pathname;
+	const char *from_path = NULL;
+	const char *to_path = NULL;
+	int from_dirfd = AT_FDCWD;
+	int to_dirfd = AT_FDCWD;
 	unsigned int flags = 0;
-	const char *kwnames[] = { "from_dirfd", "from_pathname", "to_dirfd",
-	                          "to_pathname", "flags", NULL };
+	const char *kwnames[] = { "from_path", "to_path", "from_dirfd",
+	                          "to_dirfd", "flags", NULL };
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "isis|I",
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$ssiiI",
 					 discard_const_p(char *, kwnames),
-					 &from_dirfd, &from_pathname,
-					 &to_dirfd, &to_pathname, &flags)) {
+					 &from_path, &to_path,
+					 &from_dirfd, &to_dirfd, &flags)) {
 		return NULL;
 	}
 
-	return do_move_mount(from_dirfd, from_pathname, to_dirfd, to_pathname, flags);
+	// Validate required keyword-only arguments
+	if (from_path == NULL) {
+		PyErr_SetString(PyExc_TypeError,
+				"move_mount() missing required keyword-only argument: 'from_path'");
+		return NULL;
+	}
+	if (to_path == NULL) {
+		PyErr_SetString(PyExc_TypeError,
+				"move_mount() missing required keyword-only argument: 'to_path'");
+		return NULL;
+	}
+
+	return do_move_mount(from_dirfd, from_path, to_dirfd, to_path, flags);
 }
 
 static PyMethodDef truenas_os_methods[] = {

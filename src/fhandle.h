@@ -24,6 +24,7 @@ typedef struct {
 	PyObject_HEAD
 	int mount_id;
 	bool is_handle_fd;
+	char fhbuf[MAX_HANDLE_SZ + offsetof(struct file_handle, f_handle)];
 	struct file_handle *fhandle;
 } py_fhandle_t;
 

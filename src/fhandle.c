@@ -8,7 +8,6 @@
 	AT_EMPTY_PATH | AT_HANDLE_CONNECTABLE)
 #define __NR_NAME_TO_HANDLE_AT 303
 #define __NR_OPEN_BY_HANDLE_AT 304
-#define INIT_HANDLE_SZ 128 // MAX_HANDLE_SZ as of 6.6 kernel
 
 
 static PyObject *py_fhandle_new(PyTypeObject *obj,
@@ -23,39 +22,20 @@ static PyObject *py_fhandle_new(PyTypeObject *obj,
 	}
 
 	self->mount_id = -1;
-	self->fhandle = PyMem_RawCalloc(1, INIT_HANDLE_SZ);
+	self->fhandle = (struct file_handle *)self->fhbuf;
+	self->fhandle->handle_bytes = MAX_HANDLE_SZ;
 	return (PyObject *)self;
 }
 
 static int do_name_to_handle_at(py_fhandle_t *self,
 				const char *path,
-			 	int dir_fd,
-			 	int flags,
-			 	size_t realloc_sz)
+				int dir_fd,
+				int flags)
 {
 	int error;
 	int mnt_id;
-
-	if (realloc_sz) {
-		// Our initial allocation was INIT_HANDLE_SZ
-		// Realloc _must_ be larger than this
-		if (realloc_sz < INIT_HANDLE_SZ) {
-			PyErr_SetString(
-				PyExc_MemoryError,
-				"Unexpected size passed to realloc"
-			);
-			return -1;
-		}
-
-		void *new = PyMem_RawRealloc(self->fhandle, realloc_sz);
-		if (new == NULL) {
-			return -1;
-		}
-
-		self->fhandle = (struct file_handle *)new;
-	}
-
 	int async_err = 0;
+
 	do {
 		Py_BEGIN_ALLOW_THREADS
 		error = syscall(__NR_NAME_TO_HANDLE_AT, dir_fd, path, self->fhandle,
@@ -68,18 +48,6 @@ static int do_name_to_handle_at(py_fhandle_t *self,
 			return -1;
 		}
 		switch (errno) {
-		case EOVERFLOW:
-			// fhandle->handle_bytes indicates required size
-			// realloc and call back in.
-			if (realloc_sz) {
-				// We've already realloced once. Fail.
-				PyErr_SetFromErrno(PyExc_OSError);
-				break;
-			}
-			return do_name_to_handle_at(
-				self, path, dir_fd, flags,
-				INIT_HANDLE_SZ * 2
-			);
 		case ENOTDIR:
 			PyErr_SetString(
 				PyExc_NotADirectoryError,
@@ -238,14 +206,7 @@ static int py_fhandle_init(PyObject *obj,
 		return -1;
 	}
 
-	return do_name_to_handle_at(fhandle, cpath, dir_fd, flags, 0);
-}
-
-void py_fhandle_dealloc(py_fhandle_t *self)
-{
-	PyMem_RawFree(self->fhandle);
-	self->fhandle = NULL;
-	Py_TYPE(self)->tp_free((PyObject *)self);
+	return do_name_to_handle_at(fhandle, cpath, dir_fd, flags);
 }
 
 PyDoc_STRVAR(py_fhandle_open__doc__,
@@ -435,6 +396,5 @@ PyTypeObject PyFhandle = {
 	.tp_init = py_fhandle_init,
 	.tp_repr = py_fhandle_repr,
 	.tp_doc = py_fhandle__doc__,
-	.tp_dealloc = (destructor)py_fhandle_dealloc,
 	.tp_flags = Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
 };
