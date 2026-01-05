@@ -144,7 +144,7 @@ def test_fhandle_incomplete_bytes():
     # Create a valid header but incomplete data
     incomplete = struct.pack('II', 100, 0) + b'\x00' * 8
 
-    with pytest.raises(ValueError, match="handle_bytes incomplete"):
+    with pytest.raises(ValueError, match="Incorrect encoded handle length"):
         truenas_os.fhandle(handle_bytes=incomplete, mount_id=123)
 
 
