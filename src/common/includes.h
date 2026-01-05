@@ -32,7 +32,6 @@
 #include <fcntl.h>
 #include <linux/stat.h>
 #include <linux/mount.h>
-#include <bsd/string.h>
 #define discard_const(ptr) ((void *)((uintptr_t)(ptr)))
 #define discard_const_p(type, ptr) ((type *)discard_const(ptr))
 
