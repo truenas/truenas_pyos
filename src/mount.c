@@ -11,29 +11,6 @@
 #define __NR_statmount 457
 #define __NR_listmount 458
 
-// Define newer STATMOUNT_* constants if not in kernel headers
-#ifndef STATMOUNT_FS_SUBTYPE
-#define STATMOUNT_FS_SUBTYPE		0x00000100U
-#endif
-#ifndef STATMOUNT_SB_SOURCE
-#define STATMOUNT_SB_SOURCE		0x00000200U
-#endif
-#ifndef STATMOUNT_OPT_ARRAY
-#define STATMOUNT_OPT_ARRAY		0x00000400U
-#endif
-#ifndef STATMOUNT_OPT_SEC_ARRAY
-#define STATMOUNT_OPT_SEC_ARRAY		0x00000800U
-#endif
-#ifndef STATMOUNT_SUPPORTED_MASK
-#define STATMOUNT_SUPPORTED_MASK	0x00001000U
-#endif
-#ifndef STATMOUNT_MNT_UIDMAP
-#define STATMOUNT_MNT_UIDMAP		0x00002000U
-#endif
-#ifndef STATMOUNT_MNT_GIDMAP
-#define STATMOUNT_MNT_GIDMAP		0x00004000U
-#endif
-
 // StatmountResult structured sequence type
 static PyStructSequence_Field statmount_result_fields[] = {
 	{"mnt_id", "Unique ID of the mount (since Linux 3.15)"},
@@ -54,13 +31,27 @@ static PyStructSequence_Field statmount_result_fields[] = {
 	{"sb_dev_minor", "Minor device number of the filesystem's superblock"},
 	{"sb_magic", "Filesystem type magic number"},
 	{"sb_flags", "Superblock flags (SB_* constants)"},
+#ifdef STATMOUNT_FS_SUBTYPE
 	{"fs_subtype", "Filesystem subtype (e.g., 'btrfs' subvolume name)"},
+#endif
+#ifdef STATMOUNT_SB_SOURCE
 	{"sb_source", "Source string of the mount (block device, network share, etc.)"},
+#endif
+#ifdef STATMOUNT_OPT_ARRAY
 	{"opt_array", "List of filesystem-specific mount options"},
+#endif
+#ifdef STATMOUNT_OPT_SEC_ARRAY
 	{"opt_sec_array", "List of security-related mount options (e.g., SELinux context)"},
+#endif
+#ifdef STATMOUNT_SUPPORTED_MASK
 	{"supported_mask", "Mask of STATMOUNT_* flags supported by this kernel"},
+#endif
+#ifdef STATMOUNT_MNT_UIDMAP
 	{"mnt_uidmap", "UID mapping information (for user namespaces)"},
+#endif
+#ifdef STATMOUNT_MNT_GIDMAP
 	{"mnt_gidmap", "GID mapping information (for user namespaces)"},
+#endif
 	{"mask", "Mask indicating which fields were requested and returned"},
 	{NULL}
 };
@@ -71,10 +62,84 @@ static PyStructSequence_Desc statmount_result_desc = {
 	       "A named tuple containing information about a mount point. "
 	       "Fields that were not requested or are unavailable will be None.",
 	.fields = statmount_result_fields,
-	.n_in_sequence = 26
+	.n_in_sequence = 19  // Base fields
+#ifdef STATMOUNT_FS_SUBTYPE
+		+ 1
+#endif
+#ifdef STATMOUNT_SB_SOURCE
+		+ 1
+#endif
+#ifdef STATMOUNT_OPT_ARRAY
+		+ 1
+#endif
+#ifdef STATMOUNT_OPT_SEC_ARRAY
+		+ 1
+#endif
+#ifdef STATMOUNT_SUPPORTED_MASK
+		+ 1
+#endif
+#ifdef STATMOUNT_MNT_UIDMAP
+		+ 1
+#endif
+#ifdef STATMOUNT_MNT_GIDMAP
+		+ 1
+#endif
 };
 
 static PyTypeObject StatmountResultType;
+
+// Calculate field indices dynamically based on what's compiled in
+#define IDX_MASK (18)  // Always last base field
+#ifdef STATMOUNT_FS_SUBTYPE
+#define IDX_FS_SUBTYPE (18)
+#define IDX_BASE_NEXT (19)
+#else
+#define IDX_BASE_NEXT (18)
+#endif
+
+#ifdef STATMOUNT_SB_SOURCE
+#define IDX_SB_SOURCE (IDX_BASE_NEXT)
+#define IDX_SB_SOURCE_NEXT (IDX_BASE_NEXT + 1)
+#else
+#define IDX_SB_SOURCE_NEXT (IDX_BASE_NEXT)
+#endif
+
+#ifdef STATMOUNT_OPT_ARRAY
+#define IDX_OPT_ARRAY (IDX_SB_SOURCE_NEXT)
+#define IDX_OPT_ARRAY_NEXT (IDX_SB_SOURCE_NEXT + 1)
+#else
+#define IDX_OPT_ARRAY_NEXT (IDX_SB_SOURCE_NEXT)
+#endif
+
+#ifdef STATMOUNT_OPT_SEC_ARRAY
+#define IDX_OPT_SEC_ARRAY (IDX_OPT_ARRAY_NEXT)
+#define IDX_OPT_SEC_ARRAY_NEXT (IDX_OPT_ARRAY_NEXT + 1)
+#else
+#define IDX_OPT_SEC_ARRAY_NEXT (IDX_OPT_ARRAY_NEXT)
+#endif
+
+#ifdef STATMOUNT_SUPPORTED_MASK
+#define IDX_SUPPORTED_MASK (IDX_OPT_SEC_ARRAY_NEXT)
+#define IDX_SUPPORTED_MASK_NEXT (IDX_OPT_SEC_ARRAY_NEXT + 1)
+#else
+#define IDX_SUPPORTED_MASK_NEXT (IDX_OPT_SEC_ARRAY_NEXT)
+#endif
+
+#ifdef STATMOUNT_MNT_UIDMAP
+#define IDX_MNT_UIDMAP (IDX_SUPPORTED_MASK_NEXT)
+#define IDX_MNT_UIDMAP_NEXT (IDX_SUPPORTED_MASK_NEXT + 1)
+#else
+#define IDX_MNT_UIDMAP_NEXT (IDX_SUPPORTED_MASK_NEXT)
+#endif
+
+#ifdef STATMOUNT_MNT_GIDMAP
+#define IDX_MNT_GIDMAP (IDX_MNT_UIDMAP_NEXT)
+#define IDX_MNT_GIDMAP_NEXT (IDX_MNT_UIDMAP_NEXT + 1)
+#else
+#define IDX_MNT_GIDMAP_NEXT (IDX_MNT_UIDMAP_NEXT)
+#endif
+
+#define IDX_MASK_FINAL (IDX_MNT_GIDMAP_NEXT)
 
 PyObject *do_listmount(uint64_t mnt_id, uint64_t last_mnt_id, int reverse)
 {
@@ -388,6 +453,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 		PyStructSequence_SET_ITEM(result, 17, Py_NewRef(Py_None));
 	}
 
+#ifdef STATMOUNT_FS_SUBTYPE
 	// fs_subtype
 	if (sm->mask & STATMOUNT_FS_SUBTYPE) {
 		tmp = sm->fs_subtype ? PyUnicode_FromString(sm->str + sm->fs_subtype) : Py_NewRef(Py_None);
@@ -396,11 +462,13 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 			result = NULL;
 			goto cleanup;
 		}
-		PyStructSequence_SET_ITEM(result, 18, tmp);
+		PyStructSequence_SET_ITEM(result, IDX_FS_SUBTYPE, tmp);
 	} else {
-		PyStructSequence_SET_ITEM(result, 18, Py_NewRef(Py_None));
+		PyStructSequence_SET_ITEM(result, IDX_FS_SUBTYPE, Py_NewRef(Py_None));
 	}
+#endif
 
+#ifdef STATMOUNT_SB_SOURCE
 	// sb_source
 	if (sm->mask & STATMOUNT_SB_SOURCE) {
 		tmp = sm->sb_source ? PyUnicode_FromString(sm->str + sm->sb_source) : Py_NewRef(Py_None);
@@ -409,11 +477,13 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 			result = NULL;
 			goto cleanup;
 		}
-		PyStructSequence_SET_ITEM(result, 19, tmp);
+		PyStructSequence_SET_ITEM(result, IDX_SB_SOURCE, tmp);
 	} else {
-		PyStructSequence_SET_ITEM(result, 19, Py_NewRef(Py_None));
+		PyStructSequence_SET_ITEM(result, IDX_SB_SOURCE, Py_NewRef(Py_None));
 	}
+#endif
 
+#ifdef STATMOUNT_OPT_ARRAY
 	// opt_array (array of null-terminated strings)
 	if (sm->mask & STATMOUNT_OPT_ARRAY) {
 		if (sm->opt_array && sm->opt_num > 0) {
@@ -442,14 +512,16 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 				Py_DECREF(opt_str);
 				opt_ptr += strlen(opt_ptr) + 1;
 			}
-			PyStructSequence_SET_ITEM(result, 20, opt_list);
+			PyStructSequence_SET_ITEM(result, IDX_OPT_ARRAY, opt_list);
 		} else {
-			PyStructSequence_SET_ITEM(result, 20, Py_NewRef(Py_None));
+			PyStructSequence_SET_ITEM(result, IDX_OPT_ARRAY, Py_NewRef(Py_None));
 		}
 	} else {
-		PyStructSequence_SET_ITEM(result, 20, Py_NewRef(Py_None));
+		PyStructSequence_SET_ITEM(result, IDX_OPT_ARRAY, Py_NewRef(Py_None));
 	}
+#endif
 
+#ifdef STATMOUNT_OPT_SEC_ARRAY
 	// opt_sec_array (array of null-terminated security options)
 	if (sm->mask & STATMOUNT_OPT_SEC_ARRAY) {
 		if (sm->opt_sec_array && sm->opt_sec_num > 0) {
@@ -478,14 +550,16 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 				Py_DECREF(opt_str);
 				opt_ptr += strlen(opt_ptr) + 1;
 			}
-			PyStructSequence_SET_ITEM(result, 21, opt_sec_list);
+			PyStructSequence_SET_ITEM(result, IDX_OPT_SEC_ARRAY, opt_sec_list);
 		} else {
-			PyStructSequence_SET_ITEM(result, 21, Py_NewRef(Py_None));
+			PyStructSequence_SET_ITEM(result, IDX_OPT_SEC_ARRAY, Py_NewRef(Py_None));
 		}
 	} else {
-		PyStructSequence_SET_ITEM(result, 21, Py_NewRef(Py_None));
+		PyStructSequence_SET_ITEM(result, IDX_OPT_SEC_ARRAY, Py_NewRef(Py_None));
 	}
+#endif
 
+#ifdef STATMOUNT_SUPPORTED_MASK
 	// supported_mask
 	if (sm->mask & STATMOUNT_SUPPORTED_MASK) {
 		tmp = PyLong_FromUnsignedLongLong(sm->supported_mask);
@@ -494,11 +568,13 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 			result = NULL;
 			goto cleanup;
 		}
-		PyStructSequence_SET_ITEM(result, 22, tmp);
+		PyStructSequence_SET_ITEM(result, IDX_SUPPORTED_MASK, tmp);
 	} else {
-		PyStructSequence_SET_ITEM(result, 22, Py_NewRef(Py_None));
+		PyStructSequence_SET_ITEM(result, IDX_SUPPORTED_MASK, Py_NewRef(Py_None));
 	}
+#endif
 
+#ifdef STATMOUNT_MNT_UIDMAP
 	// mnt_uidmap
 	if (sm->mask & STATMOUNT_MNT_UIDMAP) {
 		tmp = sm->mnt_uidmap ? PyUnicode_FromString(sm->str + sm->mnt_uidmap) : Py_NewRef(Py_None);
@@ -507,11 +583,13 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 			result = NULL;
 			goto cleanup;
 		}
-		PyStructSequence_SET_ITEM(result, 23, tmp);
+		PyStructSequence_SET_ITEM(result, IDX_MNT_UIDMAP, tmp);
 	} else {
-		PyStructSequence_SET_ITEM(result, 23, Py_NewRef(Py_None));
+		PyStructSequence_SET_ITEM(result, IDX_MNT_UIDMAP, Py_NewRef(Py_None));
 	}
+#endif
 
+#ifdef STATMOUNT_MNT_GIDMAP
 	// mnt_gidmap
 	if (sm->mask & STATMOUNT_MNT_GIDMAP) {
 		tmp = sm->mnt_gidmap ? PyUnicode_FromString(sm->str + sm->mnt_gidmap) : Py_NewRef(Py_None);
@@ -520,10 +598,11 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 			result = NULL;
 			goto cleanup;
 		}
-		PyStructSequence_SET_ITEM(result, 24, tmp);
+		PyStructSequence_SET_ITEM(result, IDX_MNT_GIDMAP, tmp);
 	} else {
-		PyStructSequence_SET_ITEM(result, 24, Py_NewRef(Py_None));
+		PyStructSequence_SET_ITEM(result, IDX_MNT_GIDMAP, Py_NewRef(Py_None));
 	}
+#endif
 
 	// mask
 	tmp = PyLong_FromUnsignedLongLong(sm->mask);
@@ -532,7 +611,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 		result = NULL;
 		goto cleanup;
 	}
-	PyStructSequence_SET_ITEM(result, 25, tmp);
+	PyStructSequence_SET_ITEM(result, IDX_MASK_FINAL, tmp);
 
 cleanup:
 	PyMem_RawFree(dynamic_buf);
@@ -560,21 +639,49 @@ int init_mount_types(PyObject *module)
 	PyModule_AddIntConstant(module, "STATMOUNT_FS_TYPE", STATMOUNT_FS_TYPE);
 	PyModule_AddIntConstant(module, "STATMOUNT_MNT_NS_ID", STATMOUNT_MNT_NS_ID);
 	PyModule_AddIntConstant(module, "STATMOUNT_MNT_OPTS", STATMOUNT_MNT_OPTS);
+#ifdef STATMOUNT_FS_SUBTYPE
 	PyModule_AddIntConstant(module, "STATMOUNT_FS_SUBTYPE", STATMOUNT_FS_SUBTYPE);
+#endif
+#ifdef STATMOUNT_SB_SOURCE
 	PyModule_AddIntConstant(module, "STATMOUNT_SB_SOURCE", STATMOUNT_SB_SOURCE);
+#endif
+#ifdef STATMOUNT_OPT_ARRAY
 	PyModule_AddIntConstant(module, "STATMOUNT_OPT_ARRAY", STATMOUNT_OPT_ARRAY);
+#endif
+#ifdef STATMOUNT_OPT_SEC_ARRAY
 	PyModule_AddIntConstant(module, "STATMOUNT_OPT_SEC_ARRAY", STATMOUNT_OPT_SEC_ARRAY);
+#endif
+#ifdef STATMOUNT_SUPPORTED_MASK
 	PyModule_AddIntConstant(module, "STATMOUNT_SUPPORTED_MASK", STATMOUNT_SUPPORTED_MASK);
+#endif
+#ifdef STATMOUNT_MNT_UIDMAP
 	PyModule_AddIntConstant(module, "STATMOUNT_MNT_UIDMAP", STATMOUNT_MNT_UIDMAP);
+#endif
+#ifdef STATMOUNT_MNT_GIDMAP
 	PyModule_AddIntConstant(module, "STATMOUNT_MNT_GIDMAP", STATMOUNT_MNT_GIDMAP);
+#endif
 
-	// Add STATMOUNT_ALL convenience constant (common flags, excludes UIDMAP/GIDMAP)
+	// Add STATMOUNT_ALL convenience constant (includes all available flags except UIDMAP/GIDMAP)
 	PyModule_AddIntConstant(module, "STATMOUNT_ALL",
 		STATMOUNT_SB_BASIC | STATMOUNT_MNT_BASIC | STATMOUNT_PROPAGATE_FROM |
 		STATMOUNT_MNT_ROOT | STATMOUNT_MNT_POINT | STATMOUNT_FS_TYPE |
-		STATMOUNT_MNT_NS_ID | STATMOUNT_MNT_OPTS | STATMOUNT_FS_SUBTYPE |
-		STATMOUNT_SB_SOURCE | STATMOUNT_OPT_ARRAY | STATMOUNT_OPT_SEC_ARRAY |
-		STATMOUNT_SUPPORTED_MASK);
+		STATMOUNT_MNT_NS_ID | STATMOUNT_MNT_OPTS
+#ifdef STATMOUNT_FS_SUBTYPE
+		| STATMOUNT_FS_SUBTYPE
+#endif
+#ifdef STATMOUNT_SB_SOURCE
+		| STATMOUNT_SB_SOURCE
+#endif
+#ifdef STATMOUNT_OPT_ARRAY
+		| STATMOUNT_OPT_ARRAY
+#endif
+#ifdef STATMOUNT_OPT_SEC_ARRAY
+		| STATMOUNT_OPT_SEC_ARRAY
+#endif
+#ifdef STATMOUNT_SUPPORTED_MASK
+		| STATMOUNT_SUPPORTED_MASK
+#endif
+	);
 
 	// Add MOUNT_ATTR_* constants
 	PyModule_AddIntConstant(module, "MOUNT_ATTR_RDONLY", MOUNT_ATTR_RDONLY);
