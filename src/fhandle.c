@@ -9,6 +9,7 @@
 #define __NR_NAME_TO_HANDLE_AT 303
 #define __NR_OPEN_BY_HANDLE_AT 304
 #define INIT_HANDLE_SZ 128 // MAX_HANDLE_SZ as of 6.6 kernel
+#define MAX_HANDLE_SZ (INIT_HANDLE_SZ * 2)
 
 
 static PyObject *py_fhandle_new(PyTypeObject *obj,
@@ -126,9 +127,27 @@ static int do_fhandle_from_bytes(py_fhandle_t *self,
 		return -1;
 	}
 
+	if (handle_buffer->len > MAX_HANDLE_SZ) {
+		PyErr_Format(
+			PyExc_ValueError,
+			"handle_bytes too large: %zd (max: %zd)",
+			handle_buffer->len, MAX_HANDLE_SZ
+		);
+		return -1;
+	}
+
 	// Parse the header from the buffer
 	src_handle = (struct file_handle *)handle_buffer->buf;
 	data_bytes = src_handle->handle_bytes;
+
+	if (data_bytes > handle_buffer->len - header_size) {
+		PyErr_Format(
+			PyExc_ValueError,
+			"Incorrect encoded handle length: %zd (expected :%zd)",
+			data_bytes, handle_buffer->len - header_size
+		);
+		return -1;
+	}
 
 	// Verify the buffer contains the full structure
 	if (handle_buffer->len < (Py_ssize_t)(header_size + data_bytes)) {
