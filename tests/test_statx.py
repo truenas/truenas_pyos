@@ -81,8 +81,8 @@ def test_statx_result_type_exists():
 
 def test_statx_basic():
     """Test statx() with basic parameters on current directory."""
-    result = truenas_os.statx(truenas_os.AT_FDCWD, '.', 0,
-                              truenas_os.STATX_BASIC_STATS)
+    result = truenas_os.statx('.', dir_fd=truenas_os.AT_FDCWD, flags=0,
+                              mask=truenas_os.STATX_BASIC_STATS)
     assert isinstance(result, truenas_os.StatxResult)
     assert result.stx_mask is not None
     assert isinstance(result.stx_mask, int)
@@ -92,8 +92,7 @@ def test_statx_basic():
 
 def test_statx_with_btime():
     """Test statx() with birth time requested."""
-    result = truenas_os.statx(truenas_os.AT_FDCWD, '.', 0,
-                              truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
+    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
     assert isinstance(result, truenas_os.StatxResult)
     # Birth time should be available
     assert result.stx_btime is not None
@@ -104,8 +103,7 @@ def test_statx_with_btime():
 
 def test_statx_timestamps_format():
     """Test that timestamps are in correct format (float and nanoseconds)."""
-    result = truenas_os.statx(truenas_os.AT_FDCWD, '.', 0,
-                              truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
+    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
 
     # Float timestamps
     assert isinstance(result.stx_atime, float)
@@ -130,8 +128,7 @@ def test_statx_timestamps_format():
 
 def test_statx_device_fields():
     """Test device major/minor and computed dev fields."""
-    result = truenas_os.statx(truenas_os.AT_FDCWD, '.', 0,
-                              truenas_os.STATX_BASIC_STATS)
+    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS)
 
     # All device fields should be present
     assert isinstance(result.stx_rdev_major, int)
@@ -151,8 +148,7 @@ def test_statx_device_fields():
 def test_statx_device_file():
     """Test statx() on a device file to verify makedev()."""
     try:
-        result = truenas_os.statx(truenas_os.AT_FDCWD, '/dev/null', 0,
-                                  truenas_os.STATX_BASIC_STATS)
+        result = truenas_os.statx('/dev/null', mask=truenas_os.STATX_BASIC_STATS)
 
         # /dev/null is character device 1:3
         assert result.stx_rdev_major == 1
@@ -168,8 +164,7 @@ def test_statx_device_file():
 
 def test_statx_result_fields():
     """Test that StatxResult has all expected fields."""
-    result = truenas_os.statx(truenas_os.AT_FDCWD, '.', 0,
-                              truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
+    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
 
     # Basic fields
     expected_fields = [
@@ -212,8 +207,7 @@ def test_statx_on_tempfile():
         f.write(b"test content")
 
     try:
-        result = truenas_os.statx(truenas_os.AT_FDCWD, temp_path, 0,
-                                  truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
+        result = truenas_os.statx(temp_path, mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
 
         # Should be a regular file
         assert stat.S_ISREG(result.stx_mode)
@@ -242,14 +236,13 @@ def test_statx_symlink_nofollow():
         os.symlink(target, link_path)
 
         # Follow symlink (default)
-        result_follow = truenas_os.statx(truenas_os.AT_FDCWD, link_path, 0,
-                                         truenas_os.STATX_BASIC_STATS)
+        result_follow = truenas_os.statx(link_path, mask=truenas_os.STATX_BASIC_STATS)
         assert stat.S_ISREG(result_follow.stx_mode)
 
         # Don't follow symlink
-        result_nofollow = truenas_os.statx(truenas_os.AT_FDCWD, link_path,
-                                           truenas_os.AT_SYMLINK_NOFOLLOW,
-                                           truenas_os.STATX_BASIC_STATS)
+        result_nofollow = truenas_os.statx(link_path,
+                                           flags=truenas_os.AT_SYMLINK_NOFOLLOW,
+                                           mask=truenas_os.STATX_BASIC_STATS)
         assert stat.S_ISLNK(result_nofollow.stx_mode)
     finally:
         if os.path.exists(link_path):
@@ -260,8 +253,7 @@ def test_statx_symlink_nofollow():
 
 def test_statx_with_mnt_id():
     """Test statx() with STATX_MNT_ID to get mount ID."""
-    result = truenas_os.statx(truenas_os.AT_FDCWD, '/', 0,
-                              truenas_os.STATX_BASIC_STATS | truenas_os.STATX_MNT_ID)
+    result = truenas_os.statx('/', mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_MNT_ID)
 
     # Should have mount ID for root
     assert result.stx_mnt_id is not None
@@ -271,8 +263,7 @@ def test_statx_with_mnt_id():
 
 def test_statx_attributes_mask():
     """Test that stx_attributes_mask is set."""
-    result = truenas_os.statx(truenas_os.AT_FDCWD, '.', 0,
-                              truenas_os.STATX_BASIC_STATS)
+    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS)
 
     assert isinstance(result.stx_attributes, int)
     assert isinstance(result.stx_attributes_mask, int)
@@ -283,29 +274,25 @@ def test_statx_attributes_mask():
 def test_statx_mode_type_check():
     """Test mode and file type detection."""
     # Test on directory
-    result = truenas_os.statx(truenas_os.AT_FDCWD, '.', 0,
-                              truenas_os.STATX_BASIC_STATS)
+    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS)
     assert stat.S_ISDIR(result.stx_mode)
 
     # Test on regular file
     with tempfile.NamedTemporaryFile() as f:
-        result = truenas_os.statx(truenas_os.AT_FDCWD, f.name, 0,
-                                  truenas_os.STATX_BASIC_STATS)
+        result = truenas_os.statx(f.name, mask=truenas_os.STATX_BASIC_STATS)
         assert stat.S_ISREG(result.stx_mode)
 
 
 def test_statx_invalid_path():
     """Test that statx() raises OSError for invalid path."""
     with pytest.raises(OSError):
-        truenas_os.statx(truenas_os.AT_FDCWD, '/nonexistent/path/to/file', 0,
-                        truenas_os.STATX_BASIC_STATS)
+        truenas_os.statx('/nonexistent/path/to/file', mask=truenas_os.STATX_BASIC_STATS)
 
 
 def test_statx_mask_filtering():
     """Test that statx() respects the mask parameter."""
     # Request only basic stats (no BTIME)
-    result = truenas_os.statx(truenas_os.AT_FDCWD, '.', 0,
-                              truenas_os.STATX_BASIC_STATS)
+    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS)
 
     # Should have basic info
     assert result.stx_mode is not None
@@ -322,8 +309,7 @@ def test_statx_comparison_with_os_stat():
     path = '.'
 
     st = os.stat(path)
-    result = truenas_os.statx(truenas_os.AT_FDCWD, path, 0,
-                              truenas_os.STATX_BASIC_STATS)
+    result = truenas_os.statx(path, mask=truenas_os.STATX_BASIC_STATS)
 
     # Mode should match
     assert result.stx_mode == st.st_mode
