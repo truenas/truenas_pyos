@@ -200,13 +200,13 @@ static PyObject *py_statx(PyObject *obj,
 			  PyObject *args,
 			  PyObject *kwargs)
 {
-	int dirfd;
+	int dirfd = AT_FDCWD;
 	const char *pathname;
 	int flags = 0;
 	unsigned int mask = STATX_BASIC_STATS | STATX_BTIME;
-	const char *kwnames[] = { "dirfd", "pathname", "flags", "mask", NULL };
+	const char *kwnames[] = { "pathname", "dirfs", "flags", "mask", NULL };
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "is|iI",
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s|iiI",
 					 discard_const_p(char *, kwnames),
 					 &dirfd, &pathname, &flags, &mask)) {
 		return NULL;
