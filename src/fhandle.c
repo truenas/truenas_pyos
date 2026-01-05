@@ -9,7 +9,6 @@
 #define __NR_NAME_TO_HANDLE_AT 303
 #define __NR_OPEN_BY_HANDLE_AT 304
 #define INIT_HANDLE_SZ 128 // MAX_HANDLE_SZ as of 6.6 kernel
-#define MAX_HANDLE_SZ (INIT_HANDLE_SZ * 2)
 
 
 static PyObject *py_fhandle_new(PyTypeObject *obj,
@@ -147,26 +146,6 @@ static int do_fhandle_from_bytes(py_fhandle_t *self,
 			data_bytes, handle_buffer->len - header_size
 		);
 		return -1;
-	}
-
-	// Verify the buffer contains the full structure
-	if (handle_buffer->len < (Py_ssize_t)(header_size + data_bytes)) {
-		PyErr_Format(
-			PyExc_ValueError,
-			"handle_bytes incomplete: expected %zu, got %zd",
-			header_size + data_bytes, handle_buffer->len
-		);
-		return -1;
-	}
-
-	// Reallocate if we need more space than initially allocated
-	if (handle_buffer->len > (Py_ssize_t)INIT_HANDLE_SZ) {
-		void *new = PyMem_RawRealloc(self->fhandle, handle_buffer->len);
-		if (new == NULL) {
-			PyErr_NoMemory();
-			return -1;
-		}
-		self->fhandle = (struct file_handle *)new;
 	}
 
 	// Copy the entire structure
