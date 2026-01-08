@@ -4,10 +4,10 @@ This module provides Python bindings to Linux kernel system calls for
 advanced filesystem and mount operations.
 """
 
-from typing import Iterator
+from typing import Iterator, NamedTuple
 
 # StatxResult type - PyStructSequence from statx(2)
-class StatxResult:
+class StatxResult(NamedTuple):
     """Extended file attributes from statx(2) system call.
 
     This is a named tuple-like structure containing file metadata.
@@ -50,7 +50,7 @@ class StatxResult:
     # stx_atomic_write_unit_max_opt: int
 
 # StatmountResult type - PyStructSequence from statmount(2)
-class StatmountResult:
+class StatmountResult(NamedTuple):
     """Mount point information from statmount(2) system call.
 
     This is a named tuple-like structure containing mount metadata.
