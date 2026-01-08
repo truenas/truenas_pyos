@@ -8,6 +8,7 @@
 #include "statx.h"
 #include "openat2.h"
 #include "move_mount.h"
+#include "mount_setattr.h"
 
 #define MODULE_DOC "TrueNAS OS module"
 
@@ -334,6 +335,78 @@ static PyObject *py_move_mount(PyObject *obj,
 	return do_move_mount(from_dirfd, from_path, to_dirfd, to_path, flags);
 }
 
+PyDoc_STRVAR(py_mount_setattr__doc__,
+"mount_setattr(*, path, attr_set=0, attr_clr=0, propagation=0, userns_fd=0, dirfd=AT_FDCWD, flags=0)\n"
+"--\n\n"
+"Change properties of a mount or mount tree.\n\n"
+"The mount_setattr() system call changes the mount properties of a mount\n"
+"or an entire mount tree. If path is a relative pathname, then it is\n"
+"interpreted relative to the directory referred to by dirfd.\n\n"
+"If flags includes AT_RECURSIVE, all mounts in the subtree are affected.\n\n"
+"All parameters are keyword-only for safety.\n\n"
+"Parameters\n"
+"----------\n"
+"path : str\n"
+"    Path to the mount point (can be relative to dirfd)\n"
+"attr_set : int, optional\n"
+"    Mount attributes to set (MOUNT_ATTR_* constants), default=0\n"
+"attr_clr : int, optional\n"
+"    Mount attributes to clear (MOUNT_ATTR_* constants), default=0\n"
+"propagation : int, optional\n"
+"    Mount propagation type (MS_SHARED, MS_SLAVE, MS_PRIVATE, MS_UNBINDABLE), default=0\n"
+"userns_fd : int, optional\n"
+"    User namespace file descriptor for MOUNT_ATTR_IDMAP, default=0\n"
+"dirfd : int, optional\n"
+"    Directory file descriptor, default=AT_FDCWD (current directory)\n"
+"flags : int, optional\n"
+"    Flags (AT_EMPTY_PATH, AT_RECURSIVE, AT_SYMLINK_NOFOLLOW, etc.), default=0\n\n"
+"Returns\n"
+"-------\n"
+"None\n\n"
+"Examples\n"
+"--------\n"
+">>> import truenas_os\n"
+">>> # Make a mount read-only\n"
+">>> truenas_os.mount_setattr(path='/mnt/data',\n"
+"...                           attr_set=truenas_os.MOUNT_ATTR_RDONLY)\n\n"
+">>> # Make a mount tree read-only recursively\n"
+">>> truenas_os.mount_setattr(path='/mnt/data',\n"
+"...                           attr_set=truenas_os.MOUNT_ATTR_RDONLY,\n"
+"...                           flags=truenas_os.AT_RECURSIVE)\n\n"
+">>> # Remove noexec attribute\n"
+">>> truenas_os.mount_setattr(path='/mnt/data',\n"
+"...                           attr_clr=truenas_os.MOUNT_ATTR_NOEXEC)\n"
+);
+
+static PyObject *py_mount_setattr(PyObject *obj,
+                                   PyObject *args,
+                                   PyObject *kwargs)
+{
+	const char *path = NULL;
+	int dirfd = AT_FDCWD;
+	unsigned int flags = 0;
+	struct mount_attr attr = {0};
+	const char *kwnames[] = { "path", "attr_set", "attr_clr", "propagation",
+	                          "userns_fd", "dirfd", "flags", NULL };
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$sKKKKiI",
+	                                 discard_const_p(char *, kwnames),
+	                                 &path, &attr.attr_set, &attr.attr_clr,
+	                                 &attr.propagation, &attr.userns_fd,
+	                                 &dirfd, &flags)) {
+		return NULL;
+	}
+
+	// Validate required keyword-only argument
+	if (path == NULL) {
+		PyErr_SetString(PyExc_TypeError,
+		                "mount_setattr() missing required keyword-only argument: 'path'");
+		return NULL;
+	}
+
+	return do_mount_setattr(dirfd, path, flags, &attr);
+}
+
 static PyMethodDef truenas_os_methods[] = {
 	{
 		.ml_name = "open_mount_by_id",
@@ -376,6 +449,12 @@ static PyMethodDef truenas_os_methods[] = {
 		.ml_meth = (PyCFunction)py_move_mount,
 		.ml_flags = METH_VARARGS|METH_KEYWORDS,
 		.ml_doc = py_move_mount__doc__
+	},
+	{
+		.ml_name = "mount_setattr",
+		.ml_meth = (PyCFunction)py_mount_setattr,
+		.ml_flags = METH_VARARGS|METH_KEYWORDS,
+		.ml_doc = py_mount_setattr__doc__
 	},
 	{ .ml_name = NULL }
 };
@@ -433,6 +512,12 @@ PyObject* module_init(void)
 
 	// Initialize move_mount constants
 	if (init_move_mount_constants(m) < 0) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	// Initialize mount_setattr constants
+	if (init_mount_setattr_constants(m) < 0) {
 		Py_DECREF(m);
 		return NULL;
 	}
