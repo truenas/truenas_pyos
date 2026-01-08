@@ -368,6 +368,7 @@ Contributions are welcome! Please ensure:
 - Code follows existing patterns
 - New features include tests
 - SPDX license identifiers are present
+- **Type stubs are kept up-to-date**: When modifying the C extension API (adding/removing functions, changing signatures, or modifying return types), update `truenas_os.pyi` accordingly to maintain accurate type information
 
 ## Authors
 
