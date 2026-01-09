@@ -8,6 +8,8 @@
 #include "statx.h"
 #include "openat2.h"
 #include "move_mount.h"
+#include "mount_setattr.h"
+#include "fsmount.h"
 
 #define MODULE_DOC "TrueNAS OS module"
 
@@ -334,6 +336,292 @@ static PyObject *py_move_mount(PyObject *obj,
 	return do_move_mount(from_dirfd, from_path, to_dirfd, to_path, flags);
 }
 
+PyDoc_STRVAR(py_mount_setattr__doc__,
+"mount_setattr(*, path, attr_set=0, attr_clr=0, propagation=0, userns_fd=0, dirfd=AT_FDCWD, flags=0)\n"
+"--\n\n"
+"Change properties of a mount or mount tree.\n\n"
+"The mount_setattr() system call changes the mount properties of a mount\n"
+"or an entire mount tree. If path is a relative pathname, then it is\n"
+"interpreted relative to the directory referred to by dirfd.\n\n"
+"If flags includes AT_RECURSIVE, all mounts in the subtree are affected.\n\n"
+"All parameters are keyword-only for safety.\n\n"
+"Parameters\n"
+"----------\n"
+"path : str\n"
+"    Path to the mount point (can be relative to dirfd)\n"
+"attr_set : int, optional\n"
+"    Mount attributes to set (MOUNT_ATTR_* constants), default=0\n"
+"attr_clr : int, optional\n"
+"    Mount attributes to clear (MOUNT_ATTR_* constants), default=0\n"
+"propagation : int, optional\n"
+"    Mount propagation type (MS_SHARED, MS_SLAVE, MS_PRIVATE, MS_UNBINDABLE), default=0\n"
+"userns_fd : int, optional\n"
+"    User namespace file descriptor for MOUNT_ATTR_IDMAP, default=0\n"
+"dirfd : int, optional\n"
+"    Directory file descriptor, default=AT_FDCWD (current directory)\n"
+"flags : int, optional\n"
+"    Flags (AT_EMPTY_PATH, AT_RECURSIVE, AT_SYMLINK_NOFOLLOW, etc.), default=0\n\n"
+"Returns\n"
+"-------\n"
+"None\n\n"
+"Examples\n"
+"--------\n"
+">>> import truenas_os\n"
+">>> # Make a mount read-only\n"
+">>> truenas_os.mount_setattr(path='/mnt/data',\n"
+"...                           attr_set=truenas_os.MOUNT_ATTR_RDONLY)\n\n"
+">>> # Make a mount tree read-only recursively\n"
+">>> truenas_os.mount_setattr(path='/mnt/data',\n"
+"...                           attr_set=truenas_os.MOUNT_ATTR_RDONLY,\n"
+"...                           flags=truenas_os.AT_RECURSIVE)\n\n"
+">>> # Remove noexec attribute\n"
+">>> truenas_os.mount_setattr(path='/mnt/data',\n"
+"...                           attr_clr=truenas_os.MOUNT_ATTR_NOEXEC)\n"
+);
+
+static PyObject *py_mount_setattr(PyObject *obj,
+                                   PyObject *args,
+                                   PyObject *kwargs)
+{
+	const char *path = NULL;
+	int dirfd = AT_FDCWD;
+	unsigned int flags = 0;
+	struct mount_attr attr = {0};
+	const char *kwnames[] = { "path", "attr_set", "attr_clr", "propagation",
+	                          "userns_fd", "dirfd", "flags", NULL };
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$sKKKKiI",
+	                                 discard_const_p(char *, kwnames),
+	                                 &path, &attr.attr_set, &attr.attr_clr,
+	                                 &attr.propagation, &attr.userns_fd,
+	                                 &dirfd, &flags)) {
+		return NULL;
+	}
+
+	// Validate required keyword-only argument
+	if (path == NULL) {
+		PyErr_SetString(PyExc_TypeError,
+		                "mount_setattr() missing required keyword-only argument: 'path'");
+		return NULL;
+	}
+
+	return do_mount_setattr(dirfd, path, flags, &attr);
+}
+
+PyDoc_STRVAR(py_fsopen__doc__,
+"fsopen(*, fs_name, flags=0)\n"
+"--\n\n"
+"Open a filesystem context for configuration.\n\n"
+"The fsopen() system call creates a blank filesystem configuration context\n"
+"for the filesystem type specified by fs_name. This context can then be\n"
+"configured using fsconfig() before creating a mount with fsmount().\n\n"
+"All parameters are keyword-only.\n\n"
+"Parameters\n"
+"----------\n"
+"fs_name : str\n"
+"    Filesystem type name (e.g., 'ext4', 'xfs', 'tmpfs')\n"
+"flags : int, optional\n"
+"    Flags controlling behavior (FSOPEN_* constants), default=0\n\n"
+"Returns\n"
+"-------\n"
+"fd : int\n"
+"    File descriptor for the filesystem context\n\n"
+"Examples\n"
+"--------\n"
+">>> import truenas_os\n"
+">>> # Open a filesystem context for tmpfs\n"
+">>> fs_fd = truenas_os.fsopen(fs_name='tmpfs', flags=truenas_os.FSOPEN_CLOEXEC)\n"
+);
+
+static PyObject *py_fsopen(PyObject *obj,
+                            PyObject *args,
+                            PyObject *kwargs)
+{
+	const char *fs_name = NULL;
+	unsigned int flags = 0;
+	const char *kwnames[] = { "fs_name", "flags", NULL };
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$sI",
+	                                 discard_const_p(char *, kwnames),
+	                                 &fs_name, &flags)) {
+		return NULL;
+	}
+
+	// Validate required keyword-only argument
+	if (fs_name == NULL) {
+		PyErr_SetString(PyExc_TypeError,
+		                "fsopen() missing required keyword-only argument: 'fs_name'");
+		return NULL;
+	}
+
+	return do_fsopen(fs_name, flags);
+}
+
+PyDoc_STRVAR(py_fsconfig__doc__,
+"fsconfig(*, fs_fd, cmd, key=None, value=None, aux=0)\n"
+"--\n\n"
+"Configure a filesystem context.\n\n"
+"The fsconfig() system call is used to configure a filesystem context\n"
+"created by fsopen(). It can set options, provide a source device, and\n"
+"trigger filesystem creation or reconfiguration.\n\n"
+"All parameters are keyword-only.\n\n"
+"Parameters\n"
+"----------\n"
+"fs_fd : int\n"
+"    File descriptor from fsopen()\n"
+"cmd : int\n"
+"    Configuration command (FSCONFIG_* constants)\n"
+"key : str, optional\n"
+"    Option name (for SET_FLAG, SET_STRING, SET_PATH, etc.)\n"
+"value : str or bytes, optional\n"
+"    Option value (for SET_STRING, SET_BINARY, SET_PATH, etc.)\n"
+"aux : int, optional\n"
+"    Auxiliary parameter (for SET_FD), default=0\n\n"
+"Returns\n"
+"-------\n"
+"None\n\n"
+"FSCONFIG_* commands:\n"
+"    FSCONFIG_SET_FLAG: Set a flag option (key only, no value)\n"
+"    FSCONFIG_SET_STRING: Set a string-valued option\n"
+"    FSCONFIG_SET_BINARY: Set a binary blob option\n"
+"    FSCONFIG_SET_PATH: Set an option from a file path\n"
+"    FSCONFIG_SET_PATH_EMPTY: Set from an empty path\n"
+"    FSCONFIG_SET_FD: Set from a file descriptor\n"
+"    FSCONFIG_CMD_CREATE: Create the filesystem\n"
+"    FSCONFIG_CMD_RECONFIGURE: Reconfigure the filesystem\n\n"
+"Examples\n"
+"--------\n"
+">>> import truenas_os\n"
+">>> fs_fd = truenas_os.fsopen(fs_name='tmpfs', flags=truenas_os.FSOPEN_CLOEXEC)\n"
+">>> # Set size option\n"
+">>> truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_SET_STRING,\n"
+"...                      key='size', value='1G')\n"
+">>> # Create the filesystem\n"
+">>> truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_CMD_CREATE)\n"
+);
+
+static PyObject *py_fsconfig(PyObject *obj,
+                              PyObject *args,
+                              PyObject *kwargs)
+{
+	int fs_fd = -1;
+	unsigned int cmd = 0;
+	const char *key = NULL;
+	PyObject *value_obj = NULL;
+	const char *value_str = NULL;
+	const void *value_ptr = NULL;
+	Py_ssize_t value_len = 0;
+	int aux = 0;
+	const char *kwnames[] = { "fs_fd", "cmd", "key", "value", "aux", NULL };
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$iIsOi",
+	                                 discard_const_p(char *, kwnames),
+	                                 &fs_fd, &cmd, &key, &value_obj, &aux)) {
+		return NULL;
+	}
+
+	// Validate required keyword-only arguments
+	// We need a better way to check if cmd was provided, so let's adjust the logic
+	// For now, we'll require fs_fd to be >= 0
+	if (fs_fd < 0) {
+		PyErr_SetString(PyExc_TypeError,
+		                "fsconfig() missing required keyword-only argument: 'fs_fd'");
+		return NULL;
+	}
+
+	// Handle value parameter based on its type
+	if (value_obj != NULL && value_obj != Py_None) {
+		if (PyUnicode_Check(value_obj)) {
+			value_str = PyUnicode_AsUTF8(value_obj);
+			if (value_str == NULL) {
+				return NULL;
+			}
+			value_ptr = value_str;
+		} else if (PyBytes_Check(value_obj)) {
+			if (PyBytes_AsStringAndSize(value_obj, (char **)&value_ptr, &value_len) < 0) {
+				return NULL;
+			}
+		} else if (PyLong_Check(value_obj)) {
+			aux = PyLong_AsLong(value_obj);
+			if (aux == -1 && PyErr_Occurred()) {
+				return NULL;
+			}
+			value_ptr = NULL;
+		} else {
+			PyErr_SetString(PyExc_TypeError,
+			                "value must be str, bytes, int, or None");
+			return NULL;
+		}
+	}
+
+	return do_fsconfig(fs_fd, cmd, key, value_ptr, aux);
+}
+
+PyDoc_STRVAR(py_fsmount__doc__,
+"fsmount(*, fs_fd, flags=0, attr_flags=0)\n"
+"--\n\n"
+"Create a mount object from a configured filesystem context.\n\n"
+"The fsmount() system call takes a filesystem context created by fsopen()\n"
+"and configured with fsconfig(), and creates a mount object. This mount\n"
+"can then be attached to the filesystem tree using move_mount().\n\n"
+"All parameters are keyword-only.\n\n"
+"Parameters\n"
+"----------\n"
+"fs_fd : int\n"
+"    File descriptor from fsopen() (after configuration with fsconfig())\n"
+"flags : int, optional\n"
+"    Mount flags (FSMOUNT_* constants), default=0\n"
+"attr_flags : int, optional\n"
+"    Mount attribute flags (MOUNT_ATTR_* constants), default=0\n\n"
+"Returns\n"
+"-------\n"
+"fd : int\n"
+"    File descriptor for the mount object\n\n"
+"Examples\n"
+"--------\n"
+">>> import truenas_os\n"
+">>> import os\n"
+">>> # Create and configure filesystem\n"
+">>> fs_fd = truenas_os.fsopen(fs_name='tmpfs', flags=truenas_os.FSOPEN_CLOEXEC)\n"
+">>> truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_SET_STRING,\n"
+"...                      key='size', value='1G')\n"
+">>> truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_CMD_CREATE)\n"
+">>> # Create mount object\n"
+">>> mnt_fd = truenas_os.fsmount(fs_fd=fs_fd, flags=truenas_os.FSMOUNT_CLOEXEC,\n"
+"...                              attr_flags=truenas_os.MOUNT_ATTR_RDONLY)\n"
+">>> os.close(fs_fd)\n"
+">>> # Attach to filesystem tree\n"
+">>> truenas_os.move_mount(from_path='', to_path='/mnt/test',\n"
+"...                        from_dirfd=mnt_fd,\n"
+"...                        flags=truenas_os.MOVE_MOUNT_F_EMPTY_PATH)\n"
+">>> os.close(mnt_fd)\n"
+);
+
+static PyObject *py_fsmount(PyObject *obj,
+                             PyObject *args,
+                             PyObject *kwargs)
+{
+	int fs_fd = -1;
+	unsigned int flags = 0;
+	unsigned int attr_flags = 0;
+	const char *kwnames[] = { "fs_fd", "flags", "attr_flags", NULL };
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$iII",
+	                                 discard_const_p(char *, kwnames),
+	                                 &fs_fd, &flags, &attr_flags)) {
+		return NULL;
+	}
+
+	// Validate required keyword-only argument
+	if (fs_fd < 0) {
+		PyErr_SetString(PyExc_TypeError,
+		                "fsmount() missing required keyword-only argument: 'fs_fd'");
+		return NULL;
+	}
+
+	return do_fsmount(fs_fd, flags, attr_flags);
+}
+
 static PyMethodDef truenas_os_methods[] = {
 	{
 		.ml_name = "open_mount_by_id",
@@ -376,6 +664,30 @@ static PyMethodDef truenas_os_methods[] = {
 		.ml_meth = (PyCFunction)py_move_mount,
 		.ml_flags = METH_VARARGS|METH_KEYWORDS,
 		.ml_doc = py_move_mount__doc__
+	},
+	{
+		.ml_name = "mount_setattr",
+		.ml_meth = (PyCFunction)py_mount_setattr,
+		.ml_flags = METH_VARARGS|METH_KEYWORDS,
+		.ml_doc = py_mount_setattr__doc__
+	},
+	{
+		.ml_name = "fsopen",
+		.ml_meth = (PyCFunction)py_fsopen,
+		.ml_flags = METH_VARARGS|METH_KEYWORDS,
+		.ml_doc = py_fsopen__doc__
+	},
+	{
+		.ml_name = "fsconfig",
+		.ml_meth = (PyCFunction)py_fsconfig,
+		.ml_flags = METH_VARARGS|METH_KEYWORDS,
+		.ml_doc = py_fsconfig__doc__
+	},
+	{
+		.ml_name = "fsmount",
+		.ml_meth = (PyCFunction)py_fsmount,
+		.ml_flags = METH_VARARGS|METH_KEYWORDS,
+		.ml_doc = py_fsmount__doc__
 	},
 	{ .ml_name = NULL }
 };
@@ -433,6 +745,18 @@ PyObject* module_init(void)
 
 	// Initialize move_mount constants
 	if (init_move_mount_constants(m) < 0) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	// Initialize mount_setattr constants
+	if (init_mount_setattr_constants(m) < 0) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	// Initialize fsmount constants
+	if (init_fsmount_constants(m) < 0) {
 		Py_DECREF(m);
 		return NULL;
 	}
