@@ -696,5 +696,27 @@ int init_mount_types(PyObject *module)
 	PyModule_AddIntConstant(module, "MOUNT_ATTR_IDMAP", MOUNT_ATTR_IDMAP);
 	PyModule_AddIntConstant(module, "MOUNT_ATTR_NOSYMFOLLOW", MOUNT_ATTR_NOSYMFOLLOW);
 
+	// Add MS_* mount flags (user-facing flags only)
+	PyModule_AddIntConstant(module, "MS_RDONLY", MS_RDONLY);
+	PyModule_AddIntConstant(module, "MS_NOSUID", MS_NOSUID);
+	PyModule_AddIntConstant(module, "MS_NODEV", MS_NODEV);
+	PyModule_AddIntConstant(module, "MS_NOEXEC", MS_NOEXEC);
+	PyModule_AddIntConstant(module, "MS_SYNCHRONOUS", MS_SYNCHRONOUS);
+	PyModule_AddIntConstant(module, "MS_REMOUNT", MS_REMOUNT);
+	PyModule_AddIntConstant(module, "MS_DIRSYNC", MS_DIRSYNC);
+	PyModule_AddIntConstant(module, "MS_NOSYMFOLLOW", MS_NOSYMFOLLOW);
+	PyModule_AddIntConstant(module, "MS_NOATIME", MS_NOATIME);
+	PyModule_AddIntConstant(module, "MS_NODIRATIME", MS_NODIRATIME);
+	PyModule_AddIntConstant(module, "MS_BIND", MS_BIND);
+	PyModule_AddIntConstant(module, "MS_MOVE", MS_MOVE);
+	PyModule_AddIntConstant(module, "MS_REC", MS_REC);
+	PyModule_AddIntConstant(module, "MS_UNBINDABLE", MS_UNBINDABLE);
+	PyModule_AddIntConstant(module, "MS_PRIVATE", MS_PRIVATE);
+	PyModule_AddIntConstant(module, "MS_SLAVE", MS_SLAVE);
+	PyModule_AddIntConstant(module, "MS_SHARED", MS_SHARED);
+	PyModule_AddIntConstant(module, "MS_RELATIME", MS_RELATIME);
+	PyModule_AddIntConstant(module, "MS_STRICTATIME", MS_STRICTATIME);
+	PyModule_AddIntConstant(module, "MS_LAZYTIME", MS_LAZYTIME);
+
 	return 0;
 }
