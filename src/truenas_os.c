@@ -7,9 +7,11 @@
 #include "mount.h"
 #include "statx.h"
 #include "openat2.h"
+#include "open_tree.h"
 #include "move_mount.h"
 #include "mount_setattr.h"
 #include "fsmount.h"
+#include "umount2.h"
 
 #define MODULE_DOC "TrueNAS OS module"
 
@@ -266,6 +268,76 @@ static PyObject *py_openat2(PyObject *obj,
 	}
 
 	return do_openat2(dir_fd, path, flags, mode, resolve);
+}
+
+PyDoc_STRVAR(py_open_tree__doc__,
+"open_tree(*, path, dir_fd=AT_FDCWD, flags=0)\n"
+"--\n\n"
+"Open a mount or directory tree.\n\n"
+"The open_tree() system call opens a mount or directory tree, returning\n"
+"a file descriptor that can be used with move_mount(2) to attach the mount\n"
+"to the filesystem tree. With OPEN_TREE_CLONE, it creates a detached clone\n"
+"of the mount tree.\n\n"
+"All parameters are keyword-only.\n\n"
+"Parameters\n"
+"----------\n"
+"path : str\n"
+"    Path to the mount or directory (can be relative to dir_fd)\n"
+"dir_fd : int, optional\n"
+"    Directory file descriptor, default=AT_FDCWD (current directory)\n"
+"flags : int, optional\n"
+"    Flags controlling behavior (OPEN_TREE_* and AT_* constants), default=0\n\n"
+"Returns\n"
+"-------\n"
+"fd : int\n"
+"    File descriptor representing the mount tree\n\n"
+"OPEN_TREE_* flags:\n"
+"    OPEN_TREE_CLONE: Create a detached clone of the mount tree\n"
+"    OPEN_TREE_CLOEXEC: Set close-on-exec on the file descriptor\n\n"
+"AT_* flags (also usable):\n"
+"    AT_EMPTY_PATH: Allow empty path (operate on dir_fd itself)\n"
+"    AT_NO_AUTOMOUNT: Don't trigger automount\n"
+"    AT_RECURSIVE: Clone entire subtree\n"
+"    AT_SYMLINK_NOFOLLOW: Don't follow symbolic links\n\n"
+"Examples\n"
+"--------\n"
+">>> import truenas_os\n"
+">>> # Open a mount tree\n"
+">>> mnt_fd = truenas_os.open_tree(path='/mnt/data',\n"
+"...                                flags=truenas_os.OPEN_TREE_CLOEXEC)\n\n"
+">>> # Clone a mount tree (detached)\n"
+">>> clone_fd = truenas_os.open_tree(path='/mnt/data',\n"
+"...                                  flags=truenas_os.OPEN_TREE_CLONE |\n"
+"...                                        truenas_os.AT_RECURSIVE)\n"
+">>> # Move it to a new location\n"
+">>> truenas_os.move_mount(from_path='', to_path='/mnt/data-clone',\n"
+"...                        from_dirfd=clone_fd,\n"
+"...                        flags=truenas_os.MOVE_MOUNT_F_EMPTY_PATH)\n"
+);
+
+static PyObject *py_open_tree(PyObject *obj,
+                               PyObject *args,
+                               PyObject *kwargs)
+{
+	const char *path = NULL;
+	int dir_fd = AT_FDCWD;
+	unsigned int flags = 0;
+	const char *kwnames[] = { "path", "dir_fd", "flags", NULL };
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$siI",
+	                                 discard_const_p(char *, kwnames),
+	                                 &path, &dir_fd, &flags)) {
+		return NULL;
+	}
+
+	// Validate required keyword-only argument
+	if (path == NULL) {
+		PyErr_SetString(PyExc_TypeError,
+		                "open_tree() missing required keyword-only argument: 'path'");
+		return NULL;
+	}
+
+	return do_open_tree(dir_fd, path, flags);
 }
 
 PyDoc_STRVAR(py_move_mount__doc__,
@@ -622,6 +694,70 @@ static PyObject *py_fsmount(PyObject *obj,
 	return do_fsmount(fs_fd, flags, attr_flags);
 }
 
+PyDoc_STRVAR(py_umount2__doc__,
+"umount2(*, target, flags=0)\n"
+"--\n\n"
+"Unmount a filesystem.\n\n"
+"The umount2() system call unmounts the filesystem mounted at the specified\n"
+"target. The flags parameter controls the unmount behavior, allowing for\n"
+"forced unmounts, lazy unmounts, or expiration of mount points.\n\n"
+"All parameters are keyword-only.\n\n"
+"Parameters\n"
+"----------\n"
+"target : str\n"
+"    Path to the mount point to unmount\n"
+"flags : int, optional\n"
+"    Unmount flags (MNT_* and UMOUNT_* constants), default=0\n\n"
+"Returns\n"
+"-------\n"
+"None\n\n"
+"MNT_* and UMOUNT_* flags:\n"
+"    MNT_FORCE: Force unmount even if busy (may cause data loss)\n"
+"    MNT_DETACH: Lazy unmount - detach filesystem from hierarchy now,\n"
+"                clean up references when no longer busy\n"
+"    MNT_EXPIRE: Mark mount point as expired. If not busy, unmount it.\n"
+"                Repeated calls will unmount an expired mount.\n"
+"    UMOUNT_NOFOLLOW: Don't dereference target if it is a symbolic link\n\n"
+"Examples\n"
+"--------\n"
+">>> import truenas_os\n"
+">>> # Normal unmount\n"
+">>> truenas_os.umount2(target='/mnt/data')\n\n"
+">>> # Lazy unmount (useful when filesystem is busy)\n"
+">>> truenas_os.umount2(target='/mnt/data',\n"
+"...                     flags=truenas_os.MNT_DETACH)\n\n"
+">>> # Force unmount (may cause data loss - use with caution)\n"
+">>> truenas_os.umount2(target='/mnt/data',\n"
+"...                     flags=truenas_os.MNT_FORCE)\n\n"
+">>> # Don't follow symbolic links\n"
+">>> truenas_os.umount2(target='/mnt/link',\n"
+"...                     flags=truenas_os.UMOUNT_NOFOLLOW)\n"
+);
+
+static PyObject *py_umount2(PyObject *obj,
+                             PyObject *args,
+                             PyObject *kwargs)
+{
+	const char *target = NULL;
+	int flags = 0;
+	const char *kwnames[] = { "target", "flags", NULL };
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$si",
+	                                 discard_const_p(char *, kwnames),
+	                                 &target, &flags)) {
+		return NULL;
+	}
+
+	// Validate required keyword-only argument
+	if (target == NULL) {
+		PyErr_SetString(PyExc_TypeError,
+		                "umount2() missing required keyword-only argument: 'target'");
+		return NULL;
+	}
+
+	return do_umount2(target, flags);
+}
+
 static PyMethodDef truenas_os_methods[] = {
 	{
 		.ml_name = "open_mount_by_id",
@@ -660,6 +796,12 @@ static PyMethodDef truenas_os_methods[] = {
 		.ml_doc = py_openat2__doc__
 	},
 	{
+		.ml_name = "open_tree",
+		.ml_meth = (PyCFunction)py_open_tree,
+		.ml_flags = METH_VARARGS|METH_KEYWORDS,
+		.ml_doc = py_open_tree__doc__
+	},
+	{
 		.ml_name = "move_mount",
 		.ml_meth = (PyCFunction)py_move_mount,
 		.ml_flags = METH_VARARGS|METH_KEYWORDS,
@@ -688,6 +830,12 @@ static PyMethodDef truenas_os_methods[] = {
 		.ml_meth = (PyCFunction)py_fsmount,
 		.ml_flags = METH_VARARGS|METH_KEYWORDS,
 		.ml_doc = py_fsmount__doc__
+	},
+	{
+		.ml_name = "umount2",
+		.ml_meth = (PyCFunction)py_umount2,
+		.ml_flags = METH_VARARGS|METH_KEYWORDS,
+		.ml_doc = py_umount2__doc__
 	},
 	{ .ml_name = NULL }
 };
@@ -743,6 +891,12 @@ PyObject* module_init(void)
 		return NULL;
 	}
 
+	// Initialize open_tree constants
+	if (init_open_tree_constants(m) < 0) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
 	// Initialize move_mount constants
 	if (init_move_mount_constants(m) < 0) {
 		Py_DECREF(m);
@@ -757,6 +911,12 @@ PyObject* module_init(void)
 
 	// Initialize fsmount constants
 	if (init_fsmount_constants(m) < 0) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	// Initialize umount2 constants
+	if (init_umount2_constants(m) < 0) {
 		Py_DECREF(m);
 		return NULL;
 	}
