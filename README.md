@@ -7,6 +7,7 @@ This module provides Python access to Linux-specific system calls that are not a
 ## Features
 
 - **Mount Management**: List, query, and iterate over filesystem mounts
+- **Filesystem Context API**: Modern mount API using fsopen/fsconfig/fsmount
 - **Extended File Operations**: Advanced file opening with path resolution control
 - **File Handles**: Create and use filesystem-independent file handles
 - **Extended Stat**: Get detailed file metadata including creation time and mount IDs
@@ -174,6 +175,212 @@ truenas_os.move_mount(
 - `MOVE_MOUNT_T_EMPTY_PATH` - Empty to path permitted
 - `MOVE_MOUNT_SET_GROUP` - Set sharing group instead
 - `MOVE_MOUNT_BENEATH` - Mount beneath top mount
+
+---
+
+#### `mount_setattr(*, path, attr_set=0, attr_clr=0, propagation=0, userns_fd=0, dirfd=AT_FDCWD, flags=0)`
+
+Change properties of a mount or mount tree.
+
+```python
+import truenas_os
+
+# Make a mount read-only
+truenas_os.mount_setattr(
+    path='/mnt/data',
+    attr_set=truenas_os.MOUNT_ATTR_RDONLY
+)
+
+# Make entire mount tree read-only recursively
+truenas_os.mount_setattr(
+    path='/mnt/data',
+    attr_set=truenas_os.MOUNT_ATTR_RDONLY,
+    flags=truenas_os.AT_RECURSIVE
+)
+```
+
+**Parameters (all keyword-only):**
+- `path` (str): Path to the mount point
+- `attr_set` (int): Mount attributes to set (MOUNT_ATTR_* constants)
+- `attr_clr` (int): Mount attributes to clear
+- `propagation` (int): Mount propagation type (MS_SHARED, MS_SLAVE, etc.)
+- `userns_fd` (int): User namespace fd for MOUNT_ATTR_IDMAP
+- `dirfd` (int): Directory fd (default: AT_FDCWD)
+- `flags` (int): Flags like AT_RECURSIVE
+
+**MOUNT_ATTR_* Constants:**
+- `MOUNT_ATTR_RDONLY` - Make mount read-only
+- `MOUNT_ATTR_NOSUID` - Ignore suid/sgid bits
+- `MOUNT_ATTR_NODEV` - Disallow device access
+- `MOUNT_ATTR_NOEXEC` - Disallow program execution
+- `MOUNT_ATTR_RELATIME` - Update atime relatively
+- `MOUNT_ATTR_NOATIME` - Do not update access times
+- `MOUNT_ATTR_STRICTATIME` - Always update atime
+- `MOUNT_ATTR_NODIRATIME` - Do not update directory access times
+
+---
+
+### Filesystem Context Operations
+
+The filesystem context API (fsopen/fsconfig/fsmount) provides a modern, programmatic way to create and configure filesystems before mounting them. This API separates filesystem creation from mount point attachment, allowing fine-grained control over mount options.
+
+#### `fsopen(*, fs_name, flags=0)`
+
+Open a filesystem context for configuration.
+
+```python
+import truenas_os
+
+# Create a filesystem context for tmpfs
+fs_fd = truenas_os.fsopen(
+    fs_name='tmpfs',
+    flags=truenas_os.FSOPEN_CLOEXEC
+)
+```
+
+**Parameters (all keyword-only):**
+- `fs_name` (str): Filesystem type (e.g., 'ext4', 'xfs', 'tmpfs', 'btrfs')
+- `flags` (int): Control flags (default: 0)
+
+**Returns:** File descriptor for the filesystem context
+
+**FSOPEN_* Constants:**
+- `FSOPEN_CLOEXEC` - Set close-on-exec flag
+
+---
+
+#### `fsconfig(*, fs_fd, cmd, key=None, value=None, aux=0)`
+
+Configure a filesystem context.
+
+```python
+import truenas_os
+
+fs_fd = truenas_os.fsopen(fs_name='tmpfs', flags=truenas_os.FSOPEN_CLOEXEC)
+
+# Set filesystem size
+truenas_os.fsconfig(
+    fs_fd=fs_fd,
+    cmd=truenas_os.FSCONFIG_SET_STRING,
+    key='size',
+    value='1G'
+)
+
+# Set another option
+truenas_os.fsconfig(
+    fs_fd=fs_fd,
+    cmd=truenas_os.FSCONFIG_SET_STRING,
+    key='mode',
+    value='0755'
+)
+
+# Create the filesystem
+truenas_os.fsconfig(
+    fs_fd=fs_fd,
+    cmd=truenas_os.FSCONFIG_CMD_CREATE
+)
+```
+
+**Parameters (all keyword-only):**
+- `fs_fd` (int): File descriptor from fsopen()
+- `cmd` (int): Configuration command (FSCONFIG_* constant)
+- `key` (str): Option name (for SET_* commands)
+- `value` (str|bytes|int): Option value
+- `aux` (int): Auxiliary parameter (for FSCONFIG_SET_FD)
+
+**Returns:** None
+
+**FSCONFIG_* Commands:**
+- `FSCONFIG_SET_FLAG` - Set a flag option (key only, no value)
+- `FSCONFIG_SET_STRING` - Set a string-valued option
+- `FSCONFIG_SET_BINARY` - Set a binary blob option
+- `FSCONFIG_SET_PATH` - Set an option from a file path
+- `FSCONFIG_SET_PATH_EMPTY` - Set from an empty path
+- `FSCONFIG_SET_FD` - Set from a file descriptor
+- `FSCONFIG_CMD_CREATE` - Create the filesystem (call after configuration)
+- `FSCONFIG_CMD_RECONFIGURE` - Reconfigure an existing filesystem
+
+---
+
+#### `fsmount(*, fs_fd, flags=0, attr_flags=0)`
+
+Create a mount object from a configured filesystem context.
+
+```python
+import truenas_os
+import os
+
+# Create and configure filesystem
+fs_fd = truenas_os.fsopen(fs_name='tmpfs', flags=truenas_os.FSOPEN_CLOEXEC)
+truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_SET_STRING,
+                    key='size', value='512M')
+truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_CMD_CREATE)
+
+# Create mount object with read-only attribute
+mnt_fd = truenas_os.fsmount(
+    fs_fd=fs_fd,
+    flags=truenas_os.FSMOUNT_CLOEXEC,
+    attr_flags=truenas_os.MOUNT_ATTR_RDONLY
+)
+os.close(fs_fd)
+
+# Attach to filesystem tree
+truenas_os.move_mount(
+    from_path='',
+    to_path='/mnt/mytmpfs',
+    from_dirfd=mnt_fd,
+    flags=truenas_os.MOVE_MOUNT_F_EMPTY_PATH
+)
+os.close(mnt_fd)
+```
+
+**Parameters (all keyword-only):**
+- `fs_fd` (int): File descriptor from fsopen() (after configuration)
+- `flags` (int): Mount flags (FSMOUNT_* constants)
+- `attr_flags` (int): Mount attributes (MOUNT_ATTR_* constants)
+
+**Returns:** File descriptor for the mount object
+
+**FSMOUNT_* Constants:**
+- `FSMOUNT_CLOEXEC` - Set close-on-exec flag
+
+**Complete Example:**
+
+```python
+import truenas_os
+import os
+
+# 1. Create filesystem context
+fs_fd = truenas_os.fsopen(fs_name='tmpfs', flags=truenas_os.FSOPEN_CLOEXEC)
+
+# 2. Configure filesystem options
+truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_SET_STRING,
+                    key='size', value='100M')
+truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_SET_STRING,
+                    key='nr_inodes', value='10k')
+
+# 3. Create the filesystem
+truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_CMD_CREATE)
+
+# 4. Create mount object with attributes
+mnt_fd = truenas_os.fsmount(
+    fs_fd=fs_fd,
+    flags=truenas_os.FSMOUNT_CLOEXEC,
+    attr_flags=truenas_os.MOUNT_ATTR_NOSUID | truenas_os.MOUNT_ATTR_NODEV
+)
+os.close(fs_fd)
+
+# 5. Attach mount to the filesystem tree
+truenas_os.move_mount(
+    from_path='',
+    to_path='/mnt/secure_tmp',
+    from_dirfd=mnt_fd,
+    flags=truenas_os.MOVE_MOUNT_F_EMPTY_PATH
+)
+os.close(mnt_fd)
+
+print("Filesystem mounted at /mnt/secure_tmp")
+```
 
 ---
 
@@ -377,7 +584,9 @@ Contributions are welcome! Please ensure:
 ## See Also
 
 - `mount(2)`, `statmount(2)`, `listmount(2)` - Mount operations
+- `fsopen(2)`, `fsconfig(2)`, `fsmount(2)` - Filesystem context operations
+- `mount_setattr(2)` - Change mount attributes
+- `move_mount(2)` - Move mount operations
 - `openat2(2)` - Extended open with path resolution
 - `statx(2)` - Extended file status
 - `name_to_handle_at(2)`, `open_by_handle_at(2)` - File handle operations
-- `move_mount(2)` - Move mount operations
