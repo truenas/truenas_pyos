@@ -1,2 +1,1 @@
 include truenas_os.pyi
-include py.typed
