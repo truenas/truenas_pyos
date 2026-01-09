@@ -256,6 +256,140 @@ def move_mount(
     """
     ...
 
+# mount_setattr function
+def mount_setattr(
+    *,
+    path: str,
+    attr_set: int = 0,
+    attr_clr: int = 0,
+    propagation: int = 0,
+    userns_fd: int = 0,
+    dirfd: int = ...,  # Default: AT_FDCWD
+    flags: int = 0,
+) -> None:
+    """Change properties of a mount or mount tree.
+
+    The mount_setattr() system call changes the mount properties of a mount
+    or an entire mount tree. If path is a relative pathname, then it is
+    interpreted relative to the directory referred to by dirfd.
+
+    If flags includes AT_RECURSIVE, all mounts in the subtree are affected.
+
+    Parameters
+    ----------
+    path : str
+        Path to the mount point (can be relative to dirfd)
+    attr_set : int, optional
+        Mount attributes to set (MOUNT_ATTR_* constants)
+    attr_clr : int, optional
+        Mount attributes to clear (MOUNT_ATTR_* constants)
+    propagation : int, optional
+        Mount propagation type (MS_SHARED, MS_SLAVE, MS_PRIVATE, MS_UNBINDABLE)
+    userns_fd : int, optional
+        User namespace file descriptor for MOUNT_ATTR_IDMAP
+    dirfd : int, optional
+        Directory file descriptor
+    flags : int, optional
+        Flags (AT_EMPTY_PATH, AT_RECURSIVE, AT_SYMLINK_NOFOLLOW, etc.)
+    """
+    ...
+
+# fsopen function
+def fsopen(
+    *,
+    fs_name: str,
+    flags: int = 0,
+) -> int:
+    """Open a filesystem context for configuration.
+
+    The fsopen() system call creates a blank filesystem configuration context
+    for the filesystem type specified by fs_name. This context can then be
+    configured using fsconfig() before creating a mount with fsmount().
+
+    Parameters
+    ----------
+    fs_name : str
+        Filesystem type name (e.g., 'ext4', 'xfs', 'tmpfs')
+    flags : int, optional
+        Flags controlling behavior (FSOPEN_* constants)
+
+    Returns
+    -------
+    int
+        File descriptor for the filesystem context
+    """
+    ...
+
+# fsconfig function
+def fsconfig(
+    *,
+    fs_fd: int,
+    cmd: int,
+    key: str | None = None,
+    value: str | bytes | None = None,
+    aux: int = 0,
+) -> None:
+    """Configure a filesystem context.
+
+    The fsconfig() system call is used to configure a filesystem context
+    created by fsopen(). It can set options, provide a source device, and
+    trigger filesystem creation or reconfiguration.
+
+    Parameters
+    ----------
+    fs_fd : int
+        File descriptor from fsopen()
+    cmd : int
+        Configuration command (FSCONFIG_* constants)
+    key : str | None, optional
+        Option name (for SET_FLAG, SET_STRING, SET_PATH, etc.)
+    value : str | bytes | None, optional
+        Option value (for SET_STRING, SET_BINARY, SET_PATH, etc.)
+    aux : int, optional
+        Auxiliary parameter (for SET_FD)
+
+    FSCONFIG_* commands
+    -------------------
+    FSCONFIG_SET_FLAG : Set a flag option (key only, no value)
+    FSCONFIG_SET_STRING : Set a string-valued option
+    FSCONFIG_SET_BINARY : Set a binary blob option
+    FSCONFIG_SET_PATH : Set an option from a file path
+    FSCONFIG_SET_PATH_EMPTY : Set from an empty path
+    FSCONFIG_SET_FD : Set from a file descriptor
+    FSCONFIG_CMD_CREATE : Create the filesystem
+    FSCONFIG_CMD_RECONFIGURE : Reconfigure the filesystem
+    """
+    ...
+
+# fsmount function
+def fsmount(
+    *,
+    fs_fd: int,
+    flags: int = 0,
+    attr_flags: int = 0,
+) -> int:
+    """Create a mount object from a configured filesystem context.
+
+    The fsmount() system call takes a filesystem context created by fsopen()
+    and configured with fsconfig(), and creates a mount object. This mount
+    can then be attached to the filesystem tree using move_mount().
+
+    Parameters
+    ----------
+    fs_fd : int
+        File descriptor from fsopen() (after configuration with fsconfig())
+    flags : int, optional
+        Mount flags (FSMOUNT_* constants)
+    attr_flags : int, optional
+        Mount attribute flags (MOUNT_ATTR_* constants)
+
+    Returns
+    -------
+    int
+        File descriptor for the mount object
+    """
+    ...
+
 # STATX constants
 STATX_TYPE: int
 STATX_MODE: int
@@ -289,6 +423,7 @@ AT_EMPTY_PATH: int
 AT_STATX_SYNC_AS_STAT: int
 AT_STATX_FORCE_SYNC: int
 AT_STATX_DONT_SYNC: int
+AT_RECURSIVE: int  # Apply to entire subtree (for mount_setattr)
 
 # STATX_ATTR constants
 STATX_ATTR_COMPRESSED: int
@@ -356,6 +491,22 @@ FH_AT_SYMLINK_FOLLOW: int
 FH_AT_EMPTY_PATH: int
 FH_AT_HANDLE_FID: int
 FH_AT_HANDLE_CONNECTABLE: int
+
+# FSOPEN constants (for fsopen)
+FSOPEN_CLOEXEC: int  # Close-on-exec flag
+
+# FSCONFIG constants (for fsconfig commands)
+FSCONFIG_SET_FLAG: int  # Set parameter, supplying no value
+FSCONFIG_SET_STRING: int  # Set parameter, supplying a string value
+FSCONFIG_SET_BINARY: int  # Set parameter, supplying a binary blob value
+FSCONFIG_SET_PATH: int  # Set parameter, supplying an object by path
+FSCONFIG_SET_PATH_EMPTY: int  # Set parameter, supplying an object by (empty) path
+FSCONFIG_SET_FD: int  # Set parameter, supplying an object by fd
+FSCONFIG_CMD_CREATE: int  # Invoke superblock creation
+FSCONFIG_CMD_RECONFIGURE: int  # Invoke superblock reconfiguration
+
+# FSMOUNT constants (for fsmount)
+FSMOUNT_CLOEXEC: int  # Close-on-exec flag
 
 # fhandle type
 class fhandle:
