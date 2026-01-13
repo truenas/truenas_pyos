@@ -148,6 +148,7 @@ PyObject *do_listmount(uint64_t mnt_id, uint64_t last_mnt_id, int reverse)
 	ssize_t count;
 	PyObject *result = NULL;
 	PyObject *item = NULL;
+	unsigned long flags = reverse ? LISTMOUNT_REVERSE : 0;
 
 	result = PyList_New(0);
 	if (result == NULL) {
@@ -157,14 +158,11 @@ PyObject *do_listmount(uint64_t mnt_id, uint64_t last_mnt_id, int reverse)
 	req.size = MNT_ID_REQ_SIZE_VER1;
 	req.mnt_id = mnt_id;
 	req.param = last_mnt_id;
-	if (reverse) {
-		req.param |= LISTMOUNT_REVERSE;
-	}
 
 	// Loop until we get all mount IDs
 	while (1) {
 		Py_BEGIN_ALLOW_THREADS
-		count = syscall(__NR_listmount, &req, mnt_ids, LISTMOUNT_BATCH_SIZE, 0);
+		count = syscall(__NR_listmount, &req, mnt_ids, LISTMOUNT_BATCH_SIZE, flags);
 		Py_END_ALLOW_THREADS
 
 		if (count < 0) {

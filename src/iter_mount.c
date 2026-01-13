@@ -38,9 +38,6 @@ mount_iter_init(MountIterator *self, PyObject *args, PyObject *kwargs)
 	self->req.size = MNT_ID_REQ_SIZE_VER1;
 	self->req.mnt_id = mnt_id;
 	self->req.param = last_mnt_id;
-	if (reverse) {
-		self->req.param |= LISTMOUNT_REVERSE;
-	}
 
 	self->current_idx = 0;
 	self->statmount_flags = statmount_flags;
@@ -48,7 +45,7 @@ mount_iter_init(MountIterator *self, PyObject *args, PyObject *kwargs)
 	// Fetch the first batch
 	Py_BEGIN_ALLOW_THREADS
 	count = syscall(__NR_listmount, &self->req, self->mnt_ids,
-			LISTMOUNT_BATCH_SIZE, 0);
+			LISTMOUNT_BATCH_SIZE, reverse ? LISTMOUNT_REVERSE : 0);
 	Py_END_ALLOW_THREADS
 
 	if (count < 0) {
