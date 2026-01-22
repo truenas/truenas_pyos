@@ -3,6 +3,7 @@
 #include <Python.h>
 #include "common/includes.h"
 #include "mount.h"
+#include "truenas_os_state.h"
 #include <linux/mount.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -85,8 +86,6 @@ static PyStructSequence_Desc statmount_result_desc = {
 		+ 1
 #endif
 };
-
-static PyTypeObject StatmountResultType;
 
 // Calculate field indices dynamically based on what's compiled in
 #define IDX_MASK (18)  // Always last base field
@@ -214,6 +213,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	size_t buf_size = sizeof(stack_buf);
 	ssize_t ret;
 	PyObject *result = NULL;
+	truenas_os_state_t *state;
 
 	req.size = MNT_ID_REQ_SIZE_VER1;
 	req.mnt_id = mnt_id;
@@ -245,7 +245,14 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 		return NULL;
 	}
 
-	result = PyStructSequence_New(&StatmountResultType);
+	state = get_truenas_os_state(NULL);
+	if (state == NULL || state->StatmountResultType == NULL) {
+		PyMem_RawFree(dynamic_buf);
+		PyErr_SetString(PyExc_SystemError, "StatmountResult type not initialized");
+		return NULL;
+	}
+
+	result = PyStructSequence_New((PyTypeObject *)state->StatmountResultType);
 	if (result == NULL) {
 		PyMem_RawFree(dynamic_buf);
 		return NULL;
@@ -616,15 +623,64 @@ cleanup:
 	return result;
 }
 
+/*
+ * C wrapper for statmount() - returns pointer to statmount struct
+ * Caller must free the returned pointer with PyMem_RawFree()
+ * Returns NULL with errno set on error
+ */
+struct statmount *statmount_impl(uint64_t mnt_id, uint64_t mask)
+{
+	struct mnt_id_req req = {0};
+	struct statmount *sm;
+	size_t buf_size = 4096;
+	ssize_t ret;
+
+	req.size = MNT_ID_REQ_SIZE_VER1;
+	req.mnt_id = mnt_id;
+	req.param = mask;
+
+	sm = PyMem_RawMalloc(buf_size);
+	if (sm == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	ret = syscall(__NR_statmount, &req, sm, buf_size, 0);
+
+	// If buffer too small, reallocate in 4KB increments
+	while (ret < 0 && errno == EOVERFLOW) {
+		buf_size += 4096;
+		sm = PyMem_RawRealloc(sm, buf_size);
+		if (sm == NULL) {
+			errno = ENOMEM;
+			return NULL;
+		}
+
+		ret = syscall(__NR_statmount, &req, sm, buf_size, 0);
+	}
+
+	if (ret < 0) {
+		PyMem_RawFree(sm);
+		return NULL;
+	}
+
+	return sm;
+}
+
 int init_mount_types(PyObject *module)
 {
-	if (PyStructSequence_InitType2(&StatmountResultType, &statmount_result_desc) < 0) {
+	truenas_os_state_t *state = get_truenas_os_state(module);
+	if (state == NULL) {
 		return -1;
 	}
 
-	Py_INCREF(&StatmountResultType);
-	if (PyModule_AddObject(module, "StatmountResult", (PyObject *)&StatmountResultType) < 0) {
-		Py_DECREF(&StatmountResultType);
+	/* Create type dynamically and store in module state */
+	state->StatmountResultType = (PyObject *)PyStructSequence_NewType(&statmount_result_desc);
+	if (state->StatmountResultType == NULL) {
+		return -1;
+	}
+
+	if (PyModule_AddObjectRef(module, "StatmountResult", state->StatmountResultType) < 0) {
 		return -1;
 	}
 

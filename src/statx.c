@@ -3,6 +3,7 @@
 #include <Python.h>
 #include "common/includes.h"
 #include "statx.h"
+#include "truenas_os_state.h"
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -71,30 +72,24 @@ static PyStructSequence_Desc statx_result_desc = {
 #endif
 };
 
-static PyTypeObject StatxResultType;
-
-PyObject *do_statx(int dirfd, const char *pathname, int flags, unsigned int mask)
+/*
+ * Convert struct statx to Python StatxResult object
+ */
+PyObject *statx_to_pyobject(const struct statx *stx)
 {
-	struct statx stx;
-	int ret;
 	PyObject *result = NULL;
+	PyObject *tmp = NULL;
+	truenas_os_state_t *state = get_truenas_os_state(NULL);
 
-	Py_BEGIN_ALLOW_THREADS
-	ret = syscall(SYS_statx, dirfd, pathname, flags, mask, &stx);
-	Py_END_ALLOW_THREADS
-
-	if (ret < 0) {
-		PyErr_SetFromErrno(PyExc_OSError);
+	if (state == NULL || state->StatxResultType == NULL) {
+		PyErr_SetString(PyExc_SystemError, "StatxResult type not initialized");
 		return NULL;
 	}
 
-	result = PyStructSequence_New(&StatxResultType);
+	result = PyStructSequence_New((PyTypeObject *)state->StatxResultType);
 	if (result == NULL) {
 		return NULL;
 	}
-
-	// Set fields
-	PyObject *tmp = NULL;
 
 	#define SET_FIELD(idx, value) do { \
 		tmp = (value); \
@@ -105,51 +100,51 @@ PyObject *do_statx(int dirfd, const char *pathname, int flags, unsigned int mask
 		PyStructSequence_SET_ITEM(result, idx, tmp); \
 	} while(0)
 
-	SET_FIELD(0, PyLong_FromUnsignedLong(stx.stx_mask));
-	SET_FIELD(1, PyLong_FromUnsignedLong(stx.stx_blksize));
-	SET_FIELD(2, PyLong_FromUnsignedLongLong(stx.stx_attributes));
-	SET_FIELD(3, PyLong_FromUnsignedLong(stx.stx_nlink));
-	SET_FIELD(4, PyLong_FromUnsignedLong(stx.stx_uid));
-	SET_FIELD(5, PyLong_FromUnsignedLong(stx.stx_gid));
-	SET_FIELD(6, PyLong_FromUnsignedLong(stx.stx_mode));
-	SET_FIELD(7, PyLong_FromUnsignedLongLong(stx.stx_ino));
-	SET_FIELD(8, PyLong_FromLongLong(stx.stx_size));
-	SET_FIELD(9, PyLong_FromUnsignedLongLong(stx.stx_blocks));
-	SET_FIELD(10, PyLong_FromUnsignedLongLong(stx.stx_attributes_mask));
+	SET_FIELD(0, PyLong_FromUnsignedLong(stx->stx_mask));
+	SET_FIELD(1, PyLong_FromUnsignedLong(stx->stx_blksize));
+	SET_FIELD(2, PyLong_FromUnsignedLongLong(stx->stx_attributes));
+	SET_FIELD(3, PyLong_FromUnsignedLong(stx->stx_nlink));
+	SET_FIELD(4, PyLong_FromUnsignedLong(stx->stx_uid));
+	SET_FIELD(5, PyLong_FromUnsignedLong(stx->stx_gid));
+	SET_FIELD(6, PyLong_FromUnsignedLong(stx->stx_mode));
+	SET_FIELD(7, PyLong_FromUnsignedLongLong(stx->stx_ino));
+	SET_FIELD(8, PyLong_FromLongLong(stx->stx_size));
+	SET_FIELD(9, PyLong_FromUnsignedLongLong(stx->stx_blocks));
+	SET_FIELD(10, PyLong_FromUnsignedLongLong(stx->stx_attributes_mask));
 
 	// stx_atime as float and stx_atime_ns as total nanoseconds
-	SET_FIELD(11, PyFloat_FromDouble((double)stx.stx_atime.tv_sec + stx.stx_atime.tv_nsec * 1e-9));
-	SET_FIELD(12, PyLong_FromLongLong((long long)stx.stx_atime.tv_sec * 1000000000LL + stx.stx_atime.tv_nsec));
+	SET_FIELD(11, PyFloat_FromDouble((double)stx->stx_atime.tv_sec + stx->stx_atime.tv_nsec * 1e-9));
+	SET_FIELD(12, PyLong_FromLongLong((long long)stx->stx_atime.tv_sec * 1000000000LL + stx->stx_atime.tv_nsec));
 
 	// stx_btime as float and stx_btime_ns as total nanoseconds
-	SET_FIELD(13, PyFloat_FromDouble((double)stx.stx_btime.tv_sec + stx.stx_btime.tv_nsec * 1e-9));
-	SET_FIELD(14, PyLong_FromLongLong((long long)stx.stx_btime.tv_sec * 1000000000LL + stx.stx_btime.tv_nsec));
+	SET_FIELD(13, PyFloat_FromDouble((double)stx->stx_btime.tv_sec + stx->stx_btime.tv_nsec * 1e-9));
+	SET_FIELD(14, PyLong_FromLongLong((long long)stx->stx_btime.tv_sec * 1000000000LL + stx->stx_btime.tv_nsec));
 
 	// stx_ctime as float and stx_ctime_ns as total nanoseconds
-	SET_FIELD(15, PyFloat_FromDouble((double)stx.stx_ctime.tv_sec + stx.stx_ctime.tv_nsec * 1e-9));
-	SET_FIELD(16, PyLong_FromLongLong((long long)stx.stx_ctime.tv_sec * 1000000000LL + stx.stx_ctime.tv_nsec));
+	SET_FIELD(15, PyFloat_FromDouble((double)stx->stx_ctime.tv_sec + stx->stx_ctime.tv_nsec * 1e-9));
+	SET_FIELD(16, PyLong_FromLongLong((long long)stx->stx_ctime.tv_sec * 1000000000LL + stx->stx_ctime.tv_nsec));
 
 	// stx_mtime as float and stx_mtime_ns as total nanoseconds
-	SET_FIELD(17, PyFloat_FromDouble((double)stx.stx_mtime.tv_sec + stx.stx_mtime.tv_nsec * 1e-9));
-	SET_FIELD(18, PyLong_FromLongLong((long long)stx.stx_mtime.tv_sec * 1000000000LL + stx.stx_mtime.tv_nsec));
+	SET_FIELD(17, PyFloat_FromDouble((double)stx->stx_mtime.tv_sec + stx->stx_mtime.tv_nsec * 1e-9));
+	SET_FIELD(18, PyLong_FromLongLong((long long)stx->stx_mtime.tv_sec * 1000000000LL + stx->stx_mtime.tv_nsec));
 
-	SET_FIELD(19, PyLong_FromUnsignedLong(stx.stx_rdev_major));
-	SET_FIELD(20, PyLong_FromUnsignedLong(stx.stx_rdev_minor));
-	SET_FIELD(21, PyLong_FromUnsignedLongLong(makedev(stx.stx_rdev_major, stx.stx_rdev_minor)));
-	SET_FIELD(22, PyLong_FromUnsignedLong(stx.stx_dev_major));
-	SET_FIELD(23, PyLong_FromUnsignedLong(stx.stx_dev_minor));
-	SET_FIELD(24, PyLong_FromUnsignedLongLong(makedev(stx.stx_dev_major, stx.stx_dev_minor)));
-	SET_FIELD(25, PyLong_FromUnsignedLongLong(stx.stx_mnt_id));
-	SET_FIELD(26, PyLong_FromUnsignedLong(stx.stx_dio_mem_align));
-	SET_FIELD(27, PyLong_FromUnsignedLong(stx.stx_dio_offset_align));
-	SET_FIELD(28, PyLong_FromUnsignedLongLong(stx.stx_subvol));
-	SET_FIELD(29, PyLong_FromUnsignedLong(stx.stx_atomic_write_unit_min));
-	SET_FIELD(30, PyLong_FromUnsignedLong(stx.stx_atomic_write_unit_max));
-	SET_FIELD(31, PyLong_FromUnsignedLong(stx.stx_atomic_write_segments_max));
+	SET_FIELD(19, PyLong_FromUnsignedLong(stx->stx_rdev_major));
+	SET_FIELD(20, PyLong_FromUnsignedLong(stx->stx_rdev_minor));
+	SET_FIELD(21, PyLong_FromUnsignedLongLong(makedev(stx->stx_rdev_major, stx->stx_rdev_minor)));
+	SET_FIELD(22, PyLong_FromUnsignedLong(stx->stx_dev_major));
+	SET_FIELD(23, PyLong_FromUnsignedLong(stx->stx_dev_minor));
+	SET_FIELD(24, PyLong_FromUnsignedLongLong(makedev(stx->stx_dev_major, stx->stx_dev_minor)));
+	SET_FIELD(25, PyLong_FromUnsignedLongLong(stx->stx_mnt_id));
+	SET_FIELD(26, PyLong_FromUnsignedLong(stx->stx_dio_mem_align));
+	SET_FIELD(27, PyLong_FromUnsignedLong(stx->stx_dio_offset_align));
+	SET_FIELD(28, PyLong_FromUnsignedLongLong(stx->stx_subvol));
+	SET_FIELD(29, PyLong_FromUnsignedLong(stx->stx_atomic_write_unit_min));
+	SET_FIELD(30, PyLong_FromUnsignedLong(stx->stx_atomic_write_unit_max));
+	SET_FIELD(31, PyLong_FromUnsignedLong(stx->stx_atomic_write_segments_max));
 
 #if HAVE_STATX_DIO_READ_FIELDS
-	SET_FIELD(32, PyLong_FromUnsignedLong(stx.stx_dio_read_offset_align));
-	SET_FIELD(33, PyLong_FromUnsignedLong(stx.stx_atomic_write_unit_max_opt));
+	SET_FIELD(32, PyLong_FromUnsignedLong(stx->stx_dio_read_offset_align));
+	SET_FIELD(33, PyLong_FromUnsignedLong(stx->stx_atomic_write_unit_max_opt));
 #endif
 
 	#undef SET_FIELD
@@ -157,15 +152,45 @@ PyObject *do_statx(int dirfd, const char *pathname, int flags, unsigned int mask
 	return result;
 }
 
+/*
+ * C wrapper for statx() - returns 0 on success, -1 with errno set on error
+ */
+int statx_impl(int dirfd, const char *pathname, int flags, unsigned int mask, struct statx *stx)
+{
+	return syscall(SYS_statx, dirfd, pathname, flags, mask, stx);
+}
+
+PyObject *do_statx(int dirfd, const char *pathname, int flags, unsigned int mask)
+{
+	struct statx stx;
+	int ret;
+
+	Py_BEGIN_ALLOW_THREADS
+	ret = statx_impl(dirfd, pathname, flags, mask, &stx);
+	Py_END_ALLOW_THREADS
+
+	if (ret < 0) {
+		PyErr_SetFromErrno(PyExc_OSError);
+		return NULL;
+	}
+
+	return statx_to_pyobject(&stx);
+}
+
 int init_statx_types(PyObject *module)
 {
-	if (PyStructSequence_InitType2(&StatxResultType, &statx_result_desc) < 0) {
+	truenas_os_state_t *state = get_truenas_os_state(module);
+	if (state == NULL) {
 		return -1;
 	}
 
-	Py_INCREF(&StatxResultType);
-	if (PyModule_AddObject(module, "StatxResult", (PyObject *)&StatxResultType) < 0) {
-		Py_DECREF(&StatxResultType);
+	/* Create type dynamically and store in module state */
+	state->StatxResultType = (PyObject *)PyStructSequence_NewType(&statx_result_desc);
+	if (state->StatxResultType == NULL) {
+		return -1;
+	}
+
+	if (PyModule_AddObjectRef(module, "StatxResult", state->StatxResultType) < 0) {
 		return -1;
 	}
 

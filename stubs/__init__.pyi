@@ -512,3 +512,89 @@ FSMOUNT_CLOEXEC: int  # Close-on-exec flag
 class fhandle:
     """File handle object for name_to_handle_at and open_by_handle_at operations."""
     def __init__(self) -> None: ...
+
+# Filesystem iterator types
+class IterInstance(NamedTuple):
+    """Instance returned by filesystem iterator.
+
+    Represents a file or directory encountered during iteration.
+    The file descriptor must be closed by the caller.
+    """
+    path: str  # Absolute path to the file/directory
+    fd: int  # Open file descriptor
+    statxinfo: StatxResult  # Extended file attributes
+    isdir: bool  # True if directory, False if file
+
+class FilesystemIterState(NamedTuple):
+    """State for filesystem iteration.
+
+    Tracks iteration progress and configuration.
+    """
+    btime_cutoff: int  # Birth time cutoff (seconds since epoch, 0 to disable)
+    cnt: int  # Count of items yielded
+    cnt_bytes: int  # Total bytes of files yielded
+    resume_token_name: str | None  # Resume token xattr name (or None)
+    resume_token_data: bytes | None  # Resume token xattr data (or None)
+    file_open_flags: int  # Flags for opening files (e.g., O_RDONLY)
+
+class FilesystemIterator:
+    """Iterator for traversing filesystem contents in C.
+
+    Internal iterator object created by iter_filesystem_contents.
+    Implements depth-first traversal with GIL released during I/O.
+    """
+    def __iter__(self) -> FilesystemIterator: ...
+    def __next__(self) -> IterInstance: ...
+    def get_stats(self) -> FilesystemIterState:
+        """Return current iteration statistics.
+
+        Returns a FilesystemIterState object with current count, bytes, and configuration.
+        """
+        ...
+
+def iter_filesystem_contents(
+    mountpoint: str,
+    filesystem_name: str,
+    /,
+    *,
+    relative_path: str | None = None,
+    btime_cutoff: int = 0,
+    cnt: int = 0,
+    cnt_bytes: int = 0,
+    resume_token_name: str | None = None,
+    resume_token_data: bytes | None = None,
+    file_open_flags: int = ...,
+) -> FilesystemIterator:
+    """Iterate filesystem contents with mount validation.
+
+    Opens and validates a filesystem path, then returns an iterator that
+    yields IterInstance objects for each file and directory.
+
+    Args:
+        mountpoint: Expected mount point (e.g., "/mnt/tank/dataset")
+        filesystem_name: Filesystem source name (e.g., "tank/dataset")
+            Must match sb_source from statmount
+        relative_path: Optional path relative to mountpoint
+        btime_cutoff: Skip files with birth time > cutoff (seconds since epoch, 0=disabled)
+        cnt: Initial count of items yielded
+        cnt_bytes: Initial count of bytes yielded
+        resume_token_name: Resume token xattr name for resumption
+        resume_token_data: Resume token xattr value (must be 16 bytes if provided)
+        file_open_flags: Flags for opening files (default: O_RDONLY | O_NOFOLLOW)
+
+    Returns:
+        FilesystemIterator that yields IterInstance objects
+
+    Raises:
+        OSError: Filesystem errors (open, statx, statmount failures)
+        RuntimeError: Mount validation failures
+        NotADirectoryError: Path is not a directory
+
+    Notes:
+        - Uses openat2 with RESOLVE_NO_XDEV | RESOLVE_NO_SYMLINKS
+        - Uses statx for extended attributes including birth time
+        - Directories with matching resume tokens are skipped
+        - GIL is released during I/O operations
+        - File descriptors in IterInstance must be closed by caller
+    """
+    ...

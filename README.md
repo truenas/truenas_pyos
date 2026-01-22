@@ -4,6 +4,13 @@ Python bindings for modern Linux filesystem and mount syscalls.
 
 This module provides Python access to Linux-specific system calls that are not available in the standard library, with a focus on mount management, extended file operations, and file handle support.
 
+## Packages
+
+This repository provides two packages:
+
+- **`truenas_os`**: C extension providing Python bindings for Linux syscalls
+- **`truenas_os_utils`**: Pure Python utilities built on top of `truenas_os`
+
 ## Features
 
 - **Mount Management**: List, query, and iterate over filesystem mounts
@@ -11,6 +18,7 @@ This module provides Python access to Linux-specific system calls that are not a
 - **Extended File Operations**: Advanced file opening with path resolution control
 - **File Handles**: Create and use filesystem-independent file handles
 - **Extended Stat**: Get detailed file metadata including creation time and mount IDs
+- **Filesystem Iteration**: Secure recursive iteration over filesystem contents
 
 ## Installation
 
@@ -511,6 +519,49 @@ os.close(mount_fd)
 - `FH_AT_EMPTY_PATH` - Allow empty path with fd
 - `FH_AT_HANDLE_FID` - Return file identifier handle
 - `FH_AT_HANDLE_CONNECTABLE` - Return connectable handle
+
+---
+
+### Filesystem Iteration (`truenas_os_utils`)
+
+#### `iter_filesystem_contents(*, mountpoint, relative_path, filesystem_name, state)`
+
+Recursively iterate over filesystem contents with security guarantees.
+
+```python
+from truenas_os_utils import FilesystemIterState, iter_filesystem_contents
+
+state = FilesystemIterState()
+
+for item in iter_filesystem_contents(
+    mountpoint="/mnt/tank/dataset",
+    relative_path=None,
+    filesystem_name="tank/dataset",
+    state=state
+):
+    print(f"{'DIR' if item.isdir else 'FILE'}: {item.path}")
+    # item.fd - open file descriptor (don't close it!)
+    # item.statxinfo - StatxResult with extended attributes
+    # item.dirent - os.DirEntry object
+
+print(f"Processed {state.cnt} items")
+```
+
+**Parameters:**
+- `mountpoint` (str): Absolute path where filesystem is mounted
+- `relative_path` (str|None): Optional subdirectory to iterate (None for root)
+- `filesystem_name` (str): Filesystem source name to verify
+- `state` (FilesystemIterState): Iteration state and configuration
+
+**Returns:** Iterator yielding `IterInstance` objects (files and directories in post-order)
+
+**FilesystemIterState fields:**
+- `btime_cutoff` (int): Skip files newer than this timestamp (default: 0 = no filter)
+- `cnt` (int): Running count of items yielded (read-only)
+- `resume_token_name` (str|None): Extended attribute name for resumable iteration
+- `resume_token_data` (bytes|None): Extended attribute value for resumable iteration
+- `file_open_flags` (int): Flags for opening files (default: `O_RDWR`)
+- `dir_open_flags` (int): Flags for opening directories (default: `O_DIRECTORY`)
 
 ---
 
