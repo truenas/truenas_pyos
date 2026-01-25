@@ -30,7 +30,6 @@ typedef struct {
 typedef struct {
 	char *path;		/* Current path string (allocated) */
 	DIR *dirp;		/* DIR pointer from fdopendir */
-	int fd;			/* File descriptor for this directory */
 } iter_dir_t;
 
 /* Iteration state parameters */

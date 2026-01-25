@@ -108,83 +108,6 @@ static PyStructSequence_Desc iter_state_desc = {
 };
 
 /*
- * Convert Python FilesystemIterState to C iter_state_t
- * Returns 0 on success, -1 on error (with Python exception set)
- */
-static int
-py_fsiter_state_to_struct(PyObject *state_obj, iter_state_t *c_state)
-{
-    PyObject *btime_obj, *cnt_obj, *cnt_bytes_obj;
-    PyObject *resume_name, *resume_data, *flags_obj;
-    const char *token_name, *token_data;
-    Py_ssize_t data_len;
-    truenas_os_state_t *state;
-
-    state = get_truenas_os_state(NULL);
-    if (state == NULL || state->FilesystemIterStateType == NULL) {
-        PyErr_SetString(PyExc_SystemError, "FilesystemIterState type not initialized");
-        return -1;
-    }
-
-    if (!PyObject_TypeCheck(state_obj, (PyTypeObject *)state->FilesystemIterStateType)) {
-        PyErr_SetString(PyExc_TypeError, "state must be a FilesystemIterState object");
-        return -1;
-    }
-
-    /* Extract state values */
-    btime_obj = PyStructSequence_GET_ITEM(state_obj, STATE_BTIME_CUTOFF);
-    cnt_obj = PyStructSequence_GET_ITEM(state_obj, STATE_CNT);
-    cnt_bytes_obj = PyStructSequence_GET_ITEM(state_obj, STATE_CNT_BYTES);
-    resume_name = PyStructSequence_GET_ITEM(state_obj, STATE_RESUME_TOKEN_NAME);
-    resume_data = PyStructSequence_GET_ITEM(state_obj, STATE_RESUME_TOKEN_DATA);
-    flags_obj = PyStructSequence_GET_ITEM(state_obj, STATE_FILE_OPEN_FLAGS);
-
-    c_state->btime_cutoff = PyLong_AsLongLong(btime_obj);
-    if (c_state->btime_cutoff == -1 && PyErr_Occurred())
-        return -1;
-
-    c_state->cnt = PyLong_AsSize_t(cnt_obj);
-    if (c_state->cnt == (size_t)-1 && PyErr_Occurred())
-        return -1;
-
-    c_state->cnt_bytes = PyLong_AsSize_t(cnt_bytes_obj);
-    if (c_state->cnt_bytes == (size_t)-1 && PyErr_Occurred())
-        return -1;
-
-    c_state->file_open_flags = PyLong_AsLong(flags_obj);
-    if (c_state->file_open_flags == -1 && PyErr_Occurred())
-        return -1;
-
-    /* Handle resume token */
-    if (resume_name != Py_None && resume_data != Py_None) {
-        token_name = PyUnicode_AsUTF8(resume_name);
-        if (token_name == NULL)
-            return -1;
-
-        strncpy(c_state->resume_token_name, token_name, NAME_MAX);
-        c_state->resume_token_name[NAME_MAX] = '\0';
-
-        if (PyBytes_AsStringAndSize(resume_data, (char **)&token_data, &data_len) < 0)
-            return -1;
-
-        if (data_len != RESUME_TOKEN_MAX_LEN) {
-            PyErr_Format(PyExc_ValueError,
-                        "resume_token_data must be exactly %d bytes, got %zd",
-                        RESUME_TOKEN_MAX_LEN, data_len);
-            return -1;
-        }
-
-        memcpy(c_state->resume_token_data, token_data, RESUME_TOKEN_MAX_LEN);
-        c_state->has_resume_token = true;
-    } else {
-        c_state->has_resume_token = false;
-        c_state->resume_token_name[0] = '\0';
-    }
-
-    return 0;
-}
-
-/*
  * Convert C iter_state_t to Python FilesystemIterState
  * Returns new reference, or NULL on error
  */
@@ -306,9 +229,6 @@ FilesystemIterator_dealloc(FilesystemIteratorObject *self)
         if (self->dir_stack[i].dirp) {
             closedir(self->dir_stack[i].dirp);
         }
-        if (self->dir_stack[i].fd >= 0) {
-            close(self->dir_stack[i].fd);
-        }
         free(self->dir_stack[i].path);
     }
 
@@ -357,7 +277,7 @@ process_next_entry(FilesystemIteratorObject *self,
 	is_dir = (entry->d_type == DT_DIR);
 	open_flags = is_dir ? OFLAGS_DIR_ITER : self->state.file_open_flags;
 
-	fd = openat2_impl(cur_dir->fd, entry->d_name, open_flags, RESOLVE_FLAGS_ITER);
+	fd = openat2_impl(dirfd(cur_dir->dirp), entry->d_name, open_flags, RESOLVE_FLAGS_ITER);
 	if (fd < 0) {
 		/* ELOOP: intermediate component replaced with symlink (shouldn't be possible)
 		 * EXDEV: entry is on a different filesystem (crossed mount boundary)
@@ -455,7 +375,6 @@ push_dir_stack(FilesystemIteratorObject *self, fsiter_error_t *err)
 	}
 
 	new_dir->dirp = dirp;
-	new_dir->fd = dirfd(dirp);
 	self->cur_depth++;
 
 	return true;
@@ -480,15 +399,17 @@ pop_dir_stack(FilesystemIteratorObject *self, fsiter_error_t *err)
 	/* Set resume token xattr if configured */
 	if (self->state.has_resume_token) {
 		/* There's nothing we can really do here if we fail setxtattr */
-		fsetxattr(dir->fd, self->state.resume_token_name,
+		fsetxattr(dirfd(dir->dirp), self->state.resume_token_name,
 		          self->state.resume_token_data, RESUME_TOKEN_MAX_LEN, 0);
 	}
 
 	/* Clean up directory */
 	if (dir->dirp) {
 		closedir(dir->dirp);
+		dir->dirp = NULL;
 	}
 	free(dir->path);
+	dir->path = NULL;
 
 	self->cur_depth--;
 	return true;
@@ -764,7 +685,6 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	}
 
 	root_dir->dirp = root_dirp;
-	root_dir->fd = dirfd(root_dirp);
 	iter->cur_depth = 1;
 
 	return (PyObject *)iter;
