@@ -232,6 +232,10 @@ FilesystemIterator_dealloc(FilesystemIteratorObject *self)
         free(self->dir_stack[i].path);
     }
 
+    /* Clean up reporting callback references */
+    Py_XDECREF(self->reporting_cb);
+    Py_XDECREF(self->reporting_cb_private_data);
+
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -416,6 +420,41 @@ pop_dir_stack(FilesystemIteratorObject *self, fsiter_error_t *err)
 }
 
 /*
+ * Helper to invoke reporting callback if needed
+ * Returns true on success, false on error (with Python exception set)
+ */
+static bool
+check_and_invoke_reporting_callback(FilesystemIteratorObject *self)
+{
+	PyObject *state_obj;
+	PyObject *callback_result;
+
+	if (self->reporting_cb != NULL &&
+	    self->reporting_cb_increment &&
+	    (self->state.cnt % self->reporting_cb_increment) == 0) {
+
+		state_obj = py_fsiter_state_from_struct(&self->state);
+		if (state_obj == NULL)
+			return false;
+
+		callback_result = PyObject_CallFunctionObjArgs(
+			self->reporting_cb,
+			state_obj,
+			self->reporting_cb_private_data ? self->reporting_cb_private_data : Py_None,
+			NULL
+		);
+		Py_DECREF(state_obj);
+
+		if (callback_result == NULL)
+			return false;
+
+		Py_DECREF(callback_result);
+	}
+
+	return true;
+}
+
+/*
  * FilesystemIterator __next__
  */
 static PyObject *
@@ -494,6 +533,12 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 			self->state.cnt++;
 			self->state.cnt_bytes += self->last.st.stx_size;
 
+			/* Invoke reporting callback if needed */
+			if (!check_and_invoke_reporting_callback(self)) {
+				Py_DECREF(result);
+				return NULL;
+			}
+
 			return result;
 
 		case FSITER_YIELD_DIR:
@@ -515,6 +560,12 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 
 			/* Update counter */
 			self->state.cnt++;
+
+			/* Invoke reporting callback if needed */
+			if (!check_and_invoke_reporting_callback(self)) {
+				Py_DECREF(result);
+				return NULL;
+			}
 
 			return result;
 
@@ -588,7 +639,10 @@ static PyTypeObject FilesystemIteratorType = {
  */
 PyObject *
 create_filesystem_iterator(const char *mountpoint, const char *relative_path,
-                           const char *filesystem_name, const iter_state_t *state)
+                           const char *filesystem_name, const iter_state_t *state,
+                           size_t reporting_cb_increment,
+                           PyObject *reporting_cb,
+                           PyObject *reporting_cb_private_data)
 {
 	FilesystemIteratorObject *iter;
 	int root_fd;
@@ -599,6 +653,14 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	iter_dir_t *root_dir;
 	struct statmount *sm;
 	const char *sb_source;
+
+	/* Validate callback early before allocating resources */
+	if (reporting_cb != NULL && reporting_cb != Py_None) {
+		if (!PyCallable_Check(reporting_cb)) {
+			PyErr_SetString(PyExc_TypeError, "reporting_callback must be callable");
+			return NULL;
+		}
+	}
 
 	/* Build root path */
 	if (relative_path && relative_path[0] != '\0') {
@@ -674,6 +736,23 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 
 	/* Copy state into iterator */
 	memcpy(&iter->state, state, sizeof(iter_state_t));
+
+	/* Initialize reporting fields */
+	iter->reporting_cb_increment = reporting_cb_increment;
+
+	/* Store callback - normalize Py_None to NULL */
+	if (reporting_cb != NULL && reporting_cb != Py_None) {
+		iter->reporting_cb = Py_NewRef(reporting_cb);
+	} else {
+		iter->reporting_cb = NULL;
+	}
+
+	/* Store private data - normalize Py_None to NULL */
+	if (reporting_cb_private_data != NULL && reporting_cb_private_data != Py_None) {
+		iter->reporting_cb_private_data = Py_NewRef(reporting_cb_private_data);
+	} else {
+		iter->reporting_cb_private_data = NULL;
+	}
 
 	/* Initialize stack with root directory */
 	root_dir = &iter->dir_stack[0];

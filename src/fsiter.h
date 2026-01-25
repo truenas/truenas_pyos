@@ -52,6 +52,10 @@ typedef struct {
     iter_state_t state;                 /* Iteration state and configuration */
     iter_entry_t last;
     fsiter_error_t cerr;
+
+    size_t reporting_cb_increment;
+    PyObject *reporting_cb;
+    PyObject *reporting_cb_private_data;
 } FilesystemIteratorObject;
 
 /* Module initialization function - initializes all types */
@@ -59,6 +63,9 @@ int init_iter_types(PyObject *module);
 
 /* Create iterator object - to be called from truenas_pyos.c */
 PyObject* create_filesystem_iterator(const char *mountpoint, const char *relative_path,
-                                     const char *filesystem_name, const iter_state_t *state);
+                                     const char *filesystem_name, const iter_state_t *state,
+                                     size_t reporting_cb_increment,
+                                     PyObject *reporting_cb,
+                                     PyObject *reporting_cb_private_data);
 
 #endif /* TRUENAS_FSITER_H */

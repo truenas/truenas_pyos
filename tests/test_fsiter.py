@@ -430,3 +430,103 @@ def test_iter_deep_nesting(tmp_path):
     # Should find the deep file
     paths = [item.path for item in items]
     assert any("deep_file.txt" in p for p in paths)
+
+
+def test_iter_reporting_callback_basic(temp_mount_tree):
+    """Test that reporting callback is called at correct intervals."""
+    calls = []
+
+    def callback(state, private_data):
+        calls.append({
+            'cnt': state.cnt,
+            'private_data': private_data
+        })
+
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree),
+        reporting_increment=3,
+        reporting_callback=callback,
+        reporting_private_data="test_data"
+    )
+
+    # Consume iterator
+    items = list(iterator)
+
+    # Check callback was called at multiples of 3
+    assert len(calls) > 0
+    for call in calls:
+        assert call['cnt'] % 3 == 0
+        assert call['private_data'] == "test_data"
+
+
+def test_iter_reporting_callback_no_callback(temp_mount_tree):
+    """Test that iteration works without callback."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree),
+        reporting_increment=5
+        # No callback provided
+    )
+
+    items = list(iterator)
+    assert len(items) > 0
+
+
+def test_iter_reporting_callback_none(temp_mount_tree):
+    """Test that None callback is handled correctly."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree),
+        reporting_increment=5,
+        reporting_callback=None
+    )
+
+    items = list(iterator)
+    assert len(items) > 0
+
+
+def test_iter_reporting_callback_exception(temp_mount_tree):
+    """Test that callback exceptions stop iteration."""
+    def bad_callback(state, private_data):
+        if state.cnt >= 3:
+            raise ValueError("Callback error at cnt=3")
+
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree),
+        reporting_increment=1,
+        reporting_callback=bad_callback
+    )
+
+    # Should raise ValueError from callback
+    with pytest.raises(ValueError, match="Callback error at cnt=3"):
+        list(iterator)
+
+
+def test_iter_reporting_callback_not_callable(temp_mount_tree):
+    """Test that non-callable callback raises TypeError."""
+    with pytest.raises(TypeError, match="reporting_callback must be callable"):
+        truenas_os.iter_filesystem_contents(
+            str(temp_mount_tree),
+            get_filesystem_name(temp_mount_tree),
+            reporting_callback="not a function"
+        )
+
+
+def test_iter_reporting_increment_zero(temp_mount_tree):
+    """Test that increment=0 disables callbacks."""
+    call_count = [0]
+
+    def callback(state, private_data):
+        call_count[0] += 1
+
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree),
+        reporting_increment=0,  # Should disable
+        reporting_callback=callback
+    )
+
+    list(iterator)
+    assert call_count[0] == 0  # Never called

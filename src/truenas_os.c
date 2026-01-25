@@ -764,7 +764,8 @@ PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
 "iter_filesystem_contents(mountpoint, filesystem_name, relative_path=None, /,\n"
 "                         btime_cutoff=0, cnt=0, cnt_bytes=0,\n"
 "                         resume_token_name=None, resume_token_data=None,\n"
-"                         file_open_flags=0)\n"
+"                         file_open_flags=0, reporting_increment=1000,\n"
+"                         reporting_callback=None, reporting_private_data=None)\n"
 "--\n\n"
 "Iterate over all files and directories in a filesystem.\n"
 "Provides secure iteration using openat2 and statx, preventing symlink attacks\n"
@@ -790,6 +791,13 @@ PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
 "    16-byte resume token value. Must be set with resume_token_name\n"
 "file_open_flags : int, optional, default=0\n"
 "    Flags to use when opening files. O_NOFOLLOW is always added automatically\n"
+"reporting_increment : int, optional, default=1000\n"
+"    Call reporting_callback every N items processed. Set to 0 to disable\n"
+"reporting_callback : callable, optional\n"
+"    Function to call with (state, reporting_private_data) every reporting_increment items.\n"
+"    The state parameter is a FilesystemIterState object with current iteration statistics\n"
+"reporting_private_data : object, optional\n"
+"    User data to pass to reporting_callback\n"
 "Returns\n"
 "-------\n"
 "iterator : FilesystemIterator\n"
@@ -810,18 +818,25 @@ py_iter_filesystem_contents(PyObject *self, PyObject *args, PyObject *kwargs)
 	Py_ssize_t resume_token_data_len = 0;
 	iter_state_t state = {0};
 
+	/* New reporting parameters */
+	size_t reporting_cb_increment = 1000;
+	PyObject *reporting_cb = NULL;
+	PyObject *reporting_cb_private_data = NULL;
+
 	static char *kwlist[] = {
 		"mountpoint", "filesystem_name", "relative_path",
 		"btime_cutoff", "cnt", "cnt_bytes",
 		"resume_token_name", "resume_token_data", "file_open_flags",
+		"reporting_increment", "reporting_callback", "reporting_private_data",
 		NULL
 	};
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ss|zLKKsy#i:iter_filesystem_contents", kwlist,
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ss|zLKKsy#iKOO:iter_filesystem_contents", kwlist,
 					  &mountpoint, &filesystem_name, &relative_path,
 					  &state.btime_cutoff, &state.cnt, &state.cnt_bytes,
 					  &resume_token_name, &resume_token_data, &resume_token_data_len,
-					  &state.file_open_flags)) {
+					  &state.file_open_flags,
+					  &reporting_cb_increment, &reporting_cb, &reporting_cb_private_data)) {
 		return NULL;
 	}
 
@@ -840,7 +855,8 @@ py_iter_filesystem_contents(PyObject *self, PyObject *args, PyObject *kwargs)
 		state.has_resume_token = true;
 	}
 
-	return create_filesystem_iterator(mountpoint, relative_path, filesystem_name, &state);
+	return create_filesystem_iterator(mountpoint, relative_path, filesystem_name, &state,
+	                                  reporting_cb_increment, reporting_cb, reporting_cb_private_data);
 }
 
 static PyMethodDef truenas_os_methods[] = {

@@ -4,7 +4,7 @@ This module provides Python bindings to Linux kernel system calls for
 advanced filesystem and mount operations.
 """
 
-from typing import Iterator, NamedTuple
+from typing import Any, Callable, Iterator, NamedTuple
 
 # StatxResult type - PyStructSequence from statx(2)
 class StatxResult(NamedTuple):
@@ -564,6 +564,9 @@ def iter_filesystem_contents(
     resume_token_name: str | None = None,
     resume_token_data: bytes | None = None,
     file_open_flags: int = ...,
+    reporting_increment: int = 1000,
+    reporting_callback: Callable[[FilesystemIterState, Any], Any] | None = None,
+    reporting_private_data: Any = None,
 ) -> FilesystemIterator:
     """Iterate filesystem contents with mount validation.
 
@@ -581,6 +584,10 @@ def iter_filesystem_contents(
         resume_token_name: Resume token xattr name for resumption
         resume_token_data: Resume token xattr value (must be 16 bytes if provided)
         file_open_flags: Flags for opening files (default: O_RDONLY | O_NOFOLLOW)
+        reporting_increment: Call reporting_callback every N items (0 to disable)
+        reporting_callback: Callback function(state, private_data) called every
+            reporting_increment items with current iteration state
+        reporting_private_data: User data passed to reporting_callback
 
     Returns:
         FilesystemIterator that yields IterInstance objects
@@ -589,6 +596,7 @@ def iter_filesystem_contents(
         OSError: Filesystem errors (open, statx, statmount failures)
         RuntimeError: Mount validation failures
         NotADirectoryError: Path is not a directory
+        TypeError: reporting_callback is not callable
 
     Notes:
         - Uses openat2 with RESOLVE_NO_XDEV | RESOLVE_NO_SYMLINKS
@@ -596,5 +604,7 @@ def iter_filesystem_contents(
         - Directories with matching resume tokens are skipped
         - GIL is released during I/O operations
         - File descriptors in IterInstance must be closed by caller
+        - Reporting callback is invoked with GIL held after every Nth item
+        - If callback raises an exception, iteration stops
     """
     ...
