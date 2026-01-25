@@ -73,7 +73,7 @@ static PyStructSequence_Field iter_instance_fields[] = {
 };
 
 static PyStructSequence_Desc iter_instance_desc = {
-    "IterInstance",
+    "truenas_os.IterInstance",
     "Filesystem iteration instance",
     iter_instance_fields,
     ITER_INST_NUM_FIELDS
@@ -101,7 +101,7 @@ static PyStructSequence_Field iter_state_fields[] = {
 };
 
 static PyStructSequence_Desc iter_state_desc = {
-    "FilesystemIterState",
+    "truenas_os.FilesystemIterState",
     "Filesystem iteration state",
     iter_state_fields,
     STATE_NUM_FIELDS
@@ -535,7 +535,7 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 			}
 			/* Directory exhausted */
 			action = FSITER_POP_DIR;
-		} else if (ISDOT(dirent->d_name) || ISDOTDOT(dirent->d_name)) {
+		} else if (ISDOT(direntp->d_name) || ISDOTDOT(direntp->d_name)) {
 			/* skip . and .. */
 			action = FSITER_CONTINUE;
 		} else {

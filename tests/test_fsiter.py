@@ -1,0 +1,432 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+
+import pytest
+import truenas_os
+import os
+import stat
+import time
+
+
+def test_iter_filesystem_exists():
+    """Test that iter_filesystem_contents function exists."""
+    assert hasattr(truenas_os, 'iter_filesystem_contents')
+
+
+def test_iter_types_exist():
+    """Test that iterator types are available."""
+    assert hasattr(truenas_os, 'FilesystemIterState')
+    assert hasattr(truenas_os, 'IterInstance')
+
+
+@pytest.fixture
+def temp_mount_tree(tmp_path):
+    """Create a temporary directory tree for testing.
+
+    Creates structure:
+    /tmp_path/
+        file1.txt (100 bytes)
+        file2.txt (200 bytes)
+        dir1/
+            nested1.txt (50 bytes)
+            nested2.txt (75 bytes)
+        dir2/
+            subdir/
+                deep.txt (25 bytes)
+        emptydir/
+    """
+    # Create files and directories
+    (tmp_path / "file1.txt").write_bytes(b"x" * 100)
+    (tmp_path / "file2.txt").write_bytes(b"y" * 200)
+
+    dir1 = tmp_path / "dir1"
+    dir1.mkdir()
+    (dir1 / "nested1.txt").write_bytes(b"a" * 50)
+    (dir1 / "nested2.txt").write_bytes(b"b" * 75)
+
+    dir2 = tmp_path / "dir2"
+    dir2.mkdir()
+    subdir = dir2 / "subdir"
+    subdir.mkdir()
+    (subdir / "deep.txt").write_bytes(b"c" * 25)
+
+    emptydir = tmp_path / "emptydir"
+    emptydir.mkdir()
+
+    return tmp_path
+
+
+def get_filesystem_name(path):
+    """Get the filesystem name (device) for a given path."""
+    return str(path)
+
+
+def test_iter_basic_iteration(temp_mount_tree):
+    """Test basic iteration over a directory tree."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    items = list(iterator)
+
+    # Should have directories and files
+    assert len(items) > 0
+
+    # Each item should be an IterInstance
+    for item in items:
+        assert isinstance(item, truenas_os.IterInstance)
+        assert hasattr(item, 'path')
+        assert hasattr(item, 'fd')
+        assert hasattr(item, 'statxinfo')
+        assert hasattr(item, 'isdir')
+
+
+def test_iter_instance_fields(temp_mount_tree):
+    """Test that IterInstance has all expected fields."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Get first item
+    item = next(iterator)
+
+    # Check required fields
+    assert hasattr(item, 'path')
+    assert hasattr(item, 'fd')
+    assert hasattr(item, 'statxinfo')
+    assert hasattr(item, 'isdir')
+
+    # Path should be a string
+    assert isinstance(item.path, str)
+
+    # FD should be an integer
+    assert isinstance(item.fd, int)
+    assert item.fd >= 0
+
+    # statxinfo should be a StatxResult
+    assert isinstance(item.statxinfo, truenas_os.StatxResult)
+
+    # isdir should be a boolean
+    assert isinstance(item.isdir, bool)
+
+
+def test_iter_filesystem_state(temp_mount_tree):
+    """Test FilesystemIterState structure."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Iterator should have get_stats method
+    assert hasattr(iterator, 'get_stats')
+
+    # Get initial stats
+    stats = iterator.get_stats()
+    assert isinstance(stats, truenas_os.FilesystemIterState)
+
+    # Check fields exist
+    assert hasattr(stats, 'btime_cutoff')
+    assert hasattr(stats, 'cnt')
+    assert hasattr(stats, 'cnt_bytes')
+    assert hasattr(stats, 'resume_token_name')
+    assert hasattr(stats, 'resume_token_data')
+    assert hasattr(stats, 'file_open_flags')
+
+    # Initial count should be 0
+    assert stats.cnt == 0
+    assert stats.cnt_bytes == 0
+
+
+def test_iter_updates_counters(temp_mount_tree):
+    """Test that iteration updates cnt and cnt_bytes."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Consume a few items
+    items = []
+    for i, item in enumerate(iterator):
+        items.append(item)
+        if i >= 2:
+            break
+
+    # Get stats
+    stats = iterator.get_stats()
+
+    # Count should be updated
+    assert stats.cnt > 0
+
+    # cnt_bytes should include file sizes
+    # (Directories don't contribute to cnt_bytes)
+    assert stats.cnt_bytes >= 0
+
+
+def test_iter_is_iterator_protocol(temp_mount_tree):
+    """Test that iterator follows Python iterator protocol."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Should have __iter__ and __next__
+    assert hasattr(iterator, '__iter__')
+    assert hasattr(iterator, '__next__')
+
+    # __iter__ should return self
+    assert iter(iterator) is iterator
+
+    # Should be able to call next() directly
+    item = next(iterator)
+    assert isinstance(item, truenas_os.IterInstance)
+
+
+def test_iter_exhaustion(temp_mount_tree):
+    """Test that iterator properly exhausts and raises StopIteration."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Exhaust the iterator
+    items = list(iterator)
+    assert len(items) >= 0
+
+    # Further next() calls should raise StopIteration
+    with pytest.raises(StopIteration):
+        next(iterator)
+
+
+def test_iter_relative_path(temp_mount_tree):
+    """Test iteration with a relative_path parameter."""
+    # Iterate only within dir1 subdirectory
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree),
+        relative_path="dir1"
+    )
+
+    items = list(iterator)
+
+    # Should find items in dir1
+    paths = [item.path for item in items]
+
+    # All paths should be within dir1
+    for path in paths:
+        assert "dir1" in path
+
+
+def test_iter_btime_cutoff(temp_mount_tree):
+    """Test btime_cutoff filtering."""
+    # Set cutoff to distant past - should skip all newly created files
+    # (btime cutoff skips files NEWER than the cutoff)
+    past_time = int(time.time()) - 86400 * 365  # 1 year ago
+
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree),
+        btime_cutoff=past_time
+    )
+
+    items = list(iterator)
+
+    # Should still see directories, but files created now should be skipped
+    # All our test files are newer than 1 year ago, so they should be skipped
+    files = [item for item in items if not item.isdir]
+
+    # With past cutoff, no files should be yielded (all are newer than cutoff)
+    assert len(files) == 0
+
+
+def test_iter_file_open_flags(temp_mount_tree):
+    """Test file_open_flags parameter."""
+    # Use O_RDONLY flag
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree),
+        file_open_flags=os.O_RDONLY
+    )
+
+    # Should be able to iterate
+    item = next(iterator)
+    assert isinstance(item, truenas_os.IterInstance)
+
+
+def test_iter_invalid_mountpoint():
+    """Test that invalid mountpoint raises OSError."""
+    with pytest.raises(OSError):
+        iterator = truenas_os.iter_filesystem_contents(
+            "/nonexistent/path",
+            "fake_filesystem"
+        )
+        # Try to get first item to trigger error
+        next(iterator)
+
+
+def test_iter_not_a_directory(tmp_path):
+    """Test that iterating a file (not directory) raises error."""
+    # Create a file
+    testfile = tmp_path / "testfile.txt"
+    testfile.write_text("test")
+
+    with pytest.raises((OSError, NotADirectoryError)):
+        iterator = truenas_os.iter_filesystem_contents(
+            str(testfile),
+            get_filesystem_name(testfile)
+        )
+        next(iterator)
+
+
+def test_iter_resume_token_validation():
+    """Test that resume_token_data must be exactly 16 bytes."""
+    with pytest.raises(ValueError, match="must be exactly 16 bytes"):
+        # Try to create iterator with wrong-sized resume token
+        truenas_os.iter_filesystem_contents(
+            "/tmp",
+            "test_fs",
+            resume_token_name="user.resume_token",
+            resume_token_data=b"short"  # Only 5 bytes, should fail
+        )
+
+
+def test_iter_fd_cleanup(temp_mount_tree):
+    """Test that file descriptors are properly closed."""
+    # Get initial open file count
+    pid = os.getpid()
+    initial_fds = len(os.listdir(f"/proc/{pid}/fd"))
+
+    # Create and exhaust iterator
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    items = list(iterator)
+
+    # Delete iterator
+    del iterator
+    del items
+
+    # Check file descriptors after cleanup
+    final_fds = len(os.listdir(f"/proc/{pid}/fd"))
+
+    # FDs should be cleaned up (allow small variance for test overhead)
+    assert final_fds <= initial_fds + 5
+
+
+def test_iter_statx_info_complete(temp_mount_tree):
+    """Test that statxinfo contains all expected data."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    item = next(iterator)
+    st = item.statxinfo
+
+    # Should have all basic statx fields
+    assert hasattr(st, 'stx_mode')
+    assert hasattr(st, 'stx_size')
+    assert hasattr(st, 'stx_uid')
+    assert hasattr(st, 'stx_gid')
+    assert hasattr(st, 'stx_ino')
+    assert hasattr(st, 'stx_mtime')
+    assert hasattr(st, 'stx_btime')  # Birth time should be included
+
+    # Mode should match file type
+    if item.isdir:
+        assert stat.S_ISDIR(st.stx_mode)
+    else:
+        assert stat.S_ISREG(st.stx_mode)
+
+
+def test_iter_path_accuracy(temp_mount_tree):
+    """Test that reported paths are accurate."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # All paths should start with the mount point
+    mount_point = str(temp_mount_tree)
+
+    # Check each item as we iterate (fd is only valid during iteration)
+    count = 0
+    for item in iterator:
+        assert item.path.startswith(mount_point)
+
+        # Verify the fd actually points to the path
+        fd_path = os.readlink(f"/proc/self/fd/{item.fd}")
+        assert fd_path == item.path
+
+        count += 1
+
+    # Should have found some items
+    assert count > 0
+
+
+def test_iter_multiple_iterators_independent(temp_mount_tree):
+    """Test that multiple iterators are independent."""
+    iter1 = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    iter2 = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Advance first iterator
+    item1 = next(iter1)
+
+    # Second iterator should start from beginning
+    item2 = next(iter2)
+
+    # Both should be valid
+    assert isinstance(item1, truenas_os.IterInstance)
+    assert isinstance(item2, truenas_os.IterInstance)
+
+
+def test_iter_empty_directory(tmp_path):
+    """Test iteration over an empty directory."""
+    emptydir = tmp_path / "empty"
+    emptydir.mkdir()
+
+    iterator = truenas_os.iter_filesystem_contents(
+        str(emptydir),
+        get_filesystem_name(emptydir)
+    )
+
+    items = list(iterator)
+
+    # Should complete without error, but yield no items
+    assert isinstance(items, list)
+    assert len(items) == 0
+
+
+def test_iter_deep_nesting(tmp_path):
+    """Test iteration handles deep directory nesting."""
+    # Create a deeply nested structure (but not too deep)
+    current = tmp_path
+    for i in range(10):
+        current = current / f"level{i}"
+        current.mkdir()
+
+    # Create a file at the bottom
+    (current / "deep_file.txt").write_bytes(b"deep")
+
+    iterator = truenas_os.iter_filesystem_contents(
+        str(tmp_path),
+        get_filesystem_name(tmp_path)
+    )
+
+    items = list(iterator)
+
+    # Should find all directories and the file
+    assert len(items) > 0
+
+    # Should find the deep file
+    paths = [item.path for item in items]
+    assert any("deep_file.txt" in p for p in paths)
