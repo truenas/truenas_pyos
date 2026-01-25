@@ -35,6 +35,22 @@
 	snprintf((err)->message, sizeof((err)->message), \
 	         "[%s] " fmt ": %s", __LOCATION__, ##__VA_ARGS__, strerror(errno))
 
+#ifndef ISDOT
+#define ISDOT(path) ( \
+                        *((const char *)(path)) == '.' && \
+                        *(((const char *)(path)) + 1) == '\0' \
+                    )
+#endif
+
+#ifndef ISDOTDOT
+#define ISDOTDOT(path)  ( \
+                            *((const char *)(path)) == '.' && \
+                            *(((const char *)(path)) + 1) == '.' && \
+                            *(((const char *)(path)) + 2) == '\0' \
+                        )
+#endif
+
+
 /* Forward declarations */
 static PyTypeObject FilesystemIteratorType;
 
@@ -324,44 +340,18 @@ enum fsiter_action {
  * Returns action code, fills self->last on success
  */
 static enum fsiter_action
-process_next_entry(FilesystemIteratorObject *self, fsiter_error_t *err)
+process_next_entry(FilesystemIteratorObject *self,
+		   iter_dir_t *cur_dir,
+	           struct dirent *entry,
+		   fsiter_error_t *err)
 {
-	iter_dir_t *cur_dir;
-	struct dirent *entry;
 	int fd, ret;
 	struct statx st;
 	bool is_dir;
 	int open_flags;
 
-	if (self->cur_depth == 0) {
-		return FSITER_POP_DIR;  /* Stack exhausted */
-	}
-
-	cur_dir = &self->dir_stack[self->cur_depth - 1];
-
-	/* Read next entry from current directory */
-	errno = 0;
-	entry = readdir(cur_dir->dirp);
-	if (entry == NULL) {
-		if (errno != 0) {
-			SET_ERROR_ERRNO(err, "readdir(%s)", cur_dir->path);
-			return FSITER_ERROR;
-		}
-		/* Directory exhausted */
-		return FSITER_POP_DIR;
-	}
-
-	/* Skip . and .. */
-	if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-		return FSITER_CONTINUE;
-	}
-
 	/* Build full path */
-	ret = snprintf(self->last.path, PATH_MAX, "%s/%s", cur_dir->path, entry->d_name);
-	if (ret >= PATH_MAX) {
-		SET_ERROR(err, "path too long: %s/%s", cur_dir->path, entry->d_name);
-		return FSITER_ERROR;
-	}
+	snprintf(self->last.path, PATH_MAX, "%s/%s", cur_dir->path, entry->d_name);
 
 	/* Open entry with openat2 */
 	is_dir = (entry->d_type == DT_DIR);
@@ -376,14 +366,14 @@ process_next_entry(FilesystemIteratorObject *self, fsiter_error_t *err)
 		if (errno == ELOOP || errno == EXDEV) {
 			return FSITER_CONTINUE;
 		}
-		SET_ERROR_ERRNO(err, "openat2(%s)", self->last.path);
+		SET_ERROR_ERRNO(err, "openat2(%s)", entry->d_name);
 		return FSITER_ERROR;
 	}
 
 	/* Call statx on fd */
 	ret = statx_impl(fd, "", STATX_FLAGS_ITER, STATX_MASK_ITER, &st);
 	if (ret < 0) {
-		SET_ERROR_ERRNO(err, "statx(%s)", self->last.path);
+		SET_ERROR_ERRNO(err, "statx(%s)", entry->d_name);
 		close(fd);
 		return FSITER_ERROR;
 	}
@@ -513,6 +503,9 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 	enum fsiter_action action;
 	PyObject *result;
 	bool push_ok;
+	struct dirent *direntp;
+	iter_dir_t *cur_dir;
+	int async_err = 0;
 
 	/* Close fd from previous iteration */
 	if (self->last.fd >= 0) {
@@ -522,10 +515,44 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 
 	/* Main iteration loop */
 	while (self->cur_depth > 0) {
-		/* Process next entry with GIL released */
+		cur_dir = &self->dir_stack[self->cur_depth - 1];
+
+		/*
+		 * We separate out the readdir call from the
+		 * process_next_entry call so that handling for EINTR
+		 * doesn't change our position in DIR
+		 */
 		Py_BEGIN_ALLOW_THREADS
-		action = process_next_entry(self, &self->cerr);
+		errno = 0;
+		direntp = readdir(cur_dir->dirp);
 		Py_END_ALLOW_THREADS
+
+		if (direntp == NULL) {
+			if (errno != 0) {
+				PyErr_Format(PyExc_OSError, "readdir(%s) failed: %s",
+					     cur_dir->path, strerror(errno));
+				return NULL;
+			}
+			/* Directory exhausted */
+			action = FSITER_POP_DIR;
+		} else if (ISDOT(dirent->d_name) || ISDOTDOT(dirent->d_name)) {
+			/* skip . and .. */
+			action = FSITER_CONTINUE;
+		} else {
+			/*
+			 * Process next entry with GIL released
+			 * Retry on EINTR unless python has handled a signal.
+			 */
+			do {
+				Py_BEGIN_ALLOW_THREADS
+				action = process_next_entry(self, cur_dir, direntp, &self->cerr);
+				Py_END_ALLOW_THREADS
+			} while (
+				(action == FSITER_ERROR) &&
+				(errno == EINTR) &&
+				!(async_err = PyErr_CheckSignals())
+			);
+		}
 
 		switch (action) {
 		case FSITER_ERROR:
