@@ -6,8 +6,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-#define __NR_openat2 437
-
 PyObject *do_openat2(int dirfd, const char *pathname,
                       uint64_t flags, uint64_t mode, uint64_t resolve)
 {
@@ -21,7 +19,7 @@ PyObject *do_openat2(int dirfd, const char *pathname,
 
 	do {
 		Py_BEGIN_ALLOW_THREADS
-		fd = syscall(__NR_openat2, dirfd, pathname, &how, sizeof(how));
+		fd = syscall(SYS_openat2, dirfd, pathname, &how, sizeof(how));
 		Py_END_ALLOW_THREADS
 	} while (fd == -1 && errno == EINTR && !(async_err = PyErr_CheckSignals()));
 
@@ -47,7 +45,7 @@ int openat2_impl(int dirfd, const char *pathname, int flags, uint64_t resolve_fl
 	how.mode = 0;
 	how.resolve = resolve_flags;
 
-	fd = syscall(__NR_openat2, dirfd, pathname, &how, sizeof(how));
+	fd = syscall(SYS_openat2, dirfd, pathname, &how, sizeof(how));
 	return fd;
 }
 
