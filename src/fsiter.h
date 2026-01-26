@@ -20,7 +20,7 @@ typedef struct {
 } fsiter_error_t;
 
 typedef struct {
-	char path[PATH_MAX];
+	char name[NAME_MAX + 1];	/* Directory entry name (not full path) */
 	struct statx st;
 	int fd;
 	bool is_dir;
@@ -34,28 +34,28 @@ typedef struct {
 
 /* Iteration state parameters */
 typedef struct {
-    long long btime_cutoff;
-    size_t cnt;
-    size_t cnt_bytes;
-    char resume_token_name[NAME_MAX + 1];      /* +1 for null terminator */
-    unsigned char resume_token_data[RESUME_TOKEN_MAX_LEN];
-    int file_open_flags;
-    bool has_resume_token;                      /* Flag: resume token enabled */
+	long long btime_cutoff;
+	size_t cnt;
+	size_t cnt_bytes;
+	char resume_token_name[NAME_MAX + 1];      /* +1 for null terminator */
+	unsigned char resume_token_data[RESUME_TOKEN_MAX_LEN];
+	int file_open_flags;
+	bool has_resume_token;                      /* Flag: resume token enabled */
 } iter_state_t;
 
 /* Iterator object returned by iter_filesystem_contents */
 typedef struct {
-    PyObject_HEAD
+	PyObject_HEAD
 
-    iter_dir_t dir_stack[MAX_DEPTH];    /* Pre-allocated stack */
-    size_t cur_depth;                   /* Current stack depth */
-    iter_state_t state;                 /* Iteration state and configuration */
-    iter_entry_t last;
-    fsiter_error_t cerr;
+	iter_dir_t dir_stack[MAX_DEPTH];    /* Pre-allocated stack */
+	size_t cur_depth;                   /* Current stack depth */
+	iter_state_t state;                 /* Iteration state and configuration */
+	iter_entry_t last;
+	fsiter_error_t cerr;
 
-    size_t reporting_cb_increment;
-    PyObject *reporting_cb;
-    PyObject *reporting_cb_private_data;
+	size_t reporting_cb_increment;
+	PyObject *reporting_cb;
+	PyObject *reporting_cb_private_data;
 } FilesystemIteratorObject;
 
 /* Module initialization function - initializes all types */
@@ -63,9 +63,9 @@ int init_iter_types(PyObject *module);
 
 /* Create iterator object - to be called from truenas_pyos.c */
 PyObject* create_filesystem_iterator(const char *mountpoint, const char *relative_path,
-                                     const char *filesystem_name, const iter_state_t *state,
-                                     size_t reporting_cb_increment,
-                                     PyObject *reporting_cb,
-                                     PyObject *reporting_cb_private_data);
+				     const char *filesystem_name, const iter_state_t *state,
+				     size_t reporting_cb_increment,
+				     PyObject *reporting_cb,
+				     PyObject *reporting_cb_private_data);
 
 #endif /* TRUENAS_FSITER_H */

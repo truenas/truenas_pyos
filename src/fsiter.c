@@ -29,11 +29,11 @@
 
 #define SET_ERROR(err, fmt, ...) \
 	snprintf((err)->message, sizeof((err)->message), \
-	         "[%s] " fmt, __LOCATION__, ##__VA_ARGS__)
+			 "[%s] " fmt, __LOCATION__, ##__VA_ARGS__)
 
 #define SET_ERROR_ERRNO(err, fmt, ...) \
 	snprintf((err)->message, sizeof((err)->message), \
-	         "[%s] " fmt ": %s", __LOCATION__, ##__VA_ARGS__, strerror(errno))
+			 "[%s] " fmt ": %s", __LOCATION__, ##__VA_ARGS__, strerror(errno))
 
 #define ISDOT(path) ( \
 	*((const char *)(path)) == '.' && \
@@ -52,55 +52,51 @@ static PyTypeObject FilesystemIteratorType;
 
 /* IterInstance struct sequence indices */
 enum {
-    ITER_INST_PATH = 0,
-    ITER_INST_FD,
-    ITER_INST_STATX,
-    ITER_INST_ISDIR,
-    ITER_INST_NUM_FIELDS
+	ITER_INST_PARENT = 0,
+	ITER_INST_NAME,
+	ITER_INST_FD,
+	ITER_INST_STATX,
+	ITER_INST_ISDIR,
+	ITER_INST_NUM_FIELDS
 };
 
 /* IterInstance struct sequence type */
 static PyStructSequence_Field iter_instance_fields[] = {
-    {"path", "Path to the file/directory"},
-    {"fd", "Open file descriptor"},
-    {"statxinfo", "Statx result object"},
-    {"isdir", "True if directory, False if file"},
-    {NULL}
+	{"parent", "Parent directory path"},
+	{"name", "Entry name"},
+	{"fd", "Open file descriptor"},
+	{"statxinfo", "Statx result object"},
+	{"isdir", "True if directory, False if file"},
+	{NULL}
 };
 
 static PyStructSequence_Desc iter_instance_desc = {
-    "truenas_os.IterInstance",
-    "Filesystem iteration instance",
-    iter_instance_fields,
-    ITER_INST_NUM_FIELDS
+	"truenas_os.IterInstance",
+	"Filesystem iteration instance",
+	iter_instance_fields,
+	ITER_INST_NUM_FIELDS
 };
 
 /* FilesystemIterState struct sequence indices */
 enum {
-    STATE_BTIME_CUTOFF = 0,
-    STATE_CNT,
-    STATE_CNT_BYTES,
-    STATE_RESUME_TOKEN_NAME,
-    STATE_RESUME_TOKEN_DATA,
-    STATE_FILE_OPEN_FLAGS,
-    STATE_NUM_FIELDS
+	STATE_CNT = 0,
+	STATE_CNT_BYTES,
+	STATE_CURRENT_DIRECTORY,
+	STATE_NUM_FIELDS
 };
 
 static PyStructSequence_Field iter_state_fields[] = {
-    {"btime_cutoff", "Birth time cutoff timestamp"},
-    {"cnt", "Count of items yielded"},
-    {"cnt_bytes", "Total bytes of files yielded"},
-    {"resume_token_name", "Resume token xattr name"},
-    {"resume_token_data", "Resume token xattr data"},
-    {"file_open_flags", "Flags for opening files"},
-    {NULL}
+	{"cnt", "Count of items yielded"},
+	{"cnt_bytes", "Total bytes of files yielded"},
+	{"current_directory", "Current directory path"},
+	{NULL}
 };
 
 static PyStructSequence_Desc iter_state_desc = {
-    "truenas_os.FilesystemIterState",
-    "Filesystem iteration state",
-    iter_state_fields,
-    STATE_NUM_FIELDS
+	"truenas_os.FilesystemIterState",
+	"Filesystem iteration state",
+	iter_state_fields,
+	STATE_NUM_FIELDS
 };
 
 /* Strdup, but using python memory allocator for accounting purposes */
@@ -114,7 +110,7 @@ static char *pymem_strdup(const char *str_in)
 		return NULL;
 
 	memcpy(str_out, str_in, len);
-	str_out + len = '\0';
+	str_out[len] = '\0';
 	return str_out;
 }
 
@@ -134,110 +130,96 @@ static inline void cleanup_iter_dir(iter_dir_t *iter)
  * Returns new reference, or NULL on error
  */
 static PyObject *
-py_fsiter_state_from_struct(const iter_state_t *c_state)
+py_fsiter_state_from_struct(const iter_state_t *c_state, const char *current_dir)
 {
-    PyObject *state_obj;
-    truenas_os_state_t *state;
+	PyObject *state_obj;
+	truenas_os_state_t *state;
 
-    state = get_truenas_os_state(NULL);
-    if (state == NULL || state->FilesystemIterStateType == NULL) {
-        PyErr_SetString(PyExc_SystemError, "FilesystemIterState type not initialized");
-        return NULL;
-    }
+	state = get_truenas_os_state(NULL);
+	if (state == NULL || state->FilesystemIterStateType == NULL) {
+		PyErr_SetString(PyExc_SystemError, "FilesystemIterState type not initialized");
+		return NULL;
+	}
 
-    state_obj = PyStructSequence_New((PyTypeObject *)state->FilesystemIterStateType);
-    if (state_obj == NULL)
-        return NULL;
+	state_obj = PyStructSequence_New((PyTypeObject *)state->FilesystemIterStateType);
+	if (state_obj == NULL)
+		return NULL;
 
-    PyObject *btime_obj = PyLong_FromLongLong(c_state->btime_cutoff);
-    PyObject *cnt_obj = PyLong_FromSize_t(c_state->cnt);
-    PyObject *cnt_bytes_obj = PyLong_FromSize_t(c_state->cnt_bytes);
-    PyObject *flags_obj = PyLong_FromLong(c_state->file_open_flags);
+	PyObject *cnt_obj = PyLong_FromSize_t(c_state->cnt);
+	PyObject *cnt_bytes_obj = PyLong_FromSize_t(c_state->cnt_bytes);
+	PyObject *current_dir_obj = PyUnicode_FromString(current_dir);
 
-    PyObject *resume_name, *resume_data;
-    if (c_state->has_resume_token) {
-        resume_name = PyUnicode_FromString(c_state->resume_token_name);
-        resume_data = PyBytes_FromStringAndSize((const char *)c_state->resume_token_data,
-                                                RESUME_TOKEN_MAX_LEN);
-    } else {
-        resume_name = Py_NewRef(Py_None);
-        resume_data = Py_NewRef(Py_None);
-    }
+	if (!cnt_obj || !cnt_bytes_obj || !current_dir_obj) {
+		Py_XDECREF(cnt_obj);
+		Py_XDECREF(cnt_bytes_obj);
+		Py_XDECREF(current_dir_obj);
+		Py_DECREF(state_obj);
+		return NULL;
+	}
 
-    if (!btime_obj || !cnt_obj || !cnt_bytes_obj || !flags_obj || !resume_name || !resume_data) {
-        Py_XDECREF(btime_obj);
-        Py_XDECREF(cnt_obj);
-        Py_XDECREF(cnt_bytes_obj);
-        Py_XDECREF(flags_obj);
-        Py_XDECREF(resume_name);
-        Py_XDECREF(resume_data);
-        Py_DECREF(state_obj);
-        return NULL;
-    }
+	PyStructSequence_SET_ITEM(state_obj, STATE_CNT, cnt_obj);
+	PyStructSequence_SET_ITEM(state_obj, STATE_CNT_BYTES, cnt_bytes_obj);
+	PyStructSequence_SET_ITEM(state_obj, STATE_CURRENT_DIRECTORY, current_dir_obj);
 
-    PyStructSequence_SET_ITEM(state_obj, STATE_BTIME_CUTOFF, btime_obj);
-    PyStructSequence_SET_ITEM(state_obj, STATE_CNT, cnt_obj);
-    PyStructSequence_SET_ITEM(state_obj, STATE_CNT_BYTES, cnt_bytes_obj);
-    PyStructSequence_SET_ITEM(state_obj, STATE_RESUME_TOKEN_NAME, resume_name);
-    PyStructSequence_SET_ITEM(state_obj, STATE_RESUME_TOKEN_DATA, resume_data);
-    PyStructSequence_SET_ITEM(state_obj, STATE_FILE_OPEN_FLAGS, flags_obj);
-
-    return state_obj;
+	return state_obj;
 }
 
 /*
- * Helper: Create IterInstance from fd, statx, and path
+ * Helper: Create IterInstance from fd, statx, parent path, and name
  */
 static PyObject *
-create_iter_instance(int fd, const struct statx *st, const char *path)
+create_iter_instance(int fd, const struct statx *st, const char *parent, const char *name)
 {
-    PyObject *inst, *statx_obj, *path_obj, *fd_obj, *isdir_obj;
-    bool isdir;
-    truenas_os_state_t *state;
+	PyObject *inst, *statx_obj, *parent_obj, *name_obj, *fd_obj, *isdir_obj;
+	bool isdir;
+	truenas_os_state_t *state;
 
-    /* Determine if directory from statx mode */
-    isdir = S_ISDIR(st->stx_mode);
+	/* Determine if directory from statx mode */
+	isdir = S_ISDIR(st->stx_mode);
 
-    /* Convert statx struct to Python object */
-    statx_obj = statx_to_pyobject(st);
-    if (statx_obj == NULL)
-        return NULL;
+	/* Convert statx struct to Python object */
+	statx_obj = statx_to_pyobject(st);
+	if (statx_obj == NULL)
+		return NULL;
 
-    /* Get module state */
-    state = get_truenas_os_state(NULL);
-    if (state == NULL || state->IterInstanceType == NULL) {
-        Py_DECREF(statx_obj);
-        PyErr_SetString(PyExc_SystemError, "IterInstance type not initialized");
-        return NULL;
-    }
+	/* Get module state */
+	state = get_truenas_os_state(NULL);
+	if (state == NULL || state->IterInstanceType == NULL) {
+		Py_DECREF(statx_obj);
+		PyErr_SetString(PyExc_SystemError, "IterInstance type not initialized");
+		return NULL;
+	}
 
-    /* Create the struct sequence */
-    inst = PyStructSequence_New((PyTypeObject *)state->IterInstanceType);
-    if (inst == NULL) {
-        Py_DECREF(statx_obj);
-        return NULL;
-    }
+	/* Create the struct sequence */
+	inst = PyStructSequence_New((PyTypeObject *)state->IterInstanceType);
+	if (inst == NULL) {
+		Py_DECREF(statx_obj);
+		return NULL;
+	}
 
-    /* Build fields */
-    path_obj = PyUnicode_FromString(path);
-    fd_obj = PyLong_FromLong(fd);
-    isdir_obj = Py_NewRef(isdir ? Py_True : Py_False);
+	/* Build fields */
+	parent_obj = PyUnicode_FromString(parent);
+	name_obj = PyUnicode_FromString(name);
+	fd_obj = PyLong_FromLong(fd);
+	isdir_obj = Py_NewRef(isdir ? Py_True : Py_False);
 
-    if (!path_obj || !fd_obj) {
-        Py_XDECREF(path_obj);
-        Py_XDECREF(fd_obj);
-        Py_DECREF(isdir_obj);
-        Py_DECREF(statx_obj);
-        Py_DECREF(inst);
-        return NULL;
-    }
+	if (!parent_obj || !name_obj || !fd_obj) {
+		Py_XDECREF(parent_obj);
+		Py_XDECREF(name_obj);
+		Py_XDECREF(fd_obj);
+		Py_DECREF(isdir_obj);
+		Py_DECREF(statx_obj);
+		Py_DECREF(inst);
+		return NULL;
+	}
 
-    PyStructSequence_SET_ITEM(inst, ITER_INST_PATH, path_obj);
-    PyStructSequence_SET_ITEM(inst, ITER_INST_FD, fd_obj);
-    PyStructSequence_SET_ITEM(inst, ITER_INST_STATX, statx_obj);
-    PyStructSequence_SET_ITEM(inst, ITER_INST_ISDIR, isdir_obj);
+	PyStructSequence_SET_ITEM(inst, ITER_INST_PARENT, parent_obj);
+	PyStructSequence_SET_ITEM(inst, ITER_INST_NAME, name_obj);
+	PyStructSequence_SET_ITEM(inst, ITER_INST_FD, fd_obj);
+	PyStructSequence_SET_ITEM(inst, ITER_INST_STATX, statx_obj);
+	PyStructSequence_SET_ITEM(inst, ITER_INST_ISDIR, isdir_obj);
 
-    return inst;
+	return inst;
 }
 
 /*
@@ -246,17 +228,18 @@ create_iter_instance(int fd, const struct statx *st, const char *path)
 static void
 FilesystemIterator_dealloc(FilesystemIteratorObject *self)
 {
-    /* Clean up stack - close any open directories */
 	size_t i;
-	for (size_t i = 0; i < self->cur_depth; i++) {
+
+	/* Clean up stack - close any open directories */
+	for (i = 0; i < self->cur_depth; i++) {
 		cleanup_iter_dir(&self->dir_stack[i]);
-    	}
+	}
 
-    /* Clean up reporting callback references */
-    Py_XDECREF(self->reporting_cb);
-    Py_XDECREF(self->reporting_cb_private_data);
+	/* Clean up reporting callback references */
+	Py_XDECREF(self->reporting_cb);
+	Py_XDECREF(self->reporting_cb_private_data);
 
-    Py_TYPE(self)->tp_free((PyObject *)self);
+	Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
 /*
@@ -265,8 +248,8 @@ FilesystemIterator_dealloc(FilesystemIteratorObject *self)
 static PyObject *
 FilesystemIterator_iter(PyObject *self)
 {
-    Py_INCREF(self);
-    return self;
+	Py_INCREF(self);
+	return self;
 }
 
 /* Iteration action codes */
@@ -286,7 +269,7 @@ enum fsiter_action {
 static enum fsiter_action
 process_next_entry(FilesystemIteratorObject *self,
 		   iter_dir_t *cur_dir,
-	           struct dirent *entry,
+		   struct dirent *entry,
 		   fsiter_error_t *err)
 {
 	int fd, ret;
@@ -294,8 +277,8 @@ process_next_entry(FilesystemIteratorObject *self,
 	bool is_dir;
 	int open_flags;
 
-	/* Build full path */
-	snprintf(self->last.path, PATH_MAX, "%s/%s", cur_dir->path, entry->d_name);
+	/* Store directory entry name */
+	strlcpy(self->last.name, entry->d_name, sizeof(self->last.name));
 
 	/* Open entry with openat2 */
 	is_dir = (entry->d_type == DT_DIR);
@@ -360,38 +343,42 @@ process_next_entry(FilesystemIteratorObject *self,
  * self->last must be filled with directory entry
  */
 static bool
-push_dir_stack(FilesystemIteratorObject *self, fsiter_error_t *err)
+push_dir_stack(FilesystemIteratorObject *self, iter_dir_t *cur_dir, fsiter_error_t *err)
 {
 	iter_dir_t *new_dir;
 	DIR *dirp;
 	int dup_fd;
+	char full_path[PATH_MAX];
+
+	/* Build full path for the directory */
+	snprintf(full_path, sizeof(full_path), "%s/%s", cur_dir->path, self->last.name);
 
 	/* Check depth limit */
 	if (self->cur_depth >= MAX_DEPTH) {
-		SET_ERROR(err, "max depth %d exceeded at %s", MAX_DEPTH, self->last.path);
+		SET_ERROR(err, "max depth %d exceeded at %s", MAX_DEPTH, full_path);
 		return false;
 	}
 
 	/* Duplicate fd since the original will be returned to Python and closed by them */
 	dup_fd = dup(self->last.fd);
 	if (dup_fd < 0) {
-		SET_ERROR_ERRNO(err, "dup(%s)", self->last.path);
+		SET_ERROR_ERRNO(err, "dup(%s)", full_path);
 		return false;
 	}
 
 	/* Open DIR* from duplicated fd - fdopendir takes ownership */
 	dirp = fdopendir(dup_fd);
 	if (dirp == NULL) {
-		SET_ERROR_ERRNO(err, "fdopendir(%s)", self->last.path);
+		SET_ERROR_ERRNO(err, "fdopendir(%s)", full_path);
 		close(dup_fd);
 		return false;
 	}
 
 	/* Allocate path string */
 	new_dir = &self->dir_stack[self->cur_depth];
-	new_dir->path = pymem_strdup(self->last.path);
+	new_dir->path = pymem_strdup(full_path);
 	if (new_dir->path == NULL) {
-		SET_ERROR(err, "strdup failed for %s", self->last.path);
+		SET_ERROR(err, "strdup failed for %s", full_path);
 		cleanup_iter_dir(new_dir);
 		return false;
 	}
@@ -422,7 +409,7 @@ pop_dir_stack(FilesystemIteratorObject *self, fsiter_error_t *err)
 	if (self->state.has_resume_token) {
 		/* There's nothing we can really do here if we fail setxtattr */
 		fsetxattr(dirfd(dir->dirp), self->state.resume_token_name,
-		          self->state.resume_token_data, RESUME_TOKEN_MAX_LEN, 0);
+				  self->state.resume_token_data, RESUME_TOKEN_MAX_LEN, 0);
 	}
 
 	cleanup_iter_dir(dir);
@@ -435,16 +422,16 @@ pop_dir_stack(FilesystemIteratorObject *self, fsiter_error_t *err)
  * Returns true on success, false on error (with Python exception set)
  */
 static bool
-check_and_invoke_reporting_callback(FilesystemIteratorObject *self)
+check_and_invoke_reporting_callback(FilesystemIteratorObject *self, const char *current_dir)
 {
 	PyObject *state_obj;
 	PyObject *callback_result;
 
 	if (self->reporting_cb != NULL &&
-	    self->reporting_cb_increment &&
-	    (self->state.cnt % self->reporting_cb_increment) == 0) {
+		self->reporting_cb_increment &&
+		(self->state.cnt % self->reporting_cb_increment) == 0) {
 
-		state_obj = py_fsiter_state_from_struct(&self->state);
+		state_obj = py_fsiter_state_from_struct(&self->state, current_dir);
 		if (state_obj == NULL)
 			return false;
 
@@ -536,7 +523,8 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 
 		case FSITER_YIELD_FILE:
 			/* Create IterInstance for file */
-			result = create_iter_instance(self->last.fd, &self->last.st, self->last.path);
+			result = create_iter_instance(self->last.fd, &self->last.st,
+						      cur_dir->path, self->last.name);
 			if (result == NULL)
 				return NULL;
 
@@ -545,7 +533,7 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 			self->state.cnt_bytes += self->last.st.stx_size;
 
 			/* Invoke reporting callback if needed */
-			if (!check_and_invoke_reporting_callback(self)) {
+			if (!check_and_invoke_reporting_callback(self, cur_dir->path)) {
 				Py_DECREF(result);
 				return NULL;
 			}
@@ -554,13 +542,14 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 
 		case FSITER_YIELD_DIR:
 			/* Create IterInstance for directory */
-			result = create_iter_instance(self->last.fd, &self->last.st, self->last.path);
+			result = create_iter_instance(self->last.fd, &self->last.st,
+						      cur_dir->path, self->last.name);
 			if (result == NULL)
 				return NULL;
 
 			/* Push directory onto stack with GIL released */
 			Py_BEGIN_ALLOW_THREADS
-			push_ok = push_dir_stack(self, &self->cerr);
+			push_ok = push_dir_stack(self, cur_dir, &self->cerr);
 			Py_END_ALLOW_THREADS
 
 			if (!push_ok) {
@@ -573,7 +562,7 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 			self->state.cnt++;
 
 			/* Invoke reporting callback if needed */
-			if (!check_and_invoke_reporting_callback(self)) {
+			if (!check_and_invoke_reporting_callback(self, cur_dir->path)) {
 				Py_DECREF(result);
 				return NULL;
 			}
@@ -604,18 +593,24 @@ PyDoc_STRVAR(FilesystemIterator_get_stats__doc__,
 "--\n\n"
 "Return current iteration statistics.\n\n"
 "Returns a FilesystemIterState object containing:\n"
-"  - btime_cutoff: Birth time cutoff value\n"
 "  - cnt: Number of items yielded so far\n"
 "  - cnt_bytes: Total bytes of files yielded\n"
-"  - resume_token_name: Resume token xattr name (or None)\n"
-"  - resume_token_data: Resume token xattr data (or None)\n"
-"  - file_open_flags: Flags used for opening files\n"
+"  - current_directory: Current directory path\n"
 );
 
 static PyObject *
 FilesystemIterator_get_stats(FilesystemIteratorObject *self, PyObject *Py_UNUSED(ignored))
 {
-	return py_fsiter_state_from_struct(&self->state);
+	const char *current_dir;
+
+	/* Get current directory from stack top, or empty string if exhausted */
+	if (self->cur_depth > 0) {
+		current_dir = self->dir_stack[self->cur_depth - 1].path;
+	} else {
+		current_dir = "";
+	}
+
+	return py_fsiter_state_from_struct(&self->state, current_dir);
 }
 
 /* FilesystemIterator methods */
@@ -633,16 +628,16 @@ static PyMethodDef FilesystemIterator_methods[] = {
  * FilesystemIterator type definition
  */
 static PyTypeObject FilesystemIteratorType = {
-    PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "truenas_os.FilesystemIterator",
-    .tp_doc = "Filesystem iterator object",
-    .tp_basicsize = sizeof(FilesystemIteratorObject),
-    .tp_itemsize = 0,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
-    .tp_dealloc = (destructor)FilesystemIterator_dealloc,
-    .tp_iter = FilesystemIterator_iter,
-    .tp_iternext = (iternextfunc)FilesystemIterator_next,
-    .tp_methods = FilesystemIterator_methods,
+	PyVarObject_HEAD_INIT(NULL, 0)
+	.tp_name = "truenas_os.FilesystemIterator",
+	.tp_doc = "Filesystem iterator object",
+	.tp_basicsize = sizeof(FilesystemIteratorObject),
+	.tp_itemsize = 0,
+	.tp_flags = Py_TPFLAGS_DEFAULT,
+	.tp_dealloc = (destructor)FilesystemIterator_dealloc,
+	.tp_iter = FilesystemIterator_iter,
+	.tp_iternext = (iternextfunc)FilesystemIterator_next,
+	.tp_methods = FilesystemIterator_methods,
 };
 
 /*
@@ -650,10 +645,10 @@ static PyTypeObject FilesystemIteratorType = {
  */
 PyObject *
 create_filesystem_iterator(const char *mountpoint, const char *relative_path,
-                           const char *filesystem_name, const iter_state_t *state,
-                           size_t reporting_cb_increment,
-                           PyObject *reporting_cb,
-                           PyObject *reporting_cb_private_data)
+			   const char *filesystem_name, const iter_state_t *state,
+			   size_t reporting_cb_increment,
+			   PyObject *reporting_cb,
+			   PyObject *reporting_cb_private_data)
 {
 	FilesystemIteratorObject *iter;
 	int root_fd;
@@ -716,8 +711,8 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 		PyMem_RawFree(sm);
 		close(root_fd);
 		PyErr_Format(PyExc_RuntimeError,
-		             "%s: filesystem source mismatch (expected %s, got %s)",
-		             root_path, filesystem_name, sb_source);
+				     "%s: filesystem source mismatch (expected %s, got %s)",
+				     root_path, filesystem_name, sb_source);
 		return NULL;
 	}
 

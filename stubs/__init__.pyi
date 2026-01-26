@@ -520,7 +520,8 @@ class IterInstance(NamedTuple):
     Represents a file or directory encountered during iteration.
     The file descriptor must be closed by the caller.
     """
-    path: str  # Absolute path to the file/directory
+    parent: str  # Parent directory path
+    name: str  # Entry name
     fd: int  # Open file descriptor
     statxinfo: StatxResult  # Extended file attributes
     isdir: bool  # True if directory, False if file
@@ -530,12 +531,9 @@ class FilesystemIterState(NamedTuple):
 
     Tracks iteration progress and configuration.
     """
-    btime_cutoff: int  # Birth time cutoff (seconds since epoch, 0 to disable)
     cnt: int  # Count of items yielded
     cnt_bytes: int  # Total bytes of files yielded
-    resume_token_name: str | None  # Resume token xattr name (or None)
-    resume_token_data: bytes | None  # Resume token xattr data (or None)
-    file_open_flags: int  # Flags for opening files (e.g., O_RDONLY)
+    current_directory: str  # Current directory path
 
 class FilesystemIterator:
     """Iterator for traversing filesystem contents in C.

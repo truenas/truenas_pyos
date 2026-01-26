@@ -75,7 +75,8 @@ def test_iter_basic_iteration(temp_mount_tree):
     # Each item should be an IterInstance
     for item in items:
         assert isinstance(item, truenas_os.IterInstance)
-        assert hasattr(item, 'path')
+        assert hasattr(item, 'parent')
+        assert hasattr(item, 'name')
         assert hasattr(item, 'fd')
         assert hasattr(item, 'statxinfo')
         assert hasattr(item, 'isdir')
@@ -92,13 +93,15 @@ def test_iter_instance_fields(temp_mount_tree):
     item = next(iterator)
 
     # Check required fields
-    assert hasattr(item, 'path')
+    assert hasattr(item, 'parent')
+    assert hasattr(item, 'name')
     assert hasattr(item, 'fd')
     assert hasattr(item, 'statxinfo')
     assert hasattr(item, 'isdir')
 
-    # Path should be a string
-    assert isinstance(item.path, str)
+    # Parent and name should be strings
+    assert isinstance(item.parent, str)
+    assert isinstance(item.name, str)
 
     # FD should be an integer
     assert isinstance(item.fd, int)
@@ -126,16 +129,16 @@ def test_iter_filesystem_state(temp_mount_tree):
     assert isinstance(stats, truenas_os.FilesystemIterState)
 
     # Check fields exist
-    assert hasattr(stats, 'btime_cutoff')
     assert hasattr(stats, 'cnt')
     assert hasattr(stats, 'cnt_bytes')
-    assert hasattr(stats, 'resume_token_name')
-    assert hasattr(stats, 'resume_token_data')
-    assert hasattr(stats, 'file_open_flags')
+    assert hasattr(stats, 'current_directory')
 
     # Initial count should be 0
     assert stats.cnt == 0
     assert stats.cnt_bytes == 0
+
+    # Current directory should be the mount point
+    assert stats.current_directory == str(temp_mount_tree)
 
 
 def test_iter_updates_counters(temp_mount_tree):
@@ -210,11 +213,9 @@ def test_iter_relative_path(temp_mount_tree):
     items = list(iterator)
 
     # Should find items in dir1
-    paths = [item.path for item in items]
-
-    # All paths should be within dir1
-    for path in paths:
-        assert "dir1" in path
+    # All parent paths should contain dir1
+    for item in items:
+        assert "dir1" in item.parent
 
 
 def test_iter_btime_cutoff(temp_mount_tree):
@@ -348,17 +349,18 @@ def test_iter_path_accuracy(temp_mount_tree):
         get_filesystem_name(temp_mount_tree)
     )
 
-    # All paths should start with the mount point
+    # All parent paths should start with the mount point
     mount_point = str(temp_mount_tree)
 
     # Check each item as we iterate (fd is only valid during iteration)
     count = 0
     for item in iterator:
-        assert item.path.startswith(mount_point)
+        assert item.parent.startswith(mount_point)
 
-        # Verify the fd actually points to the path
+        # Verify the fd actually points to the constructed path
+        full_path = os.path.join(item.parent, item.name)
         fd_path = os.readlink(f"/proc/self/fd/{item.fd}")
-        assert fd_path == item.path
+        assert fd_path == full_path
 
         count += 1
 
@@ -427,9 +429,8 @@ def test_iter_deep_nesting(tmp_path):
     # Should find all directories and the file
     assert len(items) > 0
 
-    # Should find the deep file
-    paths = [item.path for item in items]
-    assert any("deep_file.txt" in p for p in paths)
+    # Should find the deep file by name
+    assert any(item.name == "deep_file.txt" for item in items)
 
 
 def test_iter_reporting_callback_basic(temp_mount_tree):
