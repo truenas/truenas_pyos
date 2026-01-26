@@ -528,7 +528,7 @@ import os
 for item in truenas_os.iter_filesystem_contents("/mnt/tank", "tank/dataset"):
     full_path = os.path.join(item.parent, item.name)
     print(f"{full_path}: {item.statxinfo.stx_size} bytes")
-    os.close(item.fd)
+    # Do NOT close item.fd - iterator manages fd lifecycle
 ```
 
 **Parameters:**
