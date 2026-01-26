@@ -35,20 +35,16 @@
 	snprintf((err)->message, sizeof((err)->message), \
 	         "[%s] " fmt ": %s", __LOCATION__, ##__VA_ARGS__, strerror(errno))
 
-#ifndef ISDOT
 #define ISDOT(path) ( \
-                        *((const char *)(path)) == '.' && \
-                        *(((const char *)(path)) + 1) == '\0' \
-                    )
-#endif
+	*((const char *)(path)) == '.' && \
+	*(((const char *)(path)) + 1) == '\0' \
+)
 
-#ifndef ISDOTDOT
 #define ISDOTDOT(path)  ( \
-                            *((const char *)(path)) == '.' && \
-                            *(((const char *)(path)) + 1) == '.' && \
-                            *(((const char *)(path)) + 2) == '\0' \
-                        )
-#endif
+	*((const char *)(path)) == '.' && \
+	*(((const char *)(path)) + 1) == '.' && \
+	*(((const char *)(path)) + 2) == '\0' \
+)
 
 
 /* Forward declarations */
@@ -106,6 +102,32 @@ static PyStructSequence_Desc iter_state_desc = {
     iter_state_fields,
     STATE_NUM_FIELDS
 };
+
+/* Strdup, but using python memory allocator for accounting purposes */
+static char *pymem_strdup(const char *str_in)
+{
+	char *str_out = NULL;
+	size_t len = strlen(str_in);
+
+	str_out = PyMem_RawMalloc(len + 1);
+	if (str_out == NULL)
+		return NULL;
+
+	memcpy(str_out, str_in, len);
+	str_out + len = '\0';
+	return str_out;
+}
+
+static inline void cleanup_iter_dir(iter_dir_t *iter)
+{
+	if (iter->dirp) {
+		closedir(iter->dirp);
+		iter->dirp = NULL;
+	}
+
+	PyMem_RawFree(iter->path);
+	iter->path = NULL;
+}
 
 /*
  * Convert C iter_state_t to Python FilesystemIterState
@@ -225,12 +247,10 @@ static void
 FilesystemIterator_dealloc(FilesystemIteratorObject *self)
 {
     /* Clean up stack - close any open directories */
-    for (size_t i = 0; i < self->cur_depth; i++) {
-        if (self->dir_stack[i].dirp) {
-            closedir(self->dir_stack[i].dirp);
-        }
-        free(self->dir_stack[i].path);
-    }
+	size_t i;
+	for (size_t i = 0; i < self->cur_depth; i++) {
+		cleanup_iter_dir(&self->dir_stack[i]);
+    	}
 
     /* Clean up reporting callback references */
     Py_XDECREF(self->reporting_cb);
@@ -367,14 +387,12 @@ push_dir_stack(FilesystemIteratorObject *self, fsiter_error_t *err)
 		return false;
 	}
 
-	/* fdopendir succeeded, dirp now owns dup_fd */
-
 	/* Allocate path string */
 	new_dir = &self->dir_stack[self->cur_depth];
-	new_dir->path = strdup(self->last.path);
+	new_dir->path = pymem_strdup(self->last.path);
 	if (new_dir->path == NULL) {
 		SET_ERROR(err, "strdup failed for %s", self->last.path);
-		closedir(dirp);
+		cleanup_iter_dir(new_dir);
 		return false;
 	}
 
@@ -407,14 +425,7 @@ pop_dir_stack(FilesystemIteratorObject *self, fsiter_error_t *err)
 		          self->state.resume_token_data, RESUME_TOKEN_MAX_LEN, 0);
 	}
 
-	/* Clean up directory */
-	if (dir->dirp) {
-		closedir(dir->dirp);
-		dir->dirp = NULL;
-	}
-	free(dir->path);
-	dir->path = NULL;
-
+	cleanup_iter_dir(dir);
 	self->cur_depth--;
 	return true;
 }
@@ -756,7 +767,7 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 
 	/* Initialize stack with root directory */
 	root_dir = &iter->dir_stack[0];
-	root_dir->path = strdup(root_path);
+	root_dir->path = pymem_strdup(root_path);
 	if (root_dir->path == NULL) {
 		closedir(root_dirp);
 		Py_DECREF(iter);
