@@ -11,6 +11,7 @@ This module provides Python access to Linux-specific system calls that are not a
 - **Extended File Operations**: Advanced file opening with path resolution control
 - **File Handles**: Create and use filesystem-independent file handles
 - **Extended Stat**: Get detailed file metadata including creation time and mount IDs
+- **Filesystem Iteration**: Secure recursive iteration over filesystem contents
 
 ## Installation
 
@@ -511,6 +512,50 @@ os.close(mount_fd)
 - `FH_AT_EMPTY_PATH` - Allow empty path with fd
 - `FH_AT_HANDLE_FID` - Return file identifier handle
 - `FH_AT_HANDLE_CONNECTABLE` - Return connectable handle
+
+---
+
+### Filesystem Iteration
+
+#### `iter_filesystem_contents(mountpoint, filesystem_name, /, *, relative_path=None, btime_cutoff=0, file_open_flags=os.O_RDONLY, resume_token_name=None, resume_token_data=None, reporting_increment=1000, reporting_callback=None, reporting_private_data=None)`
+
+Depth-first iteration over filesystem contents.
+
+```python
+import truenas_os
+import os
+
+for item in truenas_os.iter_filesystem_contents("/mnt/tank", "tank/dataset"):
+    full_path = os.path.join(item.parent, item.name)
+    print(f"{full_path}: {item.statxinfo.stx_size} bytes")
+    # Do NOT close item.fd - iterator manages fd lifecycle
+```
+
+**Parameters:**
+- `mountpoint` (str): Mount point path
+- `filesystem_name` (str): Filesystem source to verify
+- `relative_path` (str|None): Subdirectory within mountpoint (default: None)
+- `btime_cutoff` (int): Skip files with btime > this value (default: 0)
+- `file_open_flags` (int): Flags for opening files (default: O_RDONLY)
+- `resume_token_name` (str|None): xattr name for resume token (default: None)
+- `resume_token_data` (bytes|None): xattr value, must be 16 bytes (default: None)
+- `reporting_increment` (int): Callback interval in items (default: 1000)
+- `reporting_callback` (callable|None): Function(FilesystemIterState, private_data) (default: None)
+- `reporting_private_data` (any): User data for callback (default: None)
+
+**Returns:** FilesystemIterator yielding IterInstance objects
+
+**IterInstance:**
+- `parent` (str): Directory path
+- `name` (str): Entry name
+- `fd` (int): Open file descriptor (caller must close)
+- `statxinfo` (StatxResult): File metadata
+- `isdir` (bool): Directory flag
+
+**FilesystemIterator.get_stats() returns FilesystemIterState:**
+- `cnt` (int): Items yielded
+- `cnt_bytes` (int): Bytes processed
+- `current_directory` (str): Current directory path
 
 ---
 

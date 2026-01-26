@@ -12,6 +12,10 @@
 PyObject *do_listmount(uint64_t mnt_id, uint64_t last_mnt_id, int reverse);
 PyObject *do_statmount(uint64_t mnt_id, uint64_t mask);
 
+// C wrapper for statmount() - returns pointer to statmount struct (caller must free)
+// Returns NULL with errno set on error
+struct statmount *statmount_impl(uint64_t mnt_id, uint64_t mask);
+
 // Initialize mount types (StatmountResult) and constants
 int init_mount_types(PyObject *module);
 

@@ -35,6 +35,22 @@ PyObject *do_openat2(int dirfd, const char *pathname,
 	return Py_BuildValue("i", fd);
 }
 
+/*
+ * C wrapper for openat2() - returns fd or -1 with errno set
+ */
+int openat2_impl(int dirfd, const char *pathname, int flags, uint64_t resolve_flags)
+{
+	struct open_how how;
+	int fd;
+
+	how.flags = flags;
+	how.mode = 0;
+	how.resolve = resolve_flags;
+
+	fd = syscall(__NR_openat2, dirfd, pathname, &how, sizeof(how));
+	return fd;
+}
+
 int init_openat2_constants(PyObject *module)
 {
 	// Add RESOLVE_* constants

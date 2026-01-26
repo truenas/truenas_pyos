@@ -12,6 +12,8 @@
 #include "mount_setattr.h"
 #include "fsmount.h"
 #include "umount2.h"
+#include "fsiter.h"
+#include "truenas_os_state.h"
 
 #define MODULE_DOC "TrueNAS OS module"
 
@@ -758,6 +760,105 @@ static PyObject *py_umount2(PyObject *obj,
 	return do_umount2(target, flags);
 }
 
+PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
+"iter_filesystem_contents(mountpoint, filesystem_name, relative_path=None, /,\n"
+"                         btime_cutoff=0, cnt=0, cnt_bytes=0,\n"
+"                         resume_token_name=None, resume_token_data=None,\n"
+"                         file_open_flags=0, reporting_increment=1000,\n"
+"                         reporting_callback=None, reporting_private_data=None)\n"
+"--\n\n"
+"Iterate over all files and directories in a filesystem.\n"
+"Provides secure iteration using openat2 and statx, preventing symlink attacks\n"
+"and ensuring iteration stays within filesystem boundaries.\n"
+"Parameters\n"
+"----------\n"
+"mountpoint : str\n"
+"    Absolute path where the filesystem is mounted\n"
+"filesystem_name : str\n"
+"    Filesystem source name to verify (e.g., 'tank/dataset')\n"
+"relative_path : str, optional\n"
+"    Subdirectory path relative to mountpoint. If None, iterates from root\n"
+"btime_cutoff : int, optional, default=0\n"
+"    Unix timestamp for filtering files by birth time. Files newer than this\n"
+"    timestamp are skipped. Set to 0 to disable filtering\n"
+"cnt : int, optional, default=0\n"
+"    Running count of items yielded. Updated during iteration\n"
+"cnt_bytes : int, optional, default=0\n"
+"    Running count of total bytes. Updated during iteration\n"
+"resume_token_name : str, optional\n"
+"    Extended attribute name for resume tokens. Must be set with resume_token_data\n"
+"resume_token_data : bytes, optional\n"
+"    16-byte resume token value. Must be set with resume_token_name\n"
+"file_open_flags : int, optional, default=0\n"
+"    Flags to use when opening files. O_NOFOLLOW is always added automatically\n"
+"reporting_increment : int, optional, default=1000\n"
+"    Call reporting_callback every N items processed. Set to 0 to disable\n"
+"reporting_callback : callable, optional\n"
+"    Function to call with (state, reporting_private_data) every reporting_increment items.\n"
+"    The state parameter is a FilesystemIterState object with current iteration statistics\n"
+"reporting_private_data : object, optional\n"
+"    User data to pass to reporting_callback\n"
+"Returns\n"
+"-------\n"
+"iterator : FilesystemIterator\n"
+"    Iterator yielding IterInstance objects for each file and directory\n"
+);
+
+/*
+ * Python wrapper for iter_filesystem_contents
+ */
+static PyObject *
+py_iter_filesystem_contents(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+	const char *mountpoint;
+	const char *relative_path = NULL;
+	const char *filesystem_name;
+	const char *resume_token_name = NULL;
+	const char *resume_token_data = NULL;
+	Py_ssize_t resume_token_data_len = 0;
+	iter_state_t state = {0};
+
+	/* New reporting parameters */
+	size_t reporting_cb_increment = 1000;
+	PyObject *reporting_cb = NULL;
+	PyObject *reporting_cb_private_data = NULL;
+
+	static char *kwlist[] = {
+		"mountpoint", "filesystem_name", "relative_path",
+		"btime_cutoff", "cnt", "cnt_bytes",
+		"resume_token_name", "resume_token_data", "file_open_flags",
+		"reporting_increment", "reporting_callback", "reporting_private_data",
+		NULL
+	};
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ss|zLKKsy#iKOO:iter_filesystem_contents", kwlist,
+					  &mountpoint, &filesystem_name, &relative_path,
+					  &state.btime_cutoff, &state.cnt, &state.cnt_bytes,
+					  &resume_token_name, &resume_token_data, &resume_token_data_len,
+					  &state.file_open_flags,
+					  &reporting_cb_increment, &reporting_cb, &reporting_cb_private_data)) {
+		return NULL;
+	}
+
+	/* Handle resume token */
+	if (resume_token_name != NULL && resume_token_data != NULL) {
+		strlcpy(state.resume_token_name, resume_token_name, sizeof(state.resume_token_name));
+
+		if (resume_token_data_len != RESUME_TOKEN_MAX_LEN) {
+			PyErr_Format(PyExc_ValueError,
+				    "resume_token_data must be exactly %d bytes, got %zd",
+				    RESUME_TOKEN_MAX_LEN, resume_token_data_len);
+			return NULL;
+		}
+
+		memcpy(state.resume_token_data, resume_token_data, RESUME_TOKEN_MAX_LEN);
+		state.has_resume_token = true;
+	}
+
+	return create_filesystem_iterator(mountpoint, relative_path, filesystem_name, &state,
+	                                  reporting_cb_increment, reporting_cb, reporting_cb_private_data);
+}
+
 static PyMethodDef truenas_os_methods[] = {
 	{
 		.ml_name = "open_mount_by_id",
@@ -837,6 +938,12 @@ static PyMethodDef truenas_os_methods[] = {
 		.ml_flags = METH_VARARGS|METH_KEYWORDS,
 		.ml_doc = py_umount2__doc__
 	},
+	{
+		.ml_name = "iter_filesystem_contents",
+		.ml_meth = (PyCFunction)py_iter_filesystem_contents,
+		.ml_flags = METH_VARARGS|METH_KEYWORDS,
+		.ml_doc = py_iter_filesystem_contents__doc__
+	},
 	{ .ml_name = NULL }
 };
 
@@ -844,9 +951,26 @@ static struct PyModuleDef moduledef = {
 	PyModuleDef_HEAD_INIT,
 	.m_name = "truenas_os",
 	.m_doc = MODULE_DOC,
-	.m_size = -1,
+	.m_size = sizeof(truenas_os_state_t),
 	.m_methods = truenas_os_methods,
 };
+
+/* Get module state */
+truenas_os_state_t *
+get_truenas_os_state(PyObject *module)
+{
+	void *state;
+
+	if (module == NULL) {
+		module = PyState_FindModule(&moduledef);
+		if (module == NULL) {
+			return NULL;
+		}
+	}
+
+	state = PyModule_GetState(module);
+	return (truenas_os_state_t *)state;
+}
 
 PyObject* module_init(void)
 {
@@ -917,6 +1041,12 @@ PyObject* module_init(void)
 
 	// Initialize umount2 constants
 	if (init_umount2_constants(m) < 0) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	// Initialize filesystem iterator types
+	if (init_iter_types(m) < 0) {
 		Py_DECREF(m);
 		return NULL;
 	}
