@@ -3,11 +3,11 @@
 #include <Python.h>
 #include "common/includes.h"
 #include "fhandle.h"
+#include <sys/syscall.h>
+#include <unistd.h>
 
 #define SUPPORTED_FLAGS (AT_SYMLINK_FOLLOW | AT_HANDLE_FID | \
 	AT_EMPTY_PATH | AT_HANDLE_CONNECTABLE)
-#define __NR_NAME_TO_HANDLE_AT 303
-#define __NR_OPEN_BY_HANDLE_AT 304
 
 
 static PyObject *py_fhandle_new(PyTypeObject *obj,
@@ -38,7 +38,7 @@ static int do_name_to_handle_at(py_fhandle_t *self,
 
 	do {
 		Py_BEGIN_ALLOW_THREADS
-		error = syscall(__NR_NAME_TO_HANDLE_AT, dir_fd, path, self->fhandle,
+		error = syscall(SYS_name_to_handle_at, dir_fd, path, self->fhandle,
 				&mnt_id, flags);
 		Py_END_ALLOW_THREADS
 	} while (error && errno == EINTR && !(async_err = PyErr_CheckSignals()));
@@ -275,7 +275,7 @@ static PyObject *py_fhandle_open(PyObject *obj,
 	async_err = 0;
 	do {
 		Py_BEGIN_ALLOW_THREADS
-		fd = syscall(__NR_OPEN_BY_HANDLE_AT, mount_fd, self->fhandle, flags);
+		fd = syscall(SYS_open_by_handle_at, mount_fd, self->fhandle, flags);
 		Py_END_ALLOW_THREADS
 	} while (fd == -1 && errno == EINTR && !(async_err = PyErr_CheckSignals()));
 
