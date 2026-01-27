@@ -549,6 +549,17 @@ class FilesystemIterator:
         Returns a FilesystemIterState object with current count, bytes, and configuration.
         """
         ...
+    def skip(self) -> None:
+        """Skip recursion into the currently yielded directory.
+
+        Must be called immediately after the iterator yields a directory,
+        before calling next() again. Prevents the iterator from recursing
+        into the directory that was just yielded.
+
+        Raises:
+            ValueError: If the last yielded item was not a directory.
+        """
+        ...
 
 def iter_filesystem_contents(
     mountpoint: str,

@@ -531,3 +531,85 @@ def test_iter_reporting_increment_zero(temp_mount_tree):
 
     list(iterator)
     assert call_count[0] == 0  # Never called
+
+
+def test_iter_skip_directory(temp_mount_tree):
+    """Test that skip() prevents recursion into a directory."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    items_found = []
+    for item in iterator:
+        items_found.append(item.name)
+        # Skip recursion into dir1
+        if item.isdir and item.name == "dir1":
+            iterator.skip()
+
+    # Should have found dir1 itself
+    assert "dir1" in items_found
+
+    # Should NOT have found nested1.txt or nested2.txt (inside dir1)
+    assert "nested1.txt" not in items_found
+    assert "nested2.txt" not in items_found
+
+    # Should still have found items in dir2 (not skipped)
+    assert "dir2" in items_found
+    assert "deep.txt" in items_found
+
+
+def test_iter_skip_on_file_raises_error(temp_mount_tree):
+    """Test that calling skip() on a file raises ValueError."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Find first file
+    for item in iterator:
+        if not item.isdir:
+            # Try to skip a file - should raise ValueError
+            with pytest.raises(ValueError, match="last yielded item was a directory"):
+                iterator.skip()
+            break
+
+
+def test_iter_skip_method_exists(temp_mount_tree):
+    """Test that iterator has skip() method."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    assert hasattr(iterator, 'skip')
+    assert callable(iterator.skip)
+
+
+def test_iter_skip_all_directories(temp_mount_tree):
+    """Test skipping all directories to only iterate files in root."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    items_found = []
+    for item in iterator:
+        items_found.append((item.name, item.isdir))
+        if item.isdir:
+            iterator.skip()
+
+    # Should have found root-level files
+    assert ("file1.txt", False) in items_found
+    assert ("file2.txt", False) in items_found
+
+    # Should have found directories themselves
+    assert ("dir1", True) in items_found
+    assert ("dir2", True) in items_found
+    assert ("emptydir", True) in items_found
+
+    # Should NOT have found any nested content
+    assert "nested1.txt" not in [name for name, _ in items_found]
+    assert "nested2.txt" not in [name for name, _ in items_found]
+    assert "subdir" not in [name for name, _ in items_found]
+    assert "deep.txt" not in [name for name, _ in items_found]

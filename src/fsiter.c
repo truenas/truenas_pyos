@@ -471,6 +471,16 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 		self->last.fd = -1;
 	}
 
+	/* Handle skip() - pop directory if skip was requested */
+	if (self->skip_next_recursion) {
+		self->skip_next_recursion = false;
+		if (self->cur_depth > 0) {
+			Py_BEGIN_ALLOW_THREADS
+			pop_dir_stack(self, &self->cerr);
+			Py_END_ALLOW_THREADS
+		}
+	}
+
 	/* Main iteration loop */
 	while (self->cur_depth > 0) {
 		cur_dir = &self->dir_stack[self->cur_depth - 1];
@@ -613,6 +623,35 @@ FilesystemIterator_get_stats(FilesystemIteratorObject *self, PyObject *Py_UNUSED
 	return py_fsiter_state_from_struct(&self->state, current_dir);
 }
 
+/*
+ * FilesystemIterator.skip() - skip recursion into current directory
+ */
+PyDoc_STRVAR(FilesystemIterator_skip__doc__,
+"skip()\n"
+"--\n\n"
+"Skip recursion into the currently yielded directory.\n\n"
+"This method must be called immediately after the iterator yields a directory,\n"
+"and before calling next() again. It prevents the iterator from recursing into\n"
+"the directory that was just yielded.\n\n"
+"Raises ValueError if the last yielded item was not a directory.\n"
+);
+
+static PyObject *
+FilesystemIterator_skip(FilesystemIteratorObject *self, PyObject *Py_UNUSED(ignored))
+{
+	/* Verify that the last yielded item was a directory */
+	if (!self->last.is_dir) {
+		PyErr_SetString(PyExc_ValueError,
+				"skip() can only be called when the last yielded item was a directory");
+		return NULL;
+	}
+
+	/* Set flag to skip recursion on next __next__ call */
+	self->skip_next_recursion = true;
+
+	Py_RETURN_NONE;
+}
+
 /* FilesystemIterator methods */
 static PyMethodDef FilesystemIterator_methods[] = {
 	{
@@ -620,6 +659,12 @@ static PyMethodDef FilesystemIterator_methods[] = {
 		.ml_meth = (PyCFunction)FilesystemIterator_get_stats,
 		.ml_flags = METH_NOARGS,
 		.ml_doc = FilesystemIterator_get_stats__doc__
+	},
+	{
+		.ml_name = "skip",
+		.ml_meth = (PyCFunction)FilesystemIterator_skip,
+		.ml_flags = METH_NOARGS,
+		.ml_doc = FilesystemIterator_skip__doc__
 	},
 	{ .ml_name = NULL }  /* Sentinel */
 };
@@ -739,6 +784,7 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	memset(&iter->last, 0, sizeof(iter->last));
 	iter->last.fd = -1;
 	iter->cur_depth = 0;
+	iter->skip_next_recursion = false;
 
 	/* Copy state into iterator */
 	memcpy(&iter->state, state, sizeof(iter_state_t));

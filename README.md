@@ -557,6 +557,21 @@ for item in truenas_os.iter_filesystem_contents("/mnt/tank", "tank/dataset"):
 - `cnt_bytes` (int): Bytes processed
 - `current_directory` (str): Current directory path
 
+**FilesystemIterator.skip():**
+
+Skip recursion into the currently yielded directory. Call this immediately after the iterator yields a directory to prevent descending into it.
+
+```python
+import truenas_os
+
+iterator = truenas_os.iter_filesystem_contents("/mnt/tank", "tank/dataset")
+for item in iterator:
+    if item.isdir and item.name == "skip_this":
+        iterator.skip()  # Don't recurse into this directory
+```
+
+Raises `ValueError` if called on a non-directory item.
+
 ---
 
 ## Complete Example
