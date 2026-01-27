@@ -56,6 +56,7 @@ typedef struct {
 	size_t reporting_cb_increment;
 	PyObject *reporting_cb;
 	PyObject *reporting_cb_private_data;
+	bool skip_next_recursion;           /* Flag: skip recursion into last dir */
 } FilesystemIteratorObject;
 
 /* Module initialization function - initializes all types */
