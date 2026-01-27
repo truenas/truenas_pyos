@@ -9,7 +9,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#include <sys/xattr.h>
 #include <linux/mount.h>
 #include <errno.h>
 #include <string.h>
@@ -313,22 +312,6 @@ process_next_entry(FilesystemIteratorObject *self,
 		}
 	}
 
-	/* Check resume token for directories */
-	if (S_ISDIR(st.stx_mode) && self->state.has_resume_token) {
-		unsigned char xat_bytes[RESUME_TOKEN_MAX_LEN];
-		ssize_t xat_len;
-
-		xat_len = fgetxattr(fd, self->state.resume_token_name, xat_bytes, RESUME_TOKEN_MAX_LEN);
-		if (xat_len == RESUME_TOKEN_MAX_LEN) {
-			/* Check if token matches - directory was already completed */
-			if (memcmp(xat_bytes, self->state.resume_token_data, RESUME_TOKEN_MAX_LEN) == 0) {
-				close(fd);
-				return FSITER_CONTINUE;
-			}
-		}
-		/* If xattr doesn't exist or can't be read, continue normally */
-	}
-
 	/* Fill last entry */
 	self->last.fd = fd;
 	memcpy(&self->last.st, &st, sizeof(struct statx));
@@ -384,6 +367,7 @@ push_dir_stack(FilesystemIteratorObject *self, iter_dir_t *cur_dir, fsiter_error
 	}
 
 	new_dir->dirp = dirp;
+	new_dir->ino = self->last.st.stx_ino;
 	self->cur_depth++;
 
 	return true;
@@ -392,7 +376,6 @@ push_dir_stack(FilesystemIteratorObject *self, iter_dir_t *cur_dir, fsiter_error
 /*
  * Pop directory from stack
  * Called with GIL released
- * Handles resume token xattr if configured
  */
 static bool
 pop_dir_stack(FilesystemIteratorObject *self, fsiter_error_t *err)
@@ -405,16 +388,54 @@ pop_dir_stack(FilesystemIteratorObject *self, fsiter_error_t *err)
 
 	dir = &self->dir_stack[self->cur_depth - 1];
 
-	/* Set resume token xattr if configured */
-	if (self->state.has_resume_token) {
-		/* There's nothing we can really do here if we fail setxtattr */
-		fsetxattr(dirfd(dir->dirp), self->state.resume_token_name,
-				  self->state.resume_token_data, RESUME_TOKEN_MAX_LEN, 0);
-	}
-
 	cleanup_iter_dir(dir);
 	self->cur_depth--;
 	return true;
+}
+
+/*
+ * Helper: build directory stack tuple
+ * Returns new reference, or NULL on error
+ */
+static PyObject *
+build_dir_stack_tuple(FilesystemIteratorObject *self)
+{
+	PyObject *stack_tuple;
+	size_t i;
+
+	/* Create a tuple to hold the directory tuples */
+	stack_tuple = PyTuple_New(self->cur_depth);
+	if (stack_tuple == NULL)
+		return NULL;
+
+	/* Add each directory as (path, inode) tuple */
+	for (i = 0; i < self->cur_depth; i++) {
+		PyObject *tuple, *path_obj, *inode_obj;
+
+		/* Create tuple (path, inode) */
+		tuple = PyTuple_New(2);
+		if (tuple == NULL) {
+			Py_DECREF(stack_tuple);
+			return NULL;
+		}
+
+		path_obj = PyUnicode_FromString(self->dir_stack[i].path);
+		inode_obj = PyLong_FromUnsignedLongLong(self->dir_stack[i].ino);
+
+		if (path_obj == NULL || inode_obj == NULL) {
+			Py_XDECREF(path_obj);
+			Py_XDECREF(inode_obj);
+			Py_DECREF(tuple);
+			Py_DECREF(stack_tuple);
+			return NULL;
+		}
+
+		PyTuple_SET_ITEM(tuple, 0, path_obj);
+		PyTuple_SET_ITEM(tuple, 1, inode_obj);
+		PyTuple_SET_ITEM(stack_tuple, i, tuple);
+	}
+
+	return stack_tuple;
 }
 
 /*
@@ -424,23 +445,32 @@ pop_dir_stack(FilesystemIteratorObject *self, fsiter_error_t *err)
 static bool
 check_and_invoke_reporting_callback(FilesystemIteratorObject *self, const char *current_dir)
 {
-	PyObject *state_obj;
+	PyObject *state_obj, *dir_stack_obj;
 	PyObject *callback_result;
 
 	if (self->reporting_cb != NULL &&
 		self->reporting_cb_increment &&
 		(self->state.cnt % self->reporting_cb_increment) == 0) {
 
-		state_obj = py_fsiter_state_from_struct(&self->state, current_dir);
-		if (state_obj == NULL)
+		/* Build dir_stack tuple */
+		dir_stack_obj = build_dir_stack_tuple(self);
+		if (dir_stack_obj == NULL)
 			return false;
+
+		state_obj = py_fsiter_state_from_struct(&self->state, current_dir);
+		if (state_obj == NULL) {
+			Py_DECREF(dir_stack_obj);
+			return false;
+		}
 
 		callback_result = PyObject_CallFunctionObjArgs(
 			self->reporting_cb,
+			dir_stack_obj,
 			state_obj,
 			self->reporting_cb_private_data ? self->reporting_cb_private_data : Py_None,
 			NULL
 		);
+		Py_DECREF(dir_stack_obj);
 		Py_DECREF(state_obj);
 
 		if (callback_result == NULL)
@@ -652,6 +682,27 @@ FilesystemIterator_skip(FilesystemIteratorObject *self, PyObject *Py_UNUSED(igno
 	Py_RETURN_NONE;
 }
 
+/*
+ * FilesystemIterator.dir_stack() - return current directory stack
+ */
+PyDoc_STRVAR(FilesystemIterator_dir_stack__doc__,
+"dir_stack()\n"
+"--\n\n"
+"Return the current directory stack as a tuple of (path, inode) tuples.\n\n"
+"Returns a tuple of tuples where each tuple contains:\n"
+"  - path (str): The full directory path\n"
+"  - inode (int): The inode number of the directory\n\n"
+"The first element is the root directory, and the last element is the\n"
+"current directory being processed.\n\n"
+"Returns an empty tuple if iteration has completed.\n"
+);
+
+static PyObject *
+FilesystemIterator_dir_stack(FilesystemIteratorObject *self, PyObject *Py_UNUSED(ignored))
+{
+	return build_dir_stack_tuple(self);
+}
+
 /* FilesystemIterator methods */
 static PyMethodDef FilesystemIterator_methods[] = {
 	{
@@ -665,6 +716,12 @@ static PyMethodDef FilesystemIterator_methods[] = {
 		.ml_meth = (PyCFunction)FilesystemIterator_skip,
 		.ml_flags = METH_NOARGS,
 		.ml_doc = FilesystemIterator_skip__doc__
+	},
+	{
+		.ml_name = "dir_stack",
+		.ml_meth = (PyCFunction)FilesystemIterator_dir_stack,
+		.ml_flags = METH_NOARGS,
+		.ml_doc = FilesystemIterator_dir_stack__doc__
 	},
 	{ .ml_name = NULL }  /* Sentinel */
 };
@@ -816,6 +873,7 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	}
 
 	root_dir->dirp = root_dirp;
+	root_dir->ino = root_st.stx_ino;
 	iter->cur_depth = 1;
 
 	return (PyObject *)iter;

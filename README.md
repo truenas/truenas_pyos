@@ -517,7 +517,8 @@ os.close(mount_fd)
 
 ### Filesystem Iteration
 
-#### `iter_filesystem_contents(mountpoint, filesystem_name, /, *, relative_path=None, btime_cutoff=0, file_open_flags=os.O_RDONLY, resume_token_name=None, resume_token_data=None, reporting_increment=1000, reporting_callback=None, reporting_private_data=None)`
+#### `iter_filesystem_contents(mountpoint, filesystem_name, /, *, relative_path=None, btime_cutoff=0,`
+#### `file_open_flags=os.O_RDONLY, reporting_increment=1000, reporting_callback=None, reporting_private_data=None)`
 
 Depth-first iteration over filesystem contents.
 
@@ -537,10 +538,8 @@ for item in truenas_os.iter_filesystem_contents("/mnt/tank", "tank/dataset"):
 - `relative_path` (str|None): Subdirectory within mountpoint (default: None)
 - `btime_cutoff` (int): Skip files with btime > this value (default: 0)
 - `file_open_flags` (int): Flags for opening files (default: O_RDONLY)
-- `resume_token_name` (str|None): xattr name for resume token (default: None)
-- `resume_token_data` (bytes|None): xattr value, must be 16 bytes (default: None)
 - `reporting_increment` (int): Callback interval in items (default: 1000)
-- `reporting_callback` (callable|None): Function(FilesystemIterState, private_data) (default: None)
+- `reporting_callback` (callable|None): Function(dir_stack, FilesystemIterState, private_data) (default: None)
 - `reporting_private_data` (any): User data for callback (default: None)
 
 **Returns:** FilesystemIterator yielding IterInstance objects
@@ -559,7 +558,8 @@ for item in truenas_os.iter_filesystem_contents("/mnt/tank", "tank/dataset"):
 
 **FilesystemIterator.skip():**
 
-Skip recursion into the currently yielded directory. Call this immediately after the iterator yields a directory to prevent descending into it.
+Skip recursion into the currently yielded directory. Call this immediately after the iterator yields a directory to
+prevent descending into it.
 
 ```python
 import truenas_os
@@ -571,6 +571,22 @@ for item in iterator:
 ```
 
 Raises `ValueError` if called on a non-directory item.
+
+**FilesystemIterator.dir_stack():**
+
+Returns the current directory stack as a tuple of `(path, inode)` tuples. The first element is the root directory, and
+the last element is the current directory being processed. Returns an empty tuple if iteration has completed.
+
+```python
+import truenas_os
+
+iterator = truenas_os.iter_filesystem_contents("/mnt/tank", "tank/dataset")
+for item in iterator:
+    stack = iterator.dir_stack()
+    print(f"Current depth: {len(stack)}")
+    for path, inode in stack:
+        print(f"  {path} (inode: {inode})")
+```
 
 ---
 
