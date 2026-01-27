@@ -279,18 +279,6 @@ def test_iter_not_a_directory(tmp_path):
         next(iterator)
 
 
-def test_iter_resume_token_validation():
-    """Test that resume_token_data must be exactly 16 bytes."""
-    with pytest.raises(ValueError, match="must be exactly 16 bytes"):
-        # Try to create iterator with wrong-sized resume token
-        truenas_os.iter_filesystem_contents(
-            "/tmp",
-            "test_fs",
-            resume_token_name="user.resume_token",
-            resume_token_data=b"short"  # Only 5 bytes, should fail
-        )
-
-
 def test_iter_fd_cleanup(temp_mount_tree):
     """Test that file descriptors are properly closed."""
     # Get initial open file count
@@ -437,10 +425,11 @@ def test_iter_reporting_callback_basic(temp_mount_tree):
     """Test that reporting callback is called at correct intervals."""
     calls = []
 
-    def callback(state, private_data):
+    def callback(dir_stack, state, private_data):
         calls.append({
             'cnt': state.cnt,
-            'private_data': private_data
+            'private_data': private_data,
+            'dir_stack': dir_stack
         })
 
     iterator = truenas_os.iter_filesystem_contents(
@@ -459,6 +448,11 @@ def test_iter_reporting_callback_basic(temp_mount_tree):
     for call in calls:
         assert call['cnt'] % 3 == 0
         assert call['private_data'] == "test_data"
+        # dir_stack should be a tuple of tuples
+        assert isinstance(call['dir_stack'], tuple)
+        if len(call['dir_stack']) > 0:
+            assert isinstance(call['dir_stack'][0], tuple)
+            assert len(call['dir_stack'][0]) == 2
 
 
 def test_iter_reporting_callback_no_callback(temp_mount_tree):
@@ -489,7 +483,7 @@ def test_iter_reporting_callback_none(temp_mount_tree):
 
 def test_iter_reporting_callback_exception(temp_mount_tree):
     """Test that callback exceptions stop iteration."""
-    def bad_callback(state, private_data):
+    def bad_callback(dir_stack, state, private_data):
         if state.cnt >= 3:
             raise ValueError("Callback error at cnt=3")
 
@@ -519,7 +513,7 @@ def test_iter_reporting_increment_zero(temp_mount_tree):
     """Test that increment=0 disables callbacks."""
     call_count = [0]
 
-    def callback(state, private_data):
+    def callback(dir_stack, state, private_data):
         call_count[0] += 1
 
     iterator = truenas_os.iter_filesystem_contents(
@@ -613,3 +607,113 @@ def test_iter_skip_all_directories(temp_mount_tree):
     assert "nested2.txt" not in [name for name, _ in items_found]
     assert "subdir" not in [name for name, _ in items_found]
     assert "deep.txt" not in [name for name, _ in items_found]
+
+
+def test_iter_dir_stack_method_exists(temp_mount_tree):
+    """Test that iterator has dir_stack() method."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    assert hasattr(iterator, 'dir_stack')
+    assert callable(iterator.dir_stack)
+
+
+def test_iter_dir_stack_initial_state(temp_mount_tree):
+    """Test that dir_stack() returns root directory initially."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    stack = iterator.dir_stack()
+
+    # Should be a tuple
+    assert isinstance(stack, tuple)
+
+    # Should have exactly one entry (the root)
+    assert len(stack) == 1
+    assert isinstance(stack[0], tuple)
+    assert len(stack[0]) == 2
+
+    # First element should be path (string)
+    path, inode = stack[0]
+    assert isinstance(path, str)
+    assert str(temp_mount_tree) in path
+
+    # Second element should be inode (int)
+    assert isinstance(inode, int)
+    assert inode > 0
+
+
+def test_iter_dir_stack_during_iteration(temp_mount_tree):
+    """Test that dir_stack() changes during iteration."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    max_depth = 0
+    for item in iterator:
+        stack = iterator.dir_stack()
+
+        # Stack should never be empty during iteration
+        assert len(stack) > 0
+
+        # Track maximum depth reached
+        max_depth = max(max_depth, len(stack))
+
+        # All entries should be tuples of (str, int)
+        for path, inode in stack:
+            assert isinstance(path, str)
+            assert isinstance(inode, int)
+            assert inode > 0
+
+        # Current directory path should be in the stack
+        assert item.parent in [path for path, _ in stack]
+
+    # Should have descended at least one level
+    assert max_depth > 1
+
+
+def test_iter_dir_stack_after_completion(temp_mount_tree):
+    """Test that dir_stack() returns empty tuple after iteration completes."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Exhaust iterator
+    list(iterator)
+
+    # Stack should be empty after completion
+    stack = iterator.dir_stack()
+    assert isinstance(stack, tuple)
+    assert len(stack) == 0
+
+
+def test_iter_dir_stack_with_skip(temp_mount_tree):
+    """Test that dir_stack() works correctly with skip()."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    found_dir1 = False
+    for item in iterator:
+        if item.isdir and item.name == "dir1":
+            found_dir1 = True
+            stack_before_skip = iterator.dir_stack()
+            # dir1 should not be in stack yet (not descended into)
+            dir1_in_stack = any("dir1" in path for path, _ in stack_before_skip)
+
+            iterator.skip()
+            # After skip, dir1 still shouldn't be in stack since we didn't descend
+
+        elif found_dir1 and not item.isdir:
+            # Check that dir1 is not in the current path
+            assert "dir1" not in item.parent
+            break
+
+    assert found_dir1

@@ -11,9 +11,6 @@
 /* Maximum directory depth for stack allocation */
 #define MAX_DEPTH 2048
 
-/* UUID byte length for resume tokens */
-#define RESUME_TOKEN_MAX_LEN 16
-
 /* Error buffer for operations without GIL */
 typedef struct {
 	char message[8192];
@@ -30,6 +27,7 @@ typedef struct {
 typedef struct {
 	char *path;		/* Current path string (allocated) */
 	DIR *dirp;		/* DIR pointer from fdopendir */
+	uint64_t ino;		/* Inode number of directory */
 } iter_dir_t;
 
 /* Iteration state parameters */
@@ -37,10 +35,7 @@ typedef struct {
 	long long btime_cutoff;
 	size_t cnt;
 	size_t cnt_bytes;
-	char resume_token_name[NAME_MAX + 1];      /* +1 for null terminator */
-	unsigned char resume_token_data[RESUME_TOKEN_MAX_LEN];
 	int file_open_flags;
-	bool has_resume_token;                      /* Flag: resume token enabled */
 } iter_state_t;
 
 /* Iterator object returned by iter_filesystem_contents */

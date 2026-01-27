@@ -560,6 +560,19 @@ class FilesystemIterator:
             ValueError: If the last yielded item was not a directory.
         """
         ...
+    def dir_stack(self) -> tuple[tuple[str, int], ...]:
+        """Return the current directory stack as a tuple of (path, inode) tuples.
+
+        Returns a tuple of tuples where each tuple contains:
+          - path (str): The full directory path
+          - inode (int): The inode number of the directory
+
+        The first element is the root directory, and the last element is the
+        current directory being processed.
+
+        Returns an empty tuple if iteration has completed.
+        """
+        ...
 
 def iter_filesystem_contents(
     mountpoint: str,
@@ -570,11 +583,9 @@ def iter_filesystem_contents(
     btime_cutoff: int = 0,
     cnt: int = 0,
     cnt_bytes: int = 0,
-    resume_token_name: str | None = None,
-    resume_token_data: bytes | None = None,
     file_open_flags: int = ...,
     reporting_increment: int = 1000,
-    reporting_callback: Callable[[FilesystemIterState, Any], Any] | None = None,
+    reporting_callback: Callable[[tuple[tuple[str, int], ...], FilesystemIterState, Any], Any] | None = None,
     reporting_private_data: Any = None,
 ) -> FilesystemIterator:
     """Iterate filesystem contents with mount validation.
@@ -590,12 +601,10 @@ def iter_filesystem_contents(
         btime_cutoff: Skip files with birth time > cutoff (seconds since epoch, 0=disabled)
         cnt: Initial count of items yielded
         cnt_bytes: Initial count of bytes yielded
-        resume_token_name: Resume token xattr name for resumption
-        resume_token_data: Resume token xattr value (must be 16 bytes if provided)
         file_open_flags: Flags for opening files (default: O_RDONLY | O_NOFOLLOW)
         reporting_increment: Call reporting_callback every N items (0 to disable)
-        reporting_callback: Callback function(state, private_data) called every
-            reporting_increment items with current iteration state
+        reporting_callback: Callback function(dir_stack, state, private_data) called every
+            reporting_increment items with current iteration state and directory stack
         reporting_private_data: User data passed to reporting_callback
 
     Returns:

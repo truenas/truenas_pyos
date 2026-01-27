@@ -785,16 +785,13 @@ PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
 "    Running count of items yielded. Updated during iteration\n"
 "cnt_bytes : int, optional, default=0\n"
 "    Running count of total bytes. Updated during iteration\n"
-"resume_token_name : str, optional\n"
-"    Extended attribute name for resume tokens. Must be set with resume_token_data\n"
-"resume_token_data : bytes, optional\n"
-"    16-byte resume token value. Must be set with resume_token_name\n"
 "file_open_flags : int, optional, default=0\n"
 "    Flags to use when opening files. O_NOFOLLOW is always added automatically\n"
 "reporting_increment : int, optional, default=1000\n"
 "    Call reporting_callback every N items processed. Set to 0 to disable\n"
 "reporting_callback : callable, optional\n"
-"    Function to call with (state, reporting_private_data) every reporting_increment items.\n"
+"    Function to call with (dir_stack, state, reporting_private_data) every reporting_increment items.\n"
+"    The dir_stack parameter is a tuple of (path, inode) tuples representing the current directory stack.\n"
 "    The state parameter is a FilesystemIterState object with current iteration statistics\n"
 "reporting_private_data : object, optional\n"
 "    User data to pass to reporting_callback\n"
@@ -813,9 +810,6 @@ py_iter_filesystem_contents(PyObject *self, PyObject *args, PyObject *kwargs)
 	const char *mountpoint;
 	const char *relative_path = NULL;
 	const char *filesystem_name;
-	const char *resume_token_name = NULL;
-	const char *resume_token_data = NULL;
-	Py_ssize_t resume_token_data_len = 0;
 	iter_state_t state = {0};
 
 	/* New reporting parameters */
@@ -825,34 +819,17 @@ py_iter_filesystem_contents(PyObject *self, PyObject *args, PyObject *kwargs)
 
 	static char *kwlist[] = {
 		"mountpoint", "filesystem_name", "relative_path",
-		"btime_cutoff", "cnt", "cnt_bytes",
-		"resume_token_name", "resume_token_data", "file_open_flags",
+		"btime_cutoff", "cnt", "cnt_bytes", "file_open_flags",
 		"reporting_increment", "reporting_callback", "reporting_private_data",
 		NULL
 	};
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ss|zLKKsy#iKOO:iter_filesystem_contents", kwlist,
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ss|zLKKiKOO:iter_filesystem_contents", kwlist,
 					  &mountpoint, &filesystem_name, &relative_path,
 					  &state.btime_cutoff, &state.cnt, &state.cnt_bytes,
-					  &resume_token_name, &resume_token_data, &resume_token_data_len,
 					  &state.file_open_flags,
 					  &reporting_cb_increment, &reporting_cb, &reporting_cb_private_data)) {
 		return NULL;
-	}
-
-	/* Handle resume token */
-	if (resume_token_name != NULL && resume_token_data != NULL) {
-		strlcpy(state.resume_token_name, resume_token_name, sizeof(state.resume_token_name));
-
-		if (resume_token_data_len != RESUME_TOKEN_MAX_LEN) {
-			PyErr_Format(PyExc_ValueError,
-				    "resume_token_data must be exactly %d bytes, got %zd",
-				    RESUME_TOKEN_MAX_LEN, resume_token_data_len);
-			return NULL;
-		}
-
-		memcpy(state.resume_token_data, resume_token_data, RESUME_TOKEN_MAX_LEN);
-		state.has_resume_token = true;
 	}
 
 	return create_filesystem_iterator(mountpoint, relative_path, filesystem_name, &state,
