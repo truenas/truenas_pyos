@@ -717,3 +717,119 @@ def test_iter_dir_stack_with_skip(temp_mount_tree):
             break
 
     assert found_dir1
+
+
+def test_iter_restore_error_exists():
+    """Test that IteratorRestoreError exception exists."""
+    assert hasattr(truenas_os, 'IteratorRestoreError')
+    assert issubclass(truenas_os.IteratorRestoreError, Exception)
+
+
+def test_iter_dir_stack_parameter_none(temp_mount_tree):
+    """Test that dir_stack=None parameter is accepted."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree),
+        dir_stack=None
+    )
+
+    # Should iterate normally
+    items = list(iterator)
+    assert len(items) > 0
+
+
+def test_iter_dir_stack_parameter_empty(temp_mount_tree):
+    """Test that dir_stack=() parameter is accepted."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree),
+        dir_stack=()
+    )
+
+    # Should iterate normally
+    items = list(iterator)
+    assert len(items) > 0
+
+
+def test_iter_dir_stack_invalid_type(temp_mount_tree):
+    """Test that invalid dir_stack type raises TypeError."""
+    with pytest.raises(TypeError, match="dir_stack must be a tuple"):
+        truenas_os.iter_filesystem_contents(
+            str(temp_mount_tree),
+            get_filesystem_name(temp_mount_tree),
+            dir_stack="invalid"
+        )
+
+
+def test_iter_dir_stack_invalid_entry_format(temp_mount_tree):
+    """Test that dir_stack with invalid entry format raises ValueError."""
+    # Entry is not a 2-tuple
+    with pytest.raises(ValueError, match="dir_stack entries must be"):
+        truenas_os.iter_filesystem_contents(
+            str(temp_mount_tree),
+            get_filesystem_name(temp_mount_tree),
+            dir_stack=(("path",),)  # Missing inode
+        )
+
+
+def test_iter_dir_stack_invalid_inode_type(temp_mount_tree):
+    """Test that dir_stack with invalid inode type raises TypeError."""
+    with pytest.raises(TypeError, match="inode must be an integer"):
+        truenas_os.iter_filesystem_contents(
+            str(temp_mount_tree),
+            get_filesystem_name(temp_mount_tree),
+            dir_stack=(("/path", "not_an_int"),)
+        )
+
+
+def test_iter_dir_stack_restoration_simple(temp_mount_tree):
+    """Test that iterator can be restored from dir_stack.
+
+    Note: Cookie restoration restores the directory path and continues
+    iterating from that directory. It re-iterates the restored directory
+    from the beginning (can't seek within DIR* streams).
+    """
+    # First iteration - save state when we've just entered dir1
+    iterator1 = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    saved_stack = None
+
+    for item in iterator1:
+        # Save when we first enter dir1 (when it's yielded as a directory)
+        if item.name == "dir1" and item.isdir:
+            # At this point, dir1 is on the stack but we haven't iterated it yet
+            # Actually, after yielding dir1, it's been pushed onto the stack
+            saved_stack = iterator1.dir_stack()
+            break
+
+    # Should have captured a dir_stack with dir1
+    assert saved_stack is not None
+    assert isinstance(saved_stack, tuple)
+    assert len(saved_stack) == 2, f"Should have [root, dir1], got length {len(saved_stack)}"
+    assert "dir1" in saved_stack[-1][0], f"Last entry should be dir1, got {saved_stack[-1][0]}"
+
+    # Restore from saved state
+    iterator2 = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree),
+        dir_stack=saved_stack
+    )
+
+    # Collect items from restored iterator
+    items_after = list(iterator2)
+    items_after_names = {item.name for item in items_after}
+
+    # Verify restoration worked:
+    # 1. We got items from inside dir1
+    assert "nested1.txt" in items_after_names or "nested2.txt" in items_after_names, (
+        f"Should yield items from inside dir1. Got: {items_after_names}"
+    )
+
+    # 2. The restored iterator should NOT have re-yielded dir1 itself
+    # (we descended into it silently during restoration)
+    assert "dir1" not in items_after_names, (
+        f"Restored iterator should not re-yield dir1. Got: {items_after_names}"
+    )

@@ -48,6 +48,10 @@ typedef struct {
 	iter_entry_t last;
 	fsiter_error_t cerr;
 
+	uint64_t *cookies;	/* array of inode numbers for where we left off last time */
+	size_t cookie_sz;
+	bool restoring_from_cookie;	/* true when matched a cookie (don't yield this dir) */
+
 	size_t reporting_cb_increment;
 	PyObject *reporting_cb;
 	PyObject *reporting_cb_private_data;
@@ -62,6 +66,7 @@ PyObject* create_filesystem_iterator(const char *mountpoint, const char *relativ
 				     const char *filesystem_name, const iter_state_t *state,
 				     size_t reporting_cb_increment,
 				     PyObject *reporting_cb,
-				     PyObject *reporting_cb_private_data);
+				     PyObject *reporting_cb_private_data,
+				     PyObject *dir_stack);
 
 #endif /* TRUENAS_FSITER_H */

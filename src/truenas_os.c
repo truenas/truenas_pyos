@@ -763,9 +763,9 @@ static PyObject *py_umount2(PyObject *obj,
 PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
 "iter_filesystem_contents(mountpoint, filesystem_name, relative_path=None, /,\n"
 "                         btime_cutoff=0, cnt=0, cnt_bytes=0,\n"
-"                         resume_token_name=None, resume_token_data=None,\n"
 "                         file_open_flags=0, reporting_increment=1000,\n"
-"                         reporting_callback=None, reporting_private_data=None)\n"
+"                         reporting_callback=None, reporting_private_data=None,\n"
+"                         dir_stack=None)\n"
 "--\n\n"
 "Iterate over all files and directories in a filesystem.\n"
 "Provides secure iteration using openat2 and statx, preventing symlink attacks\n"
@@ -795,6 +795,11 @@ PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
 "    The state parameter is a FilesystemIterState object with current iteration statistics\n"
 "reporting_private_data : object, optional\n"
 "    User data to pass to reporting_callback\n"
+"dir_stack : tuple, optional\n"
+"    Directory stack from a previous iteration to resume from. Should be a tuple of\n"
+"    (path, inode) tuples obtained from a previous iterator's dir_stack() method.\n"
+"    If provided, the iterator will attempt to restore to that position in the tree.\n"
+"    Raises IteratorRestoreError if restoration fails.\n"
 "Returns\n"
 "-------\n"
 "iterator : FilesystemIterator\n"
@@ -816,24 +821,28 @@ py_iter_filesystem_contents(PyObject *self, PyObject *args, PyObject *kwargs)
 	size_t reporting_cb_increment = 1000;
 	PyObject *reporting_cb = NULL;
 	PyObject *reporting_cb_private_data = NULL;
+	PyObject *dir_stack = NULL;
 
 	static char *kwlist[] = {
 		"mountpoint", "filesystem_name", "relative_path",
 		"btime_cutoff", "cnt", "cnt_bytes", "file_open_flags",
 		"reporting_increment", "reporting_callback", "reporting_private_data",
+		"dir_stack",
 		NULL
 	};
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ss|zLKKiKOO:iter_filesystem_contents", kwlist,
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ss|zLKKiKOOO:iter_filesystem_contents", kwlist,
 					  &mountpoint, &filesystem_name, &relative_path,
 					  &state.btime_cutoff, &state.cnt, &state.cnt_bytes,
 					  &state.file_open_flags,
-					  &reporting_cb_increment, &reporting_cb, &reporting_cb_private_data)) {
+					  &reporting_cb_increment, &reporting_cb, &reporting_cb_private_data,
+					  &dir_stack)) {
 		return NULL;
 	}
 
 	return create_filesystem_iterator(mountpoint, relative_path, filesystem_name, &state,
-	                                  reporting_cb_increment, reporting_cb, reporting_cb_private_data);
+	                                  reporting_cb_increment, reporting_cb, reporting_cb_private_data,
+	                                  dir_stack);
 }
 
 static PyMethodDef truenas_os_methods[] = {
@@ -1024,6 +1033,33 @@ PyObject* module_init(void)
 
 	// Initialize filesystem iterator types
 	if (init_iter_types(m) < 0) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	// Create and add IteratorRestoreError exception
+	truenas_os_state_t *state = get_truenas_os_state(m);
+	if (state == NULL) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	state->IteratorRestoreError = PyErr_NewExceptionWithDoc(
+		"truenas_os.IteratorRestoreError",
+		"Exception raised when iterator cannot be restored to previous state.\n\n"
+		"Attributes\n"
+		"----------\n"
+		"depth : int\n"
+		"    The directory stack depth at which restoration failed",
+		NULL, NULL);
+
+	if (state->IteratorRestoreError == NULL) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	if (PyModule_AddObjectRef(m, "IteratorRestoreError", state->IteratorRestoreError) < 0) {
+		Py_DECREF(state->IteratorRestoreError);
 		Py_DECREF(m);
 		return NULL;
 	}

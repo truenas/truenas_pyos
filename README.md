@@ -518,7 +518,7 @@ os.close(mount_fd)
 ### Filesystem Iteration
 
 #### `iter_filesystem_contents(mountpoint, filesystem_name, /, *, relative_path=None, btime_cutoff=0,`
-#### `file_open_flags=os.O_RDONLY, reporting_increment=1000, reporting_callback=None, reporting_private_data=None)`
+#### `file_open_flags=os.O_RDONLY, reporting_increment=1000, reporting_callback=None, reporting_private_data=None, dir_stack=None)`
 
 Depth-first iteration over filesystem contents.
 
@@ -541,13 +541,14 @@ for item in truenas_os.iter_filesystem_contents("/mnt/tank", "tank/dataset"):
 - `reporting_increment` (int): Callback interval in items (default: 1000)
 - `reporting_callback` (callable|None): Function(dir_stack, FilesystemIterState, private_data) (default: None)
 - `reporting_private_data` (any): User data for callback (default: None)
+- `dir_stack` (tuple|None): Tuple of (path, inode) tuples from a previous iterator to restore directory path (default: None)
 
 **Returns:** FilesystemIterator yielding IterInstance objects
 
 **IterInstance:**
 - `parent` (str): Directory path
 - `name` (str): Entry name
-- `fd` (int): Open file descriptor (caller must close)
+- `fd` (int): Open file descriptor (valid until next iteration, do not close - iterator manages lifecycle)
 - `statxinfo` (StatxResult): File metadata
 - `isdir` (bool): Directory flag
 
@@ -587,6 +588,50 @@ for item in iterator:
     for path, inode in stack:
         print(f"  {path} (inode: {inode})")
 ```
+
+**Restoring Iterator Position with dir_stack:**
+
+The `dir_stack` parameter enables resuming iteration from a previously saved directory path. When provided, the iterator
+reconstructs the directory path by matching inode numbers, descending through the tree without yielding intermediate
+directories.
+
+```python
+import truenas_os
+
+# Initial iteration - save position
+iterator1 = truenas_os.iter_filesystem_contents("/mnt/tank", "tank/dataset")
+saved_stack = None
+
+for item in iterator1:
+    if some_condition:
+        saved_stack = iterator1.dir_stack()
+        break
+
+# Later - restore from saved position
+iterator2 = truenas_os.iter_filesystem_contents(
+    "/mnt/tank",
+    "tank/dataset",
+    dir_stack=saved_stack
+)
+
+# Iteration continues from the saved directory
+for item in iterator2:
+    process(item)
+```
+
+**Restoration behavior:**
+- The iterator descends through the saved directory path without yielding intermediate directories
+- Once the target directory is reached, iteration proceeds from the beginning of that directory
+- DIR* streams cannot seek to specific positions within a directory, so files within the restored directory may be
+  re-yielded if they were already processed
+- If a directory in the saved path no longer exists or has a different inode, `IteratorRestoreError` is raised with
+  the depth where restoration failed
+- API consumers must implement their own logic to track which files within the restored directory have been processed
+  if exact resume behavior is required
+
+**Exception:**
+- `IteratorRestoreError`: Raised when the saved directory path cannot be restored. The exception has a `depth` attribute
+  indicating the directory stack depth where the restoration failed.
 
 ---
 

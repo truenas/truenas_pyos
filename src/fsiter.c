@@ -238,6 +238,9 @@ FilesystemIterator_dealloc(FilesystemIteratorObject *self)
 	Py_XDECREF(self->reporting_cb);
 	Py_XDECREF(self->reporting_cb_private_data);
 
+	/* Clean up cookies array */
+	PyMem_RawFree(self->cookies);
+
 	Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -362,7 +365,7 @@ push_dir_stack(FilesystemIteratorObject *self, iter_dir_t *cur_dir, fsiter_error
 	new_dir->path = pymem_strdup(full_path);
 	if (new_dir->path == NULL) {
 		SET_ERROR(err, "strdup failed for %s", full_path);
-		cleanup_iter_dir(new_dir);
+		closedir(dirp);  /* dirp not yet assigned to new_dir, close it here */
 		return false;
 	}
 
@@ -439,6 +442,73 @@ build_dir_stack_tuple(FilesystemIteratorObject *self)
 }
 
 /*
+ * Helper: convert dir_stack tuple to cookies array
+ * Returns true on success, false on error (with Python exception set)
+ * On success, *cookies_out points to allocated array (caller must free with PyMem_RawFree)
+ * and *cookie_sz_out contains the array size
+ * On success with no dir_stack, *cookies_out is NULL and *cookie_sz_out is 0
+ */
+static bool
+dir_stack_to_cookies(PyObject *dir_stack, uint64_t **cookies_out, size_t *cookie_sz_out)
+{
+	uint64_t *cookies = NULL;
+	size_t cookie_sz;
+
+	if (dir_stack == NULL || dir_stack == Py_None) {
+		*cookies_out = NULL;
+		*cookie_sz_out = 0;
+		return true;
+	}
+
+	if (!PyTuple_Check(dir_stack)) {
+		PyErr_SetString(PyExc_TypeError, "dir_stack must be a tuple");
+		return false;
+	}
+
+	cookie_sz = PyTuple_GET_SIZE(dir_stack);
+	if (cookie_sz == 0) {
+		*cookies_out = NULL;
+		*cookie_sz_out = 0;
+		return true;
+	}
+
+	cookies = PyMem_RawMalloc(cookie_sz * sizeof(uint64_t));
+	if (cookies == NULL) {
+		PyErr_NoMemory();
+		return false;
+	}
+
+	/* Extract inode numbers from dir_stack tuples */
+	for (size_t i = 0; i < cookie_sz; i++) {
+		PyObject *entry = PyTuple_GET_ITEM(dir_stack, i);
+		if (!PyTuple_Check(entry) || PyTuple_GET_SIZE(entry) != 2) {
+			PyMem_RawFree(cookies);
+			PyErr_SetString(PyExc_ValueError,
+				"dir_stack entries must be (path, inode) tuples");
+			return false;
+		}
+
+		PyObject *inode_obj = PyTuple_GET_ITEM(entry, 1);
+		if (!PyLong_Check(inode_obj)) {
+			PyMem_RawFree(cookies);
+			PyErr_SetString(PyExc_TypeError,
+				"dir_stack inode must be an integer");
+			return false;
+		}
+
+		cookies[i] = PyLong_AsUnsignedLongLong(inode_obj);
+		if (cookies[i] == (uint64_t)-1 && PyErr_Occurred()) {
+			PyMem_RawFree(cookies);
+			return false;
+		}
+	}
+
+	*cookies_out = cookies;
+	*cookie_sz_out = cookie_sz;
+	return true;
+}
+
+/*
  * Helper to invoke reporting callback if needed
  * Returns true on success, false on error (with Python exception set)
  */
@@ -494,6 +564,7 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 	struct dirent *direntp;
 	iter_dir_t *cur_dir;
 	int async_err = 0;
+	size_t pos;
 
 	/* Close fd from previous iteration */
 	if (self->last.fd >= 0) {
@@ -513,7 +584,8 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 
 	/* Main iteration loop */
 	while (self->cur_depth > 0) {
-		cur_dir = &self->dir_stack[self->cur_depth - 1];
+		pos = self->cur_depth -1;
+		cur_dir = &self->dir_stack[pos];
 
 		/*
 		 * We separate out the readdir call from the
@@ -531,12 +603,61 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 					     cur_dir->path, strerror(errno));
 				return NULL;
 			}
+
+			/*
+			 * If we exhausted this directory but still have an
+			 * unfulfilled cookie for this depth, we failed to
+			 * restore the iterator state.
+			 */
+			if (self->cookies && (self->cur_depth < self->cookie_sz) &&
+			    (self->cookies[self->cur_depth] != 0)) {
+				truenas_os_state_t *state = get_truenas_os_state(NULL);
+				if (state == NULL || state->IteratorRestoreError == NULL) {
+					PyErr_SetString(PyExc_SystemError,
+						"Module state not initialized for IteratorRestoreError");
+					return NULL;
+				}
+				PyObject *exc = PyObject_CallFunction(state->IteratorRestoreError,
+					"i", (int)self->cur_depth);
+				if (exc != NULL) {
+					PyErr_SetObject(state->IteratorRestoreError, exc);
+					Py_DECREF(exc);
+				}
+				return NULL;
+			}
 			/* Directory exhausted */
 			action = FSITER_POP_DIR;
 		} else if (ISDOT(direntp->d_name) || ISDOTDOT(direntp->d_name)) {
 			/* skip . and .. */
 			action = FSITER_CONTINUE;
 		} else {
+			/*
+			 * COOKIE NOM NOM
+			 *
+			 * If we're restoring from a previous iterator state,
+			 * we have a "cookie" (inode number) for the directory
+			 * we need to descend into at this depth. Skip all
+			 * entries until we find the one matching our cookie.
+			 *
+			 * cookies[0] is root (which we start in), cookies[1]
+			 * is the first subdir to descend into, etc. Since
+			 * pos = cur_depth - 1, and we start with cur_depth = 1,
+			 * we need to check cookies[cur_depth] to find the next
+			 * directory to descend into.
+			 */
+			if (self->cookies && (self->cur_depth < self->cookie_sz)) {
+				uint64_t mycookie = self->cookies[self->cur_depth];
+				if (mycookie != 0) {
+					if (direntp->d_ino != mycookie) {
+						/* Not the entry we're looking for, skip it */
+						action = FSITER_CONTINUE;
+						continue;
+					}
+					/* Found matching cookie - clear it */
+					self->cookies[self->cur_depth] = 0;
+				}
+			}
+
 			/*
 			 * Process next entry with GIL released
 			 * Retry on EINTR unless python has handled a signal.
@@ -581,11 +702,14 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 			return result;
 
 		case FSITER_YIELD_DIR:
-			/* Create IterInstance for directory */
-			result = create_iter_instance(self->last.fd, &self->last.st,
-						      cur_dir->path, self->last.name);
-			if (result == NULL)
-				return NULL;
+			/* Create IterInstance for directory (unless restoring from cookie) */
+			result = NULL;
+			if (!self->restoring_from_cookie) {
+				result = create_iter_instance(self->last.fd, &self->last.st,
+							      cur_dir->path, self->last.name);
+				if (result == NULL)
+					return NULL;
+			}
 
 			/* Push directory onto stack with GIL released */
 			Py_BEGIN_ALLOW_THREADS
@@ -593,9 +717,23 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 			Py_END_ALLOW_THREADS
 
 			if (!push_ok) {
-				Py_DECREF(result);
+				Py_XDECREF(result);
 				PyErr_SetString(PyExc_OSError, self->cerr.message);
 				return NULL;
+			} else if (self->restoring_from_cookie) {
+				/*
+				 * At this point we know that we've hit our target
+				 * for restoration from cookie, *BUT* we don't want
+				 * to yield the directory to the consumer. The
+				 * guarantee is that we will begin yielding inside
+				 * the directory.
+				 */
+				self->restoring_from_cookie = false;
+
+				PyMem_RawFree(self->cookies);
+				self->cookies = NULL;
+				self->cookie_sz = 0;
+				continue;
 			}
 
 			/* Update counter */
@@ -750,7 +888,8 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 			   const char *filesystem_name, const iter_state_t *state,
 			   size_t reporting_cb_increment,
 			   PyObject *reporting_cb,
-			   PyObject *reporting_cb_private_data)
+			   PyObject *reporting_cb_private_data,
+			   PyObject *dir_stack)
 {
 	FilesystemIteratorObject *iter;
 	int root_fd;
@@ -761,6 +900,8 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	iter_dir_t *root_dir;
 	struct statmount *sm;
 	const char *sb_source;
+	uint64_t *cookies = NULL;
+	size_t cookie_sz = 0;
 
 	/* Validate callback early before allocating resources */
 	if (reporting_cb != NULL && reporting_cb != Py_None) {
@@ -770,16 +911,28 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 		}
 	}
 
+	/* Convert dir_stack to cookies array if provided */
+	if (!dir_stack_to_cookies(dir_stack, &cookies, &cookie_sz)) {
+		return NULL;
+	}
+
 	/* Build root path */
+	int root_path_len;
 	if (relative_path && relative_path[0] != '\0') {
-		snprintf(root_path, sizeof(root_path), "%s/%s", mountpoint, relative_path);
+		root_path_len = snprintf(root_path, sizeof(root_path), "%s/%s", mountpoint, relative_path);
 	} else {
-		snprintf(root_path, sizeof(root_path), "%s", mountpoint);
+		root_path_len = snprintf(root_path, sizeof(root_path), "%s", mountpoint);
+	}
+	if (root_path_len >= sizeof(root_path)) {
+		PyMem_RawFree(cookies);
+		PyErr_Format(PyExc_ValueError, "path too long (would be %d bytes)", root_path_len);
+		return NULL;
 	}
 
 	/* Open root directory with openat2 */
 	root_fd = openat2_impl(AT_FDCWD, root_path, OFLAGS_DIR_ITER, RESOLVE_NO_SYMLINKS);
 	if (root_fd < 0) {
+		PyMem_RawFree(cookies);
 		PyErr_SetFromErrnoWithFilename(PyExc_OSError, root_path);
 		return NULL;
 	}
@@ -788,6 +941,7 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	ret = statx_impl(root_fd, "", STATX_FLAGS_ITER, STATX_MASK_ITER, &root_st);
 	if (ret < 0) {
 		close(root_fd);
+		PyMem_RawFree(cookies);
 		PyErr_SetFromErrnoWithFilename(PyExc_OSError, root_path);
 		return NULL;
 	}
@@ -795,6 +949,7 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	/* Validate it's a directory */
 	if (!S_ISDIR(root_st.stx_mode)) {
 		close(root_fd);
+		PyMem_RawFree(cookies);
 		PyErr_Format(PyExc_NotADirectoryError, "Not a directory: %s", root_path);
 		return NULL;
 	}
@@ -804,6 +959,7 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	sm = statmount_impl(root_st.stx_mnt_id, STATMOUNT_SB_BASIC | STATMOUNT_SB_SOURCE);
 	if (sm == NULL) {
 		close(root_fd);
+		PyMem_RawFree(cookies);
 		PyErr_SetFromErrnoWithFilename(PyExc_OSError, root_path);
 		return NULL;
 	}
@@ -812,6 +968,7 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	if (strcmp(sb_source, filesystem_name) != 0) {
 		PyMem_RawFree(sm);
 		close(root_fd);
+		PyMem_RawFree(cookies);
 		PyErr_Format(PyExc_RuntimeError,
 				     "%s: filesystem source mismatch (expected %s, got %s)",
 				     root_path, filesystem_name, sb_source);
@@ -825,6 +982,7 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	root_dirp = fdopendir(root_fd);
 	if (root_dirp == NULL) {
 		close(root_fd);
+		PyMem_RawFree(cookies);
 		PyErr_SetFromErrnoWithFilename(PyExc_OSError, root_path);
 		return NULL;
 	}
@@ -833,6 +991,7 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	iter = PyObject_New(FilesystemIteratorObject, &FilesystemIteratorType);
 	if (iter == NULL) {
 		closedir(root_dirp);
+		PyMem_RawFree(cookies);
 		return NULL;
 	}
 
@@ -845,6 +1004,11 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 
 	/* Copy state into iterator */
 	memcpy(&iter->state, state, sizeof(iter_state_t));
+
+	/* Initialize cookies */
+	iter->cookies = cookies;
+	iter->cookie_sz = cookie_sz;
+	iter->restoring_from_cookie = cookies != NULL;
 
 	/* Initialize reporting fields */
 	iter->reporting_cb_increment = reporting_cb_increment;
