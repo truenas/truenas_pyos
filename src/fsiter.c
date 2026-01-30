@@ -728,11 +728,14 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 				 * guarantee is that we will begin yielding inside
 				 * the directory.
 				 */
-				self->restoring_from_cookie = false;
+				if (self->cur_depth >= self->cookie_sz) {
+					self->restoring_from_cookie = false;
 
-				PyMem_RawFree(self->cookies);
-				self->cookies = NULL;
-				self->cookie_sz = 0;
+					PyMem_RawFree(self->cookies);
+					self->cookies = NULL;
+					self->cookie_sz = 0;
+				}
+				Py_XDECREF(result);
 				continue;
 			}
 

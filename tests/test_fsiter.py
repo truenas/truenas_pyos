@@ -782,6 +782,74 @@ def test_iter_dir_stack_invalid_inode_type(temp_mount_tree):
         )
 
 
+def test_iter_dir_stack_restoration_failure_recovery(temp_mount_tree):
+    """Test that IteratorRestoreError is raised when path no longer exists,
+    and that we can recover by slicing the dir_stack to the failed depth.
+    """
+    # Create a deep directory structure: dir1/subdir/deepdir
+    deep_path = temp_mount_tree / "dir2" / "subdir" / "deepdir"
+    deep_path.mkdir(parents=True, exist_ok=True)
+    (deep_path / "deepfile.txt").write_bytes(b"deep")
+
+    # First iteration - descend to depth 3 and save dir_stack
+    iterator1 = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    saved_stack = None
+    for item in iterator1:
+        stack = iterator1.dir_stack()
+        # Save when we're at depth 3 (root + dir2 + subdir)
+        if len(stack) == 3 and "subdir" in stack[-1][0]:
+            saved_stack = iterator1.dir_stack()
+            break
+
+    assert saved_stack is not None
+    assert len(saved_stack) == 3
+    assert "subdir" in saved_stack[-1][0]
+
+    # Delete the deepest directory from filesystem
+    import shutil
+    deepest_dir = saved_stack[-1][0]
+    shutil.rmtree(deepest_dir)
+
+    # Try to restore - should fail with IteratorRestoreError
+    try:
+        iterator2 = truenas_os.iter_filesystem_contents(
+            str(temp_mount_tree),
+            get_filesystem_name(temp_mount_tree),
+            dir_stack=saved_stack
+        )
+        # Try to iterate - should raise error when can't find the path
+        list(iterator2)
+        assert False, "Should have raised IteratorRestoreError"
+    except truenas_os.IteratorRestoreError as e:
+        # Verify the exception tells us which depth failed
+        # It should fail at depth 2 (0-indexed), trying to find subdir
+        failed_depth = int(str(e))
+        assert failed_depth == 2, f"Expected failure at depth 2, got {failed_depth}"
+
+        # Slice the dir_stack to remove the problematic entry
+        recovered_stack = saved_stack[:failed_depth]
+        assert len(recovered_stack) == 2  # root + dir2
+
+    # Now try to restore with the sliced stack - should succeed
+    iterator3 = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree),
+        dir_stack=recovered_stack
+    )
+
+    # Should be able to iterate from dir2 level
+    items = list(iterator3)
+    assert len(items) > 0, "Should successfully iterate after recovery"
+
+    # Verify we're iterating from dir2 level (not seeing dir2 itself)
+    item_names = {item.name for item in items}
+    assert "dir2" not in item_names, "Should not re-yield dir2 during restoration"
+
+
 def test_iter_dir_stack_restoration_simple(temp_mount_tree):
     """Test that iterator can be restored from dir_stack.
 
