@@ -11,6 +11,25 @@
 /* Maximum directory depth for stack allocation */
 #define MAX_DEPTH 2048
 
+/*
+ * Macro to handle extreme error case in module. This should only be invoked
+ * if an error condition is detected that would make it dangerous to continue.
+ * This will call Py_FatalError() which will abort the process.
+ */
+#define __STRING(x) #x
+#define __STRINGSTRING(x) __STRING(x)
+#define __LINESTR__ __STRINGSTRING(__LINE__)
+#define __location__ __FILE__ ":" __LINESTR__
+
+#define __FSITER_ASSERT_IMPL(test, message, location) do {\
+	if (!((test))) {\
+		Py_FatalError(message " [" location "]");\
+	}\
+} while (0)
+
+#define FSITER_ASSERT(test, message)\
+	__FSITER_ASSERT_IMPL(test, message, __location__)
+
 /* Error buffer for operations without GIL */
 typedef struct {
 	char message[8192];

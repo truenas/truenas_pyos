@@ -584,6 +584,9 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 
 	/* Main iteration loop */
 	while (self->cur_depth > 0) {
+		FSITER_ASSERT(self->cur_depth < MAX_DEPTH,
+		              "Iterator depth exceeded MAX_DEPTH");
+
 		pos = self->cur_depth -1;
 		cur_dir = &self->dir_stack[pos];
 
@@ -617,12 +620,51 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 						"Module state not initialized for IteratorRestoreError");
 					return NULL;
 				}
-				PyObject *exc = PyObject_CallFunction(state->IteratorRestoreError,
-					"i", (int)self->cur_depth);
-				if (exc != NULL) {
-					PyErr_SetObject(state->IteratorRestoreError, exc);
-					Py_DECREF(exc);
+
+				FSITER_ASSERT(cur_dir->path != NULL,
+				              "cur_dir path is NULL during restoration error");
+
+				PyObject *errmsg = PyUnicode_FromFormat(
+					"Failed to restore iterator position at depth %zu in directory: %s",
+					self->cur_depth, cur_dir->path);
+				if (errmsg == NULL) {
+					return NULL;
 				}
+
+				PyObject *exc = PyObject_CallFunction(state->IteratorRestoreError,
+					"O", errmsg);
+				Py_DECREF(errmsg);
+
+				if (exc == NULL) {
+					return NULL;
+				}
+
+				PyObject *depth_obj = PyLong_FromSize_t(self->cur_depth);
+				if (depth_obj == NULL) {
+					Py_DECREF(exc);
+					return NULL;
+				}
+				if (PyObject_SetAttrString(exc, "depth", depth_obj) < 0) {
+					Py_DECREF(depth_obj);
+					Py_DECREF(exc);
+					return NULL;
+				}
+				Py_DECREF(depth_obj);
+
+				PyObject *path_obj = PyUnicode_FromString(cur_dir->path);
+				if (path_obj == NULL) {
+					Py_DECREF(exc);
+					return NULL;
+				}
+				if (PyObject_SetAttrString(exc, "path", path_obj) < 0) {
+					Py_DECREF(path_obj);
+					Py_DECREF(exc);
+					return NULL;
+				}
+				Py_DECREF(path_obj);
+
+				PyErr_SetObject(state->IteratorRestoreError, exc);
+				Py_DECREF(exc);
 				return NULL;
 			}
 			/* Directory exhausted */

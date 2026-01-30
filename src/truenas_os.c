@@ -1050,7 +1050,9 @@ PyObject* module_init(void)
 		"Attributes\n"
 		"----------\n"
 		"depth : int\n"
-		"    The directory stack depth at which restoration failed",
+		"    The directory stack depth (0-indexed) at which restoration failed\n"
+		"path : str\n"
+		"    The directory path where the expected subdirectory was not found",
 		NULL, NULL);
 
 	if (state->IteratorRestoreError == NULL) {

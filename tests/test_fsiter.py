@@ -786,7 +786,11 @@ def test_iter_dir_stack_restoration_failure_recovery(temp_mount_tree):
     """Test that IteratorRestoreError is raised when path no longer exists,
     and that we can recover by slicing the dir_stack to the failed depth.
     """
-    # Create a deep directory structure: dir1/subdir/deepdir
+    # Create a deep directory structure: dir2/subdir/deepdir
+    # Also create a sibling file in dir2 that will remain after deletion
+    (temp_mount_tree / "dir2").mkdir(exist_ok=True)
+    (temp_mount_tree / "dir2" / "sibling_file.txt").write_bytes(b"sibling")
+
     deep_path = temp_mount_tree / "dir2" / "subdir" / "deepdir"
     deep_path.mkdir(parents=True, exist_ok=True)
     (deep_path / "deepfile.txt").write_bytes(b"deep")
@@ -827,11 +831,12 @@ def test_iter_dir_stack_restoration_failure_recovery(temp_mount_tree):
     except truenas_os.IteratorRestoreError as e:
         # Verify the exception tells us which depth failed
         # It should fail at depth 2 (0-indexed), trying to find subdir
-        failed_depth = int(str(e))
-        assert failed_depth == 2, f"Expected failure at depth 2, got {failed_depth}"
+        assert hasattr(e, 'depth'), "Exception should have depth attribute"
+        assert hasattr(e, 'path'), "Exception should have path attribute"
+        assert e.depth == 2, f"Expected failure at depth 2, got {e.depth}"
 
         # Slice the dir_stack to remove the problematic entry
-        recovered_stack = saved_stack[:failed_depth]
+        recovered_stack = saved_stack[:e.depth]
         assert len(recovered_stack) == 2  # root + dir2
 
     # Now try to restore with the sliced stack - should succeed
@@ -845,8 +850,9 @@ def test_iter_dir_stack_restoration_failure_recovery(temp_mount_tree):
     items = list(iterator3)
     assert len(items) > 0, "Should successfully iterate after recovery"
 
-    # Verify we're iterating from dir2 level (not seeing dir2 itself)
+    # Verify we're iterating from dir2 level and seeing the sibling file
     item_names = {item.name for item in items}
+    assert "sibling_file.txt" in item_names, "Should see the sibling file that wasn't deleted"
     assert "dir2" not in item_names, "Should not re-yield dir2 during restoration"
 
 

@@ -630,8 +630,10 @@ for item in iterator2:
   if exact resume behavior is required
 
 **Exception:**
-- `IteratorRestoreError`: Raised when the saved directory path cannot be restored. The exception has a `depth` attribute
-  indicating the directory stack depth where the restoration failed.
+- `IteratorRestoreError`: Raised when the saved directory path cannot be restored. The exception includes:
+  - `depth` attribute: The directory stack depth (0-indexed) where restoration failed
+  - `path` attribute: The directory path where the expected subdirectory was not found
+  - Error message includes both the depth and path for easy debugging
 
 ---
 
