@@ -553,6 +553,68 @@ check_and_invoke_reporting_callback(FilesystemIteratorObject *self, const char *
 }
 
 /*
+ * Set IteratorRestoreError exception with depth and path attributes.
+ * This is called when restoration fails because a directory in the saved
+ * path no longer exists or has a different inode.
+ */
+static void
+set_iterator_restore_error(size_t depth, const char *path)
+{
+	truenas_os_state_t *state;
+	PyObject *errmsg, *exc, *depth_obj, *path_obj;
+
+	FSITER_ASSERT(path != NULL, "path is NULL in set_iterator_restore_error");
+
+	state = get_truenas_os_state(NULL);
+	if (state == NULL || state->IteratorRestoreError == NULL) {
+		PyErr_SetString(PyExc_SystemError,
+			"Module state not initialized for IteratorRestoreError");
+		return;
+	}
+
+	errmsg = PyUnicode_FromFormat(
+		"Failed to restore iterator position at depth %zu in directory: %s",
+		depth, path);
+	if (errmsg == NULL) {
+		return;
+	}
+
+	exc = PyObject_CallFunction(state->IteratorRestoreError, "O", errmsg);
+	Py_DECREF(errmsg);
+
+	if (exc == NULL) {
+		return;
+	}
+
+	depth_obj = PyLong_FromSize_t(depth);
+	if (depth_obj == NULL) {
+		Py_DECREF(exc);
+		return;
+	}
+	if (PyObject_SetAttrString(exc, "depth", depth_obj) < 0) {
+		Py_DECREF(depth_obj);
+		Py_DECREF(exc);
+		return;
+	}
+	Py_DECREF(depth_obj);
+
+	path_obj = PyUnicode_FromString(path);
+	if (path_obj == NULL) {
+		Py_DECREF(exc);
+		return;
+	}
+	if (PyObject_SetAttrString(exc, "path", path_obj) < 0) {
+		Py_DECREF(path_obj);
+		Py_DECREF(exc);
+		return;
+	}
+	Py_DECREF(path_obj);
+
+	PyErr_SetObject(state->IteratorRestoreError, exc);
+	Py_DECREF(exc);
+}
+
+/*
  * FilesystemIterator __next__
  */
 static PyObject *
@@ -614,57 +676,7 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 			 */
 			if (self->cookies && (self->cur_depth < self->cookie_sz) &&
 			    (self->cookies[self->cur_depth] != 0)) {
-				truenas_os_state_t *state = get_truenas_os_state(NULL);
-				if (state == NULL || state->IteratorRestoreError == NULL) {
-					PyErr_SetString(PyExc_SystemError,
-						"Module state not initialized for IteratorRestoreError");
-					return NULL;
-				}
-
-				FSITER_ASSERT(cur_dir->path != NULL,
-				              "cur_dir path is NULL during restoration error");
-
-				PyObject *errmsg = PyUnicode_FromFormat(
-					"Failed to restore iterator position at depth %zu in directory: %s",
-					self->cur_depth, cur_dir->path);
-				if (errmsg == NULL) {
-					return NULL;
-				}
-
-				PyObject *exc = PyObject_CallFunction(state->IteratorRestoreError,
-					"O", errmsg);
-				Py_DECREF(errmsg);
-
-				if (exc == NULL) {
-					return NULL;
-				}
-
-				PyObject *depth_obj = PyLong_FromSize_t(self->cur_depth);
-				if (depth_obj == NULL) {
-					Py_DECREF(exc);
-					return NULL;
-				}
-				if (PyObject_SetAttrString(exc, "depth", depth_obj) < 0) {
-					Py_DECREF(depth_obj);
-					Py_DECREF(exc);
-					return NULL;
-				}
-				Py_DECREF(depth_obj);
-
-				PyObject *path_obj = PyUnicode_FromString(cur_dir->path);
-				if (path_obj == NULL) {
-					Py_DECREF(exc);
-					return NULL;
-				}
-				if (PyObject_SetAttrString(exc, "path", path_obj) < 0) {
-					Py_DECREF(path_obj);
-					Py_DECREF(exc);
-					return NULL;
-				}
-				Py_DECREF(path_obj);
-
-				PyErr_SetObject(state->IteratorRestoreError, exc);
-				Py_DECREF(exc);
+				set_iterator_restore_error(self->cur_depth, cur_dir->path);
 				return NULL;
 			}
 			/* Directory exhausted */
@@ -968,7 +980,7 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	} else {
 		root_path_len = snprintf(root_path, sizeof(root_path), "%s", mountpoint);
 	}
-	if (root_path_len >= sizeof(root_path)) {
+	if (root_path_len >= (int)sizeof(root_path)) {
 		PyMem_RawFree(cookies);
 		PyErr_Format(PyExc_ValueError, "path too long (would be %d bytes)", root_path_len);
 		return NULL;
