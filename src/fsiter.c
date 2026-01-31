@@ -57,6 +57,7 @@ enum {
 	ITER_INST_STATX,
 	ITER_INST_ISDIR,
 	ITER_INST_ISLNK,
+	ITER_INST_ISREG,
 	ITER_INST_NUM_FIELDS
 };
 
@@ -68,6 +69,7 @@ static PyStructSequence_Field iter_instance_fields[] = {
 	{"statxinfo", "Statx result object"},
 	{"isdir", "True if directory, False if file"},
 	{"islnk", "True if symlink, False otherwise"},
+	{"isreg", "True if regular file, False otherwise"},
 	{NULL}
 };
 
@@ -171,13 +173,9 @@ py_fsiter_state_from_struct(const iter_state_t *c_state, const char *current_dir
 static PyObject *
 create_iter_instance(int fd, const struct statx *st, const char *parent, const char *name)
 {
-	PyObject *inst, *statx_obj, *parent_obj, *name_obj, *fd_obj, *isdir_obj, *islnk_obj;
-	bool isdir, islnk;
+	PyObject *inst, *statx_obj, *parent_obj, *name_obj, *fd_obj;
+	PyObject *isdir_obj, *islnk_obj, *isreg_obj;
 	truenas_os_state_t *state;
-
-	/* Determine if directory from statx mode */
-	isdir = S_ISDIR(st->stx_mode);
-	islnk = S_ISLNK(st->stx_mode);
 
 	/* Convert statx struct to Python object */
 	statx_obj = statx_to_pyobject(st);
@@ -203,8 +201,6 @@ create_iter_instance(int fd, const struct statx *st, const char *parent, const c
 	parent_obj = PyUnicode_FromString(parent);
 	name_obj = PyUnicode_FromString(name);
 	fd_obj = PyLong_FromLong(fd);
-	isdir_obj = Py_NewRef(isdir ? Py_True : Py_False);
-	islnk_obj = Py_NewRef(islnk ? Py_True : Py_False);
 
 	if (!parent_obj || !name_obj || !fd_obj) {
 		Py_XDECREF(parent_obj);
@@ -217,12 +213,17 @@ create_iter_instance(int fd, const struct statx *st, const char *parent, const c
 		return NULL;
 	}
 
+	isdir_obj = Py_NewRef(S_ISDIR(st->stx_mode) ? Py_True : Py_False);
+	islnk_obj = Py_NewRef(S_ISLNK(st->stx_mode) ? Py_True : Py_False);
+	isreg_obj = Py_NewRef(S_ISREG(st->stx_mode) ? Py_True : Py_False);
+
 	PyStructSequence_SET_ITEM(inst, ITER_INST_PARENT, parent_obj);
 	PyStructSequence_SET_ITEM(inst, ITER_INST_NAME, name_obj);
 	PyStructSequence_SET_ITEM(inst, ITER_INST_FD, fd_obj);
 	PyStructSequence_SET_ITEM(inst, ITER_INST_STATX, statx_obj);
 	PyStructSequence_SET_ITEM(inst, ITER_INST_ISDIR, isdir_obj);
 	PyStructSequence_SET_ITEM(inst, ITER_INST_ISLNK, islnk_obj);
+	PyStructSequence_SET_ITEM(inst, ITER_INST_ISREG, isreg_obj);
 
 	return inst;
 }
