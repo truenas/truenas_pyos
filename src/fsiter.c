@@ -56,6 +56,8 @@ enum {
 	ITER_INST_FD,
 	ITER_INST_STATX,
 	ITER_INST_ISDIR,
+	ITER_INST_ISLNK,
+	ITER_INST_ISREG,
 	ITER_INST_NUM_FIELDS
 };
 
@@ -66,6 +68,8 @@ static PyStructSequence_Field iter_instance_fields[] = {
 	{"fd", "Open file descriptor"},
 	{"statxinfo", "Statx result object"},
 	{"isdir", "True if directory, False if file"},
+	{"islnk", "True if symlink, False otherwise"},
+	{"isreg", "True if regular file, False otherwise"},
 	{NULL}
 };
 
@@ -169,12 +173,9 @@ py_fsiter_state_from_struct(const iter_state_t *c_state, const char *current_dir
 static PyObject *
 create_iter_instance(int fd, const struct statx *st, const char *parent, const char *name)
 {
-	PyObject *inst, *statx_obj, *parent_obj, *name_obj, *fd_obj, *isdir_obj;
-	bool isdir;
+	PyObject *inst, *statx_obj, *parent_obj, *name_obj, *fd_obj;
+	PyObject *isdir_obj, *islnk_obj, *isreg_obj;
 	truenas_os_state_t *state;
-
-	/* Determine if directory from statx mode */
-	isdir = S_ISDIR(st->stx_mode);
 
 	/* Convert statx struct to Python object */
 	statx_obj = statx_to_pyobject(st);
@@ -200,23 +201,29 @@ create_iter_instance(int fd, const struct statx *st, const char *parent, const c
 	parent_obj = PyUnicode_FromString(parent);
 	name_obj = PyUnicode_FromString(name);
 	fd_obj = PyLong_FromLong(fd);
-	isdir_obj = Py_NewRef(isdir ? Py_True : Py_False);
 
 	if (!parent_obj || !name_obj || !fd_obj) {
 		Py_XDECREF(parent_obj);
 		Py_XDECREF(name_obj);
 		Py_XDECREF(fd_obj);
 		Py_DECREF(isdir_obj);
+		Py_DECREF(islnk_obj);
 		Py_DECREF(statx_obj);
 		Py_DECREF(inst);
 		return NULL;
 	}
+
+	isdir_obj = Py_NewRef(S_ISDIR(st->stx_mode) ? Py_True : Py_False);
+	islnk_obj = Py_NewRef(S_ISLNK(st->stx_mode) ? Py_True : Py_False);
+	isreg_obj = Py_NewRef(S_ISREG(st->stx_mode) ? Py_True : Py_False);
 
 	PyStructSequence_SET_ITEM(inst, ITER_INST_PARENT, parent_obj);
 	PyStructSequence_SET_ITEM(inst, ITER_INST_NAME, name_obj);
 	PyStructSequence_SET_ITEM(inst, ITER_INST_FD, fd_obj);
 	PyStructSequence_SET_ITEM(inst, ITER_INST_STATX, statx_obj);
 	PyStructSequence_SET_ITEM(inst, ITER_INST_ISDIR, isdir_obj);
+	PyStructSequence_SET_ITEM(inst, ITER_INST_ISLNK, islnk_obj);
+	PyStructSequence_SET_ITEM(inst, ITER_INST_ISREG, isreg_obj);
 
 	return inst;
 }
@@ -513,14 +520,16 @@ dir_stack_to_cookies(PyObject *dir_stack, uint64_t **cookies_out, size_t *cookie
  * Returns true on success, false on error (with Python exception set)
  */
 static bool
-check_and_invoke_reporting_callback(FilesystemIteratorObject *self, const char *current_dir)
+check_and_invoke_reporting_callback(FilesystemIteratorObject *self,
+				    const char *current_dir,
+				    bool final)
 {
 	PyObject *state_obj, *dir_stack_obj;
 	PyObject *callback_result;
 
-	if (self->reporting_cb != NULL &&
-		self->reporting_cb_increment &&
-		(self->state.cnt % self->reporting_cb_increment) == 0) {
+	if ((self->reporting_cb != NULL) && (final ||
+	    (self->reporting_cb_increment &&
+	    (self->state.cnt % self->reporting_cb_increment) == 0))) {
 
 		/* Build dir_stack tuple */
 		dir_stack_obj = build_dir_stack_tuple(self);
@@ -626,7 +635,6 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 	struct dirent *direntp;
 	iter_dir_t *cur_dir;
 	int async_err = 0;
-	size_t pos;
 
 	/* Close fd from previous iteration */
 	if (self->last.fd >= 0) {
@@ -649,8 +657,7 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 		FSITER_ASSERT(self->cur_depth < MAX_DEPTH,
 		              "Iterator depth exceeded MAX_DEPTH");
 
-		pos = self->cur_depth -1;
-		cur_dir = &self->dir_stack[pos];
+		cur_dir = &self->dir_stack[self->cur_depth -1];
 
 		/*
 		 * We separate out the readdir call from the
@@ -748,7 +755,7 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 			self->state.cnt_bytes += self->last.st.stx_size;
 
 			/* Invoke reporting callback if needed */
-			if (!check_and_invoke_reporting_callback(self, cur_dir->path)) {
+			if (!check_and_invoke_reporting_callback(self, cur_dir->path, false)) {
 				Py_DECREF(result);
 				return NULL;
 			}
@@ -797,7 +804,7 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 			self->state.cnt++;
 
 			/* Invoke reporting callback if needed */
-			if (!check_and_invoke_reporting_callback(self, cur_dir->path)) {
+			if (!check_and_invoke_reporting_callback(self, cur_dir->path, false)) {
 				Py_DECREF(result);
 				return NULL;
 			}
@@ -805,12 +812,20 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 			return result;
 
 		case FSITER_POP_DIR:
-			/* Pop directory from stack with GIL released */
+			/*
+			 * If this is the final part of dir stack being popped.
+			 * e.g. we're done iterating, force reporting callback so
+			 * that consumer gets some stats
+			 */
+			if (!check_and_invoke_reporting_callback(self, cur_dir->path,
+			    self->cur_depth == 1)) {
+				return NULL;
+			}
+
 			Py_BEGIN_ALLOW_THREADS
 			pop_dir_stack(self, &self->cerr);
 			Py_END_ALLOW_THREADS
 
-			/* Note: we don't fail on pop errors, just continue */
 			continue;
 		}
 	}

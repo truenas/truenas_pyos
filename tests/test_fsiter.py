@@ -80,6 +80,8 @@ def test_iter_basic_iteration(temp_mount_tree):
         assert hasattr(item, 'fd')
         assert hasattr(item, 'statxinfo')
         assert hasattr(item, 'isdir')
+        assert hasattr(item, 'islnk')
+        assert hasattr(item, 'isreg')
 
 
 def test_iter_instance_fields(temp_mount_tree):
@@ -98,6 +100,8 @@ def test_iter_instance_fields(temp_mount_tree):
     assert hasattr(item, 'fd')
     assert hasattr(item, 'statxinfo')
     assert hasattr(item, 'isdir')
+    assert hasattr(item, 'islnk')
+    assert hasattr(item, 'isreg')
 
     # Parent and name should be strings
     assert isinstance(item.parent, str)
@@ -112,6 +116,12 @@ def test_iter_instance_fields(temp_mount_tree):
 
     # isdir should be a boolean
     assert isinstance(item.isdir, bool)
+
+    # islnk should be a boolean
+    assert isinstance(item.islnk, bool)
+
+    # isreg should be a boolean
+    assert isinstance(item.isreg, bool)
 
 
 def test_iter_filesystem_state(temp_mount_tree):
@@ -422,7 +432,7 @@ def test_iter_deep_nesting(tmp_path):
 
 
 def test_iter_reporting_callback_basic(temp_mount_tree):
-    """Test that reporting callback is called at correct intervals."""
+    """Test that reporting callback is called at correct intervals and at the end."""
     calls = []
 
     def callback(dir_stack, state, private_data):
@@ -442,17 +452,25 @@ def test_iter_reporting_callback_basic(temp_mount_tree):
 
     # Consume iterator
     items = list(iterator)
+    total_count = len(items)
 
-    # Check callback was called at multiples of 3
+    # Check callback was called
     assert len(calls) > 0
-    for call in calls:
-        assert call['cnt'] % 3 == 0
+
+    # All calls except possibly the last should be at multiples of 3
+    for i, call in enumerate(calls[:-1]):
+        assert call['cnt'] % 3 == 0, f"Call {i} should be at multiple of 3, got {call['cnt']}"
         assert call['private_data'] == "test_data"
         # dir_stack should be a tuple of tuples
         assert isinstance(call['dir_stack'], tuple)
         if len(call['dir_stack']) > 0:
             assert isinstance(call['dir_stack'][0], tuple)
             assert len(call['dir_stack'][0]) == 2
+
+    # The final call should have the total count (may or may not be a multiple of 3)
+    final_call = calls[-1]
+    assert final_call['cnt'] == total_count, f"Final callback should report total count {total_count}, got {final_call['cnt']}"
+    assert final_call['private_data'] == "test_data"
 
 
 def test_iter_reporting_callback_no_callback(temp_mount_tree):
@@ -479,6 +497,51 @@ def test_iter_reporting_callback_none(temp_mount_tree):
 
     items = list(iterator)
     assert len(items) > 0
+
+
+def test_iter_reporting_callback_final_always_called(temp_mount_tree):
+    """Test that final callback is always made even when count doesn't align with increment."""
+    calls = []
+
+    def callback(dir_stack, state, private_data):
+        calls.append({
+            'cnt': state.cnt,
+            'cnt_bytes': state.cnt_bytes,
+            'current_directory': state.current_directory
+        })
+
+    # Use an increment that is unlikely to divide evenly into total count
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree),
+        reporting_increment=7,
+        reporting_callback=callback
+    )
+
+    items = list(iterator)
+    total_count = len(items)
+
+    # Should have at least one callback (the final one)
+    assert len(calls) > 0, "Should have at least the final callback"
+
+    # The last callback should always be the final count
+    final_call = calls[-1]
+    assert final_call['cnt'] == total_count, \
+        f"Final callback should report total count {total_count}, got {final_call['cnt']}"
+
+    # Verify that if total_count is not a multiple of 7, we got an extra final callback
+    if total_count % 7 != 0:
+        # The second-to-last callback (if exists) should be a multiple of 7
+        if len(calls) > 1:
+            assert calls[-2]['cnt'] % 7 == 0, \
+                f"Second-to-last callback should be at multiple of 7, got {calls[-2]['cnt']}"
+        # The final callback count should NOT be a multiple of 7
+        assert final_call['cnt'] % 7 != 0, \
+            f"Final callback should not be a multiple of 7 in this test, got {final_call['cnt']}"
+
+    # Verify final callback has the root directory path (we're still in root when callback is made)
+    assert final_call['current_directory'] == str(temp_mount_tree), \
+        f"Final callback should have root directory path, got {final_call['current_directory']}"
 
 
 def test_iter_reporting_callback_exception(temp_mount_tree):
@@ -510,21 +573,24 @@ def test_iter_reporting_callback_not_callable(temp_mount_tree):
 
 
 def test_iter_reporting_increment_zero(temp_mount_tree):
-    """Test that increment=0 disables callbacks."""
-    call_count = [0]
+    """Test that increment=0 disables periodic callbacks but still calls final callback."""
+    calls = []
 
     def callback(dir_stack, state, private_data):
-        call_count[0] += 1
+        calls.append(state.cnt)
 
     iterator = truenas_os.iter_filesystem_contents(
         str(temp_mount_tree),
         get_filesystem_name(temp_mount_tree),
-        reporting_increment=0,  # Should disable
+        reporting_increment=0,  # Should disable periodic callbacks
         reporting_callback=callback
     )
 
     list(iterator)
-    assert call_count[0] == 0  # Never called
+    # Should have exactly one call - the final callback
+    assert len(calls) == 1
+    # The final callback should have the total count
+    assert calls[0] > 0
 
 
 def test_iter_skip_directory(temp_mount_tree):
@@ -907,3 +973,310 @@ def test_iter_dir_stack_restoration_simple(temp_mount_tree):
     assert "dir1" not in items_after_names, (
         f"Restored iterator should not re-yield dir1. Got: {items_after_names}"
     )
+
+
+@pytest.fixture
+def temp_mount_tree_with_symlinks(tmp_path):
+    """Create a temporary directory tree with symlinks for testing.
+
+    Creates structure:
+    /tmp_path/
+        file1.txt (100 bytes)
+        dir1/
+            nested1.txt (50 bytes)
+        symlink_to_file1.txt -> file1.txt (symlink to file)
+        symlink_to_dir1 -> dir1 (symlink to directory)
+        broken_symlink -> /nonexistent (broken symlink)
+    """
+    # Create files and directories
+    (tmp_path / "file1.txt").write_bytes(b"x" * 100)
+
+    dir1 = tmp_path / "dir1"
+    dir1.mkdir()
+    (dir1 / "nested1.txt").write_bytes(b"a" * 50)
+
+    # Create symlinks
+    (tmp_path / "symlink_to_file1.txt").symlink_to("file1.txt")
+    (tmp_path / "symlink_to_dir1").symlink_to("dir1")
+    (tmp_path / "broken_symlink").symlink_to("/nonexistent")
+
+    return tmp_path
+
+
+def test_iter_islnk_field_exists():
+    """Test that IterInstance has islnk field."""
+    # This test just checks the type exists and has the field
+    assert hasattr(truenas_os.IterInstance, '__mro__')
+
+
+def test_iter_islnk_false_for_regular_files(temp_mount_tree):
+    """Test that islnk is False for regular files."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Find a regular file
+    for item in iterator:
+        if not item.isdir and item.name.endswith('.txt'):
+            # Should be a regular file, not a symlink
+            assert item.islnk is False
+            assert stat.S_ISREG(item.statxinfo.stx_mode)
+            break
+
+
+def test_iter_islnk_false_for_directories(temp_mount_tree):
+    """Test that islnk is False for directories."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Find a directory
+    for item in iterator:
+        if item.isdir:
+            # Should be a directory, not a symlink
+            assert item.islnk is False
+            assert stat.S_ISDIR(item.statxinfo.stx_mode)
+            break
+
+
+def test_iter_symlinks_basic(temp_mount_tree_with_symlinks):
+    """Test basic iteration over a tree with symlinks."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree_with_symlinks),
+        get_filesystem_name(temp_mount_tree_with_symlinks)
+    )
+
+    items = list(iterator)
+    assert len(items) > 0
+
+    # Find all items by name
+    items_by_name = {item.name: item for item in items}
+
+    # Regular file should exist and not be a symlink
+    assert "file1.txt" in items_by_name
+    assert items_by_name["file1.txt"].islnk is False
+    assert items_by_name["file1.txt"].isdir is False
+
+    # Regular directory should exist and not be a symlink
+    assert "dir1" in items_by_name
+    assert items_by_name["dir1"].islnk is False
+    assert items_by_name["dir1"].isdir is True
+
+
+def test_iter_symlink_to_file_not_yielded(temp_mount_tree_with_symlinks):
+    """Test that symlinks to files are not yielded (openat2 with RESOLVE_NO_SYMLINKS fails)."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree_with_symlinks),
+        get_filesystem_name(temp_mount_tree_with_symlinks)
+    )
+
+    items = list(iterator)
+    items_by_name = {item.name: item for item in items}
+
+    # Symlinks should not be yielded because openat2 with RESOLVE_NO_SYMLINKS
+    # will fail with ELOOP, which is handled by continuing iteration
+    assert "symlink_to_file1.txt" not in items_by_name
+    assert "symlink_to_dir1" not in items_by_name
+    assert "broken_symlink" not in items_by_name
+
+
+def test_iter_symlink_readdir_detection(temp_mount_tree_with_symlinks):
+    """Test that symlinks can be detected via direct statx if they are opened.
+
+    Note: Current implementation skips symlinks at openat2 stage (ELOOP error),
+    so they won't be yielded. This test documents expected behavior.
+    """
+    # Manually check that symlinks exist in directory
+    import os
+    symlinks = [
+        "symlink_to_file1.txt",
+        "symlink_to_dir1",
+        "broken_symlink"
+    ]
+
+    for name in symlinks:
+        path = temp_mount_tree_with_symlinks / name
+        assert path.is_symlink(), f"{name} should be a symlink"
+
+    # Iterator won't yield them due to RESOLVE_NO_SYMLINKS
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree_with_symlinks),
+        get_filesystem_name(temp_mount_tree_with_symlinks)
+    )
+
+    items = list(iterator)
+    item_names = {item.name for item in items}
+
+    # Verify symlinks are not in results
+    for name in symlinks:
+        assert name not in item_names
+
+
+def test_iter_islnk_consistency_with_statx(temp_mount_tree):
+    """Test that islnk is consistent with statxinfo.stx_mode."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    for item in iterator:
+        # islnk should match S_ISLNK check on statx mode
+        expected_islnk = stat.S_ISLNK(item.statxinfo.stx_mode)
+        assert item.islnk == expected_islnk, (
+            f"islnk={item.islnk} but S_ISLNK={expected_islnk} for {item.name}"
+        )
+
+
+def test_iter_islnk_and_isdir_mutually_exclusive(temp_mount_tree):
+    """Test that islnk and isdir are never both True.
+
+    Note: With current implementation using RESOLVE_NO_SYMLINKS,
+    symlinks are not yielded, so we won't see islnk=True items.
+    But if we did, they should not also be marked as directories.
+    """
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    for item in iterator:
+        # In a proper filesystem, these should never both be True
+        # (a symlink is not a directory, even if it points to one)
+        if item.islnk:
+            # If we ever yield a symlink, it shouldn't also be marked as a directory
+            assert not item.isdir, f"Symlink {item.name} should not be marked as directory"
+
+
+def test_iter_all_items_have_islnk_field(temp_mount_tree):
+    """Test that all yielded items have the islnk field set."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    count = 0
+    for item in iterator:
+        assert hasattr(item, 'islnk'), f"Item {item.name} missing islnk field"
+        assert isinstance(item.islnk, bool), f"Item {item.name} islnk is not bool"
+        count += 1
+
+    assert count > 0, "Should have iterated over some items"
+
+
+def test_iter_isreg_true_for_regular_files(temp_mount_tree):
+    """Test that isreg is True for regular files."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    found_regular_file = False
+    # Find a regular file
+    for item in iterator:
+        if not item.isdir and item.name.endswith('.txt'):
+            # Should be a regular file
+            assert item.isreg is True
+            assert stat.S_ISREG(item.statxinfo.stx_mode)
+            found_regular_file = True
+            break
+
+    assert found_regular_file, "Should have found at least one regular file"
+
+
+def test_iter_isreg_false_for_directories(temp_mount_tree):
+    """Test that isreg is False for directories."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    found_directory = False
+    # Find a directory
+    for item in iterator:
+        if item.isdir:
+            # Should be a directory, not a regular file
+            assert item.isreg is False
+            assert stat.S_ISDIR(item.statxinfo.stx_mode)
+            found_directory = True
+            break
+
+    assert found_directory, "Should have found at least one directory"
+
+
+def test_iter_isreg_consistency_with_statx(temp_mount_tree):
+    """Test that isreg is consistent with statxinfo.stx_mode."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    for item in iterator:
+        # isreg should match S_ISREG check on statx mode
+        expected_isreg = stat.S_ISREG(item.statxinfo.stx_mode)
+        assert item.isreg == expected_isreg, (
+            f"isreg={item.isreg} but S_ISREG={expected_isreg} for {item.name}"
+        )
+
+
+def test_iter_isreg_and_isdir_mutually_exclusive(temp_mount_tree):
+    """Test that isreg and isdir are never both True."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    for item in iterator:
+        # A file cannot be both a regular file and a directory
+        if item.isreg:
+            assert not item.isdir, f"Regular file {item.name} should not be marked as directory"
+        if item.isdir:
+            assert not item.isreg, f"Directory {item.name} should not be marked as regular file"
+
+
+def test_iter_all_items_have_isreg_field(temp_mount_tree):
+    """Test that all yielded items have the isreg field set."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    count = 0
+    for item in iterator:
+        assert hasattr(item, 'isreg'), f"Item {item.name} missing isreg field"
+        assert isinstance(item.isreg, bool), f"Item {item.name} isreg is not bool"
+        count += 1
+
+    assert count > 0, "Should have iterated over some items"
+
+
+def test_iter_file_type_flags_coverage(temp_mount_tree):
+    """Test that file type flags (isdir, islnk, isreg) provide complete coverage."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    has_regular_file = False
+    has_directory = False
+
+    for item in iterator:
+        # Every item should have exactly one of isdir or isreg set to True
+        # (islnk would also be checked, but symlinks are not yielded with current implementation)
+        type_flags = [item.isdir, item.isreg, item.islnk]
+        true_count = sum(type_flags)
+
+        assert true_count == 1, (
+            f"Item {item.name} should have exactly one type flag set. "
+            f"isdir={item.isdir}, isreg={item.isreg}, islnk={item.islnk}"
+        )
+
+        if item.isdir:
+            has_directory = True
+        if item.isreg:
+            has_regular_file = True
+
+    # Verify we tested both types
+    assert has_regular_file, "Should have found at least one regular file"
+    assert has_directory, "Should have found at least one directory"

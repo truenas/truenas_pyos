@@ -524,7 +524,9 @@ class IterInstance(NamedTuple):
     name: str  # Entry name
     fd: int  # Open file descriptor
     statxinfo: StatxResult  # Extended file attributes
-    isdir: bool  # True if directory, False if file
+    isdir: bool  # True if directory, False otherwise
+    islnk: bool  # True if symlink, False otherwise
+    isreg: bool  # True if regular file, False otherwise
 
 class FilesystemIterState(NamedTuple):
     """State for filesystem iteration.
