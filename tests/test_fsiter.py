@@ -81,6 +81,7 @@ def test_iter_basic_iteration(temp_mount_tree):
         assert hasattr(item, 'statxinfo')
         assert hasattr(item, 'isdir')
         assert hasattr(item, 'islnk')
+        assert hasattr(item, 'isreg')
 
 
 def test_iter_instance_fields(temp_mount_tree):
@@ -100,6 +101,7 @@ def test_iter_instance_fields(temp_mount_tree):
     assert hasattr(item, 'statxinfo')
     assert hasattr(item, 'isdir')
     assert hasattr(item, 'islnk')
+    assert hasattr(item, 'isreg')
 
     # Parent and name should be strings
     assert isinstance(item.parent, str)
@@ -117,6 +119,9 @@ def test_iter_instance_fields(temp_mount_tree):
 
     # islnk should be a boolean
     assert isinstance(item.islnk, bool)
+
+    # isreg should be a boolean
+    assert isinstance(item.isreg, bool)
 
 
 def test_iter_filesystem_state(temp_mount_tree):
@@ -1158,3 +1163,120 @@ def test_iter_all_items_have_islnk_field(temp_mount_tree):
         count += 1
 
     assert count > 0, "Should have iterated over some items"
+
+
+def test_iter_isreg_true_for_regular_files(temp_mount_tree):
+    """Test that isreg is True for regular files."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    found_regular_file = False
+    # Find a regular file
+    for item in iterator:
+        if not item.isdir and item.name.endswith('.txt'):
+            # Should be a regular file
+            assert item.isreg is True
+            assert stat.S_ISREG(item.statxinfo.stx_mode)
+            found_regular_file = True
+            break
+
+    assert found_regular_file, "Should have found at least one regular file"
+
+
+def test_iter_isreg_false_for_directories(temp_mount_tree):
+    """Test that isreg is False for directories."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    found_directory = False
+    # Find a directory
+    for item in iterator:
+        if item.isdir:
+            # Should be a directory, not a regular file
+            assert item.isreg is False
+            assert stat.S_ISDIR(item.statxinfo.stx_mode)
+            found_directory = True
+            break
+
+    assert found_directory, "Should have found at least one directory"
+
+
+def test_iter_isreg_consistency_with_statx(temp_mount_tree):
+    """Test that isreg is consistent with statxinfo.stx_mode."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    for item in iterator:
+        # isreg should match S_ISREG check on statx mode
+        expected_isreg = stat.S_ISREG(item.statxinfo.stx_mode)
+        assert item.isreg == expected_isreg, (
+            f"isreg={item.isreg} but S_ISREG={expected_isreg} for {item.name}"
+        )
+
+
+def test_iter_isreg_and_isdir_mutually_exclusive(temp_mount_tree):
+    """Test that isreg and isdir are never both True."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    for item in iterator:
+        # A file cannot be both a regular file and a directory
+        if item.isreg:
+            assert not item.isdir, f"Regular file {item.name} should not be marked as directory"
+        if item.isdir:
+            assert not item.isreg, f"Directory {item.name} should not be marked as regular file"
+
+
+def test_iter_all_items_have_isreg_field(temp_mount_tree):
+    """Test that all yielded items have the isreg field set."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    count = 0
+    for item in iterator:
+        assert hasattr(item, 'isreg'), f"Item {item.name} missing isreg field"
+        assert isinstance(item.isreg, bool), f"Item {item.name} isreg is not bool"
+        count += 1
+
+    assert count > 0, "Should have iterated over some items"
+
+
+def test_iter_file_type_flags_coverage(temp_mount_tree):
+    """Test that file type flags (isdir, islnk, isreg) provide complete coverage."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    has_regular_file = False
+    has_directory = False
+
+    for item in iterator:
+        # Every item should have exactly one of isdir or isreg set to True
+        # (islnk would also be checked, but symlinks are not yielded with current implementation)
+        type_flags = [item.isdir, item.isreg, item.islnk]
+        true_count = sum(type_flags)
+
+        assert true_count == 1, (
+            f"Item {item.name} should have exactly one type flag set. "
+            f"isdir={item.isdir}, isreg={item.isreg}, islnk={item.islnk}"
+        )
+
+        if item.isdir:
+            has_directory = True
+        if item.isreg:
+            has_regular_file = True
+
+    # Verify we tested both types
+    assert has_regular_file, "Should have found at least one regular file"
+    assert has_directory, "Should have found at least one directory"
