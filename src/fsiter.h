@@ -11,6 +11,25 @@
 /* Maximum directory depth for stack allocation */
 #define MAX_DEPTH 2048
 
+/*
+ * Macro to handle extreme error case in module. This should only be invoked
+ * if an error condition is detected that would make it dangerous to continue.
+ * This will call Py_FatalError() which will abort the process.
+ */
+#define __STRING(x) #x
+#define __STRINGSTRING(x) __STRING(x)
+#define __LINESTR__ __STRINGSTRING(__LINE__)
+#define __location__ __FILE__ ":" __LINESTR__
+
+#define __FSITER_ASSERT_IMPL(test, message, location) do {\
+	if (!((test))) {\
+		Py_FatalError(message " [" location "]");\
+	}\
+} while (0)
+
+#define FSITER_ASSERT(test, message)\
+	__FSITER_ASSERT_IMPL(test, message, __location__)
+
 /* Error buffer for operations without GIL */
 typedef struct {
 	char message[8192];
@@ -48,6 +67,10 @@ typedef struct {
 	iter_entry_t last;
 	fsiter_error_t cerr;
 
+	uint64_t *cookies;	/* array of inode numbers for where we left off last time */
+	size_t cookie_sz;
+	bool restoring_from_cookie;	/* true when matched a cookie (don't yield this dir) */
+
 	size_t reporting_cb_increment;
 	PyObject *reporting_cb;
 	PyObject *reporting_cb_private_data;
@@ -62,6 +85,7 @@ PyObject* create_filesystem_iterator(const char *mountpoint, const char *relativ
 				     const char *filesystem_name, const iter_state_t *state,
 				     size_t reporting_cb_increment,
 				     PyObject *reporting_cb,
-				     PyObject *reporting_cb_private_data);
+				     PyObject *reporting_cb_private_data,
+				     PyObject *dir_stack);
 
 #endif /* TRUENAS_FSITER_H */

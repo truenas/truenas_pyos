@@ -11,6 +11,7 @@ typedef struct {
 	PyObject *StatmountResultType;
 	PyObject *IterInstanceType;
 	PyObject *FilesystemIterStateType;
+	PyObject *IteratorRestoreError;
 } truenas_os_state_t;
 
 /* Get module state */

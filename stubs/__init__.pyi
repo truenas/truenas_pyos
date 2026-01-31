@@ -574,6 +574,19 @@ class FilesystemIterator:
         """
         ...
 
+class IteratorRestoreError(Exception):
+    """Exception raised when iterator cannot be restored to previous state.
+
+    Attributes
+    ----------
+    depth : int
+        The directory stack depth (0-indexed) at which restoration failed
+    path : str
+        The directory path where the expected subdirectory was not found
+    """
+    depth: int
+    path: str
+
 def iter_filesystem_contents(
     mountpoint: str,
     filesystem_name: str,
@@ -587,6 +600,7 @@ def iter_filesystem_contents(
     reporting_increment: int = 1000,
     reporting_callback: Callable[[tuple[tuple[str, int], ...], FilesystemIterState, Any], Any] | None = None,
     reporting_private_data: Any = None,
+    dir_stack: tuple[tuple[str, int], ...] | None = None,
 ) -> FilesystemIterator:
     """Iterate filesystem contents with mount validation.
 
@@ -606,6 +620,9 @@ def iter_filesystem_contents(
         reporting_callback: Callback function(dir_stack, state, private_data) called every
             reporting_increment items with current iteration state and directory stack
         reporting_private_data: User data passed to reporting_callback
+        dir_stack: Optional directory stack from previous iteration to restore position.
+            Should be obtained from FilesystemIterator.dir_stack(). If provided, iterator
+            will navigate to that position and resume iteration from there.
 
     Returns:
         FilesystemIterator that yields IterInstance objects
@@ -615,14 +632,17 @@ def iter_filesystem_contents(
         RuntimeError: Mount validation failures
         NotADirectoryError: Path is not a directory
         TypeError: reporting_callback is not callable
+        IteratorRestoreError: Cannot restore to the saved dir_stack position (directory
+            not found or inode mismatch). Exception includes depth and path attributes.
 
     Notes:
         - Uses openat2 with RESOLVE_NO_XDEV | RESOLVE_NO_SYMLINKS
         - Uses statx for extended attributes including birth time
-        - Directories with matching resume tokens are skipped
         - GIL is released during I/O operations
         - File descriptors in IterInstance must be closed by caller
         - Reporting callback is invoked with GIL held after every Nth item
         - If callback raises an exception, iteration stops
+        - When restoring from dir_stack, directories are not re-yielded, but files
+          within the restored directory may be re-yielded (DIR* streams cannot seek)
     """
     ...
