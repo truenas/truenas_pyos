@@ -390,6 +390,36 @@ def fsmount(
     """
     ...
 
+# umount2 function
+def umount2(
+    *,
+    target: str,
+    flags: int = 0,
+) -> None:
+    """Unmount a filesystem.
+
+    The umount2() system call unmounts the filesystem mounted at the specified
+    target. The flags parameter controls the unmount behavior, allowing for
+    forced unmounts, lazy unmounts, or expiration of mount points.
+
+    Parameters
+    ----------
+    target : str
+        Path to the mount point to unmount
+    flags : int, optional
+        Unmount flags (MNT_* and UMOUNT_* constants)
+
+    MNT_* and UMOUNT_* flags
+    ------------------------
+    MNT_FORCE : Force unmount even if busy (may cause data loss)
+    MNT_DETACH : Lazy unmount - detach filesystem from hierarchy now,
+                 clean up references when no longer busy
+    MNT_EXPIRE : Mark mount point as expired. If not busy, unmount it.
+                 Repeated calls will unmount an expired mount.
+    UMOUNT_NOFOLLOW : Don't dereference target if it is a symbolic link
+    """
+    ...
+
 # STATX constants
 STATX_TYPE: int
 STATX_MODE: int
@@ -507,6 +537,12 @@ FSCONFIG_CMD_RECONFIGURE: int  # Invoke superblock reconfiguration
 
 # FSMOUNT constants (for fsmount)
 FSMOUNT_CLOEXEC: int  # Close-on-exec flag
+
+# umount2 constants
+MNT_FORCE: int  # Force unmount even if busy (may cause data loss)
+MNT_DETACH: int  # Lazy unmount - detach now, clean up when not busy
+MNT_EXPIRE: int  # Mark mount point as expired
+UMOUNT_NOFOLLOW: int  # Don't dereference target if symbolic link
 
 # fhandle type
 class fhandle:
