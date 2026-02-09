@@ -1280,3 +1280,279 @@ def test_iter_file_type_flags_coverage(temp_mount_tree):
     # Verify we tested both types
     assert has_regular_file, "Should have found at least one regular file"
     assert has_directory, "Should have found at least one directory"
+
+
+def get_open_fds_for_path(base_path):
+    """Get list of open file descriptors that point to paths under base_path."""
+    open_fds = []
+    for fd in os.listdir("/proc/self/fd"):
+        try:
+            target = os.readlink(f"/proc/self/fd/{fd}")
+            if target.startswith(str(base_path)):
+                open_fds.append((fd, target))
+        except (OSError, FileNotFoundError):
+            # FD might close while we're checking, or might not be a regular file
+            pass
+    return open_fds
+
+
+def test_iter_close_method_exists(temp_mount_tree):
+    """Test that iterator has close() method."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    assert hasattr(iterator, 'close')
+    assert callable(iterator.close)
+
+
+def test_iter_close_method_basic(temp_mount_tree):
+    """Test that close() method works and prevents further iteration."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Get first item
+    first = next(iterator)
+    assert isinstance(first, truenas_os.IterInstance)
+
+    # Close the iterator
+    iterator.close()
+
+    # Further iteration should raise ValueError
+    with pytest.raises(ValueError, match="I/O operation on closed iterator"):
+        next(iterator)
+
+
+def test_iter_close_idempotent(temp_mount_tree):
+    """Test that close() can be called multiple times safely."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Get first item
+    next(iterator)
+
+    # Close multiple times - should not raise
+    iterator.close()
+    iterator.close()
+    iterator.close()
+
+
+def test_iter_close_prevents_get_stats(temp_mount_tree):
+    """Test that get_stats() raises ValueError on closed iterator."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Close the iterator
+    iterator.close()
+
+    # get_stats() should raise ValueError
+    with pytest.raises(ValueError, match="I/O operation on closed iterator"):
+        iterator.get_stats()
+
+
+def test_iter_close_prevents_dir_stack(temp_mount_tree):
+    """Test that dir_stack() raises ValueError on closed iterator."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Close the iterator
+    iterator.close()
+
+    # dir_stack() should raise ValueError
+    with pytest.raises(ValueError, match="I/O operation on closed iterator"):
+        iterator.dir_stack()
+
+
+def test_iter_close_prevents_skip(temp_mount_tree):
+    """Test that skip() raises ValueError on closed iterator."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Get a directory
+    for item in iterator:
+        if item.isdir:
+            # Close the iterator
+            iterator.close()
+
+            # skip() should raise ValueError
+            with pytest.raises(ValueError, match="I/O operation on closed iterator"):
+                iterator.skip()
+            break
+
+
+def test_iter_context_manager_protocol(temp_mount_tree):
+    """Test that iterator supports context manager protocol."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Check __enter__ and __exit__ exist
+    assert hasattr(iterator, '__enter__')
+    assert hasattr(iterator, '__exit__')
+
+
+def test_iter_context_manager_basic(temp_mount_tree):
+    """Test basic usage of iterator as context manager."""
+    with truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    ) as iterator:
+        # Should be able to iterate within context
+        first = next(iterator)
+        assert isinstance(first, truenas_os.IterInstance)
+
+    # After exiting context, iterator should be closed
+    with pytest.raises(ValueError, match="I/O operation on closed iterator"):
+        next(iterator)
+
+
+def test_iter_context_manager_full_iteration(temp_mount_tree):
+    """Test full iteration within context manager."""
+    items = []
+
+    with truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    ) as iterator:
+        items = list(iterator)
+
+    # Should have collected items
+    assert len(items) > 0
+
+    # After context exit, iterator should be closed
+    with pytest.raises(ValueError, match="I/O operation on closed iterator"):
+        next(iterator)
+
+
+def test_iter_context_manager_exception_handling(temp_mount_tree):
+    """Test that context manager closes iterator even on exception."""
+    iterator = None
+
+    try:
+        with truenas_os.iter_filesystem_contents(
+            str(temp_mount_tree),
+            get_filesystem_name(temp_mount_tree)
+        ) as it:
+            iterator = it
+            # Get first item
+            next(iterator)
+            # Raise an exception
+            raise RuntimeError("Test exception")
+    except RuntimeError:
+        pass
+
+    # Iterator should still be closed after exception
+    assert iterator is not None
+    with pytest.raises(ValueError, match="I/O operation on closed iterator"):
+        next(iterator)
+
+
+def test_iter_context_manager_enter_returns_self(temp_mount_tree):
+    """Test that __enter__ returns the iterator itself."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    returned = iterator.__enter__()
+    assert returned is iterator
+
+    iterator.close()
+
+
+def test_iter_context_manager_enter_on_closed_fails(temp_mount_tree):
+    """Test that __enter__ on closed iterator raises ValueError."""
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    iterator.close()
+
+    with pytest.raises(ValueError, match="I/O operation on closed iterator"):
+        iterator.__enter__()
+
+
+def test_iter_context_manager_with_skip(temp_mount_tree):
+    """Test that skip() works correctly within context manager."""
+    items_found = []
+
+    with truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    ) as iterator:
+        for item in iterator:
+            items_found.append(item.name)
+            # Skip recursion into dir1
+            if item.isdir and item.name == "dir1":
+                iterator.skip()
+
+    # Should have found dir1 but not its contents
+    assert "dir1" in items_found
+    assert "nested1.txt" not in items_found
+    assert "nested2.txt" not in items_found
+
+
+def test_iter_fd_cleanup_with_close(temp_mount_tree):
+    """Test that file descriptors are properly closed when using close()."""
+    # Verify no FDs open to temp_mount_tree initially
+    initial_fds = get_open_fds_for_path(temp_mount_tree)
+    assert len(initial_fds) == 0, f"Unexpected open FDs before test: {initial_fds}"
+
+    # Create iterator and consume some items (but don't exhaust)
+    iterator = truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    )
+
+    # Consume a few items - this will open FDs to temp_mount_tree
+    for i, item in enumerate(iterator):
+        if i >= 3:
+            break
+
+    # Should have open FDs now
+    mid_fds = get_open_fds_for_path(temp_mount_tree)
+    assert len(mid_fds) > 0, "Should have open FDs during iteration"
+
+    # Close explicitly - this should close all FDs to temp_mount_tree
+    iterator.close()
+    del iterator
+
+    # Verify no FDs remain open to temp_mount_tree
+    final_fds = get_open_fds_for_path(temp_mount_tree)
+    assert len(final_fds) == 0, f"FD leak detected: {final_fds}"
+
+
+def test_iter_fd_cleanup_with_context_manager(temp_mount_tree):
+    """Test that file descriptors are properly closed when using context manager."""
+    # Verify no FDs open to temp_mount_tree initially
+    initial_fds = get_open_fds_for_path(temp_mount_tree)
+    assert len(initial_fds) == 0, f"Unexpected open FDs before test: {initial_fds}"
+
+    # Use context manager and consume some items (but don't exhaust)
+    with truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree),
+        get_filesystem_name(temp_mount_tree)
+    ) as iterator:
+        for i, item in enumerate(iterator):
+            if i >= 3:
+                break
+        # Should have open FDs here
+        mid_fds = get_open_fds_for_path(temp_mount_tree)
+        assert len(mid_fds) > 0, "Should have open FDs during iteration"
+
+    # After context exit, no FDs should remain open to temp_mount_tree
+    final_fds = get_open_fds_for_path(temp_mount_tree)
+    assert len(final_fds) == 0, f"FD leak detected: {final_fds}"
