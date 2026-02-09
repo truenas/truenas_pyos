@@ -241,6 +241,11 @@ FilesystemIterator_dealloc(FilesystemIteratorObject *self)
 		cleanup_iter_dir(&self->dir_stack[i]);
 	}
 
+	if (self->last.fd > 0) {
+		close(self->last.fd);
+		self->last.fd = -1;
+	}
+
 	/* Clean up reporting callback references */
 	Py_XDECREF(self->reporting_cb);
 	Py_XDECREF(self->reporting_cb_private_data);
