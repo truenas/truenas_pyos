@@ -75,6 +75,7 @@ typedef struct {
 	PyObject *reporting_cb;
 	PyObject *reporting_cb_private_data;
 	bool skip_next_recursion;           /* Flag: skip recursion into last dir */
+	bool is_closed;                     /* Flag: true if iterator has been closed */
 } FilesystemIteratorObject;
 
 /* Module initialization function - initializes all types */

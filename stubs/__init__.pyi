@@ -578,13 +578,51 @@ class FilesystemIterator:
 
     Internal iterator object created by iter_filesystem_contents.
     Implements depth-first traversal with GIL released during I/O.
+    Supports context manager protocol for automatic resource cleanup.
     """
     def __iter__(self) -> FilesystemIterator: ...
     def __next__(self) -> IterInstance: ...
+    def __enter__(self) -> FilesystemIterator:
+        """Enter context manager.
+
+        Returns:
+            FilesystemIterator: The iterator itself.
+
+        Raises:
+            ValueError: If the iterator has already been closed.
+        """
+        ...
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any) -> bool:
+        """Exit context manager, closing the iterator.
+
+        Closes all open file descriptors and releases resources.
+
+        Returns:
+            bool: False (does not suppress exceptions).
+        """
+        ...
+    def close(self) -> None:
+        """Close the iterator and release all resources.
+
+        Closes all open directory file descriptors and frees allocated memory.
+        After calling close(), the iterator cannot be used anymore.
+        This method can be called multiple times safely (idempotent).
+
+        The iterator is automatically closed when garbage collected or when
+        used as a context manager, but calling close() explicitly allows for
+        deterministic cleanup.
+
+        Raises:
+            No exceptions are raised. Multiple calls are safe.
+        """
+        ...
     def get_stats(self) -> FilesystemIterState:
         """Return current iteration statistics.
 
         Returns a FilesystemIterState object with current count, bytes, and configuration.
+
+        Raises:
+            ValueError: If the iterator has been closed.
         """
         ...
     def skip(self) -> None:
@@ -595,7 +633,8 @@ class FilesystemIterator:
         into the directory that was just yielded.
 
         Raises:
-            ValueError: If the last yielded item was not a directory.
+            ValueError: If the last yielded item was not a directory, or if
+                        the iterator has been closed.
         """
         ...
     def dir_stack(self) -> tuple[tuple[str, int], ...]:
@@ -609,6 +648,9 @@ class FilesystemIterator:
         current directory being processed.
 
         Returns an empty tuple if iteration has completed.
+
+        Raises:
+            ValueError: If the iterator has been closed.
         """
         ...
 

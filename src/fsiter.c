@@ -227,17 +227,23 @@ create_iter_instance(int fd, const struct statx *st, const char *parent, const c
 }
 
 /*
- * FilesystemIterator dealloc
+ * Internal cleanup function - closes all resources
+ * Can be called multiple times safely
  */
 static void
-FilesystemIterator_dealloc(FilesystemIteratorObject *self)
+FilesystemIterator_cleanup(FilesystemIteratorObject *self)
 {
 	size_t i;
+
+	if (self->is_closed) {
+		return;
+	}
 
 	/* Clean up stack - close any open directories */
 	for (i = 0; i < self->cur_depth; i++) {
 		cleanup_iter_dir(&self->dir_stack[i]);
 	}
+	self->cur_depth = 0;
 
 	if (self->last.fd > 0) {
 		close(self->last.fd);
@@ -245,12 +251,24 @@ FilesystemIterator_dealloc(FilesystemIteratorObject *self)
 	}
 
 	/* Clean up reporting callback references */
-	Py_XDECREF(self->reporting_cb);
-	Py_XDECREF(self->reporting_cb_private_data);
+	Py_CLEAR(self->reporting_cb);
+	Py_CLEAR(self->reporting_cb_private_data);
 
 	/* Clean up cookies array */
 	PyMem_RawFree(self->cookies);
+	self->cookies = NULL;
+	self->cookie_sz = 0;
 
+	self->is_closed = true;
+}
+
+/*
+ * FilesystemIterator dealloc
+ */
+static void
+FilesystemIterator_dealloc(FilesystemIteratorObject *self)
+{
+	FilesystemIterator_cleanup(self);
 	Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -639,6 +657,12 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 	iter_dir_t *cur_dir;
 	int async_err = 0;
 
+	/* Check if iterator is closed */
+	if (self->is_closed) {
+		PyErr_SetString(PyExc_ValueError, "I/O operation on closed iterator");
+		return NULL;
+	}
+
 	/* Close fd from previous iteration */
 	if (self->last.fd >= 0) {
 		close(self->last.fd);
@@ -856,6 +880,11 @@ FilesystemIterator_get_stats(FilesystemIteratorObject *self, PyObject *Py_UNUSED
 {
 	const char *current_dir;
 
+	if (self->is_closed) {
+		PyErr_SetString(PyExc_ValueError, "I/O operation on closed iterator");
+		return NULL;
+	}
+
 	/* Get current directory from stack top, or empty string if exhausted */
 	if (self->cur_depth > 0) {
 		current_dir = self->dir_stack[self->cur_depth - 1].path;
@@ -882,6 +911,11 @@ PyDoc_STRVAR(FilesystemIterator_skip__doc__,
 static PyObject *
 FilesystemIterator_skip(FilesystemIteratorObject *self, PyObject *Py_UNUSED(ignored))
 {
+	if (self->is_closed) {
+		PyErr_SetString(PyExc_ValueError, "I/O operation on closed iterator");
+		return NULL;
+	}
+
 	/* Verify that the last yielded item was a directory */
 	if (!self->last.is_dir) {
 		PyErr_SetString(PyExc_ValueError,
@@ -913,7 +947,56 @@ PyDoc_STRVAR(FilesystemIterator_dir_stack__doc__,
 static PyObject *
 FilesystemIterator_dir_stack(FilesystemIteratorObject *self, PyObject *Py_UNUSED(ignored))
 {
+	if (self->is_closed) {
+		PyErr_SetString(PyExc_ValueError, "I/O operation on closed iterator");
+		return NULL;
+	}
+
 	return build_dir_stack_tuple(self);
+}
+
+/*
+ * FilesystemIterator.close() - explicitly close the iterator
+ */
+PyDoc_STRVAR(FilesystemIterator_close__doc__,
+"close()\n"
+"--\n\n"
+"Close the iterator and release all resources.\n\n"
+"After calling close(), the iterator cannot be used anymore.\n"
+"This method can be called multiple times safely.\n\n"
+"The iterator is automatically closed when garbage collected,\n"
+"but calling close() explicitly allows for deterministic cleanup.\n"
+);
+
+static PyObject *
+FilesystemIterator_close(FilesystemIteratorObject *self, PyObject *Py_UNUSED(ignored))
+{
+	FilesystemIterator_cleanup(self);
+	Py_RETURN_NONE;
+}
+
+/*
+ * FilesystemIterator.__enter__() - context manager entry
+ */
+static PyObject *
+FilesystemIterator_enter(FilesystemIteratorObject *self, PyObject *Py_UNUSED(ignored))
+{
+	if (self->is_closed) {
+		PyErr_SetString(PyExc_ValueError, "I/O operation on closed iterator");
+		return NULL;
+	}
+	Py_INCREF(self);
+	return (PyObject *)self;
+}
+
+/*
+ * FilesystemIterator.__exit__() - context manager exit
+ */
+static PyObject *
+FilesystemIterator_exit(FilesystemIteratorObject *self, PyObject *args)
+{
+	FilesystemIterator_cleanup(self);
+	Py_RETURN_FALSE;  /* Don't suppress exceptions */
 }
 
 /* FilesystemIterator methods */
@@ -935,6 +1018,24 @@ static PyMethodDef FilesystemIterator_methods[] = {
 		.ml_meth = (PyCFunction)FilesystemIterator_dir_stack,
 		.ml_flags = METH_NOARGS,
 		.ml_doc = FilesystemIterator_dir_stack__doc__
+	},
+	{
+		.ml_name = "close",
+		.ml_meth = (PyCFunction)FilesystemIterator_close,
+		.ml_flags = METH_NOARGS,
+		.ml_doc = FilesystemIterator_close__doc__
+	},
+	{
+		.ml_name = "__enter__",
+		.ml_meth = (PyCFunction)FilesystemIterator_enter,
+		.ml_flags = METH_NOARGS,
+		.ml_doc = NULL
+	},
+	{
+		.ml_name = "__exit__",
+		.ml_meth = (PyCFunction)FilesystemIterator_exit,
+		.ml_flags = METH_VARARGS,
+		.ml_doc = NULL
 	},
 	{ .ml_name = NULL }  /* Sentinel */
 };
@@ -1076,6 +1177,7 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	iter->last.fd = -1;
 	iter->cur_depth = 0;
 	iter->skip_next_recursion = false;
+	iter->is_closed = false;
 
 	/* Copy state into iterator */
 	memcpy(&iter->state, state, sizeof(iter_state_t));
