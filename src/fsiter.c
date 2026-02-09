@@ -206,8 +206,6 @@ create_iter_instance(int fd, const struct statx *st, const char *parent, const c
 		Py_XDECREF(parent_obj);
 		Py_XDECREF(name_obj);
 		Py_XDECREF(fd_obj);
-		Py_DECREF(isdir_obj);
-		Py_DECREF(islnk_obj);
 		Py_DECREF(statx_obj);
 		Py_DECREF(inst);
 		return NULL;
