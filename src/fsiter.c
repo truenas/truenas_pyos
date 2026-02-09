@@ -206,8 +206,6 @@ create_iter_instance(int fd, const struct statx *st, const char *parent, const c
 		Py_XDECREF(parent_obj);
 		Py_XDECREF(name_obj);
 		Py_XDECREF(fd_obj);
-		Py_DECREF(isdir_obj);
-		Py_DECREF(islnk_obj);
 		Py_DECREF(statx_obj);
 		Py_DECREF(inst);
 		return NULL;
@@ -239,6 +237,11 @@ FilesystemIterator_dealloc(FilesystemIteratorObject *self)
 	/* Clean up stack - close any open directories */
 	for (i = 0; i < self->cur_depth; i++) {
 		cleanup_iter_dir(&self->dir_stack[i]);
+	}
+
+	if (self->last.fd > 0) {
+		close(self->last.fd);
+		self->last.fd = -1;
 	}
 
 	/* Clean up reporting callback references */
