@@ -824,6 +824,16 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 					self->cookie_sz = 0;
 				}
 				Py_XDECREF(result);
+
+				/*
+				 * Close the FD from the directory we just pushed but didn't yield.
+				 * The continue statement below skips the normal FD cleanup at the
+				 * top of __next__, so we must close it here to prevent a leak.
+				 */
+				if (self->last.fd >= 0) {
+					close(self->last.fd);
+					self->last.fd = -1;
+				}
 				continue;
 			}
 
