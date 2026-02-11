@@ -13,6 +13,7 @@
 #include "fsmount.h"
 #include "umount2.h"
 #include "fsiter.h"
+#include "renameat2.h"
 #include "truenas_os_state.h"
 
 #define MODULE_DOC "TrueNAS OS module"
@@ -760,6 +761,71 @@ static PyObject *py_umount2(PyObject *obj,
 	return do_umount2(target, flags);
 }
 
+PyDoc_STRVAR(py_renameat2__doc__,
+"renameat2(src, dst, *, src_dir_fd=AT_FDCWD, dst_dir_fd=AT_FDCWD, flags)\n"
+"--\n\n"
+"Atomically rename a file or directory with extended options.\n\n"
+"The renameat2() system call is an extended version of renameat(2) that\n"
+"provides additional functionality through the flags parameter. It can\n"
+"perform atomic exchanges of two files, prevent overwriting existing files,\n"
+"or create whiteout entries.\n\n"
+"Parameters\n"
+"----------\n"
+"src : str\n"
+"    Source path (can be relative to src_dir_fd)\n"
+"dst : str\n"
+"    Destination path (can be relative to dst_dir_fd)\n"
+"src_dir_fd : int, optional\n"
+"    Directory file descriptor for source, default=AT_FDCWD (current directory)\n"
+"dst_dir_fd : int, optional\n"
+"    Directory file descriptor for destination, default=AT_FDCWD (current directory)\n"
+"flags : int\n"
+"    Rename flags (AT_RENAME_* constants)\n\n"
+"Returns\n"
+"-------\n"
+"None\n\n"
+"AT_RENAME_* flags:\n"
+"    AT_RENAME_NOREPLACE: Don't overwrite destination if it exists\n"
+"    AT_RENAME_EXCHANGE: Atomically exchange source and destination\n"
+"    AT_RENAME_WHITEOUT: Create a whiteout entry at source location\n\n"
+"Examples\n"
+"--------\n"
+">>> import truenas_os\n"
+">>> # Safe rename - fail if destination exists\n"
+">>> truenas_os.renameat2('old.txt', 'new.txt',\n"
+"...                       flags=truenas_os.AT_RENAME_NOREPLACE)\n\n"
+">>> # Atomic exchange of two files\n"
+">>> truenas_os.renameat2('file1.txt', 'file2.txt',\n"
+"...                       flags=truenas_os.AT_RENAME_EXCHANGE)\n\n"
+">>> # Rename relative to directory file descriptors\n"
+">>> import os\n"
+">>> dirfd = os.open('/some/path', os.O_DIRECTORY)\n"
+">>> truenas_os.renameat2('old.txt', 'new.txt',\n"
+"...                       src_dir_fd=dirfd, dst_dir_fd=dirfd,\n"
+"...                       flags=0)\n"
+">>> os.close(dirfd)\n"
+);
+
+static PyObject *py_renameat2(PyObject *obj,
+                               PyObject *args,
+                               PyObject *kwargs)
+{
+	const char *oldpath;
+	const char *newpath;
+	int olddirfd = AT_FDCWD;
+	int newdirfd = AT_FDCWD;
+	unsigned int flags = 0;
+	const char *kwnames[] = { "src", "dst", "src_dir_fd", "dst_dir_fd", "flags", NULL };
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ss|$iiI",
+	                                 discard_const_p(char *, kwnames),
+	                                 &oldpath, &newpath, &olddirfd, &newdirfd, &flags)) {
+		return NULL;
+	}
+
+	return do_renameat2(olddirfd, oldpath, newdirfd, newpath, flags);
+}
+
 PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
 "iter_filesystem_contents(mountpoint, filesystem_name, relative_path=None, /,\n"
 "                         btime_cutoff=0, cnt=0, cnt_bytes=0,\n"
@@ -925,6 +991,12 @@ static PyMethodDef truenas_os_methods[] = {
 		.ml_doc = py_umount2__doc__
 	},
 	{
+		.ml_name = "renameat2",
+		.ml_meth = (PyCFunction)py_renameat2,
+		.ml_flags = METH_VARARGS|METH_KEYWORDS,
+		.ml_doc = py_renameat2__doc__
+	},
+	{
 		.ml_name = "iter_filesystem_contents",
 		.ml_meth = (PyCFunction)py_iter_filesystem_contents,
 		.ml_flags = METH_VARARGS|METH_KEYWORDS,
@@ -1027,6 +1099,12 @@ PyObject* module_init(void)
 
 	// Initialize umount2 constants
 	if (init_umount2_constants(m) < 0) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	// Initialize renameat2 constants
+	if (init_renameat2_constants(m) < 0) {
 		Py_DECREF(m);
 		return NULL;
 	}
