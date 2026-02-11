@@ -420,6 +420,49 @@ def umount2(
     """
     ...
 
+# renameat2 function
+def renameat2(
+    oldpath: str | bytes,
+    newpath: str | bytes,
+    *,
+    src_dir_fd: int = ...,  # Default: AT_FDCWD
+    dst_dir_fd: int = ...,  # Default: AT_FDCWD
+    flags: int = 0,
+) -> None:
+    """Rename a file with additional flags.
+
+    The renameat2() system call provides extended rename functionality with
+    additional flags for atomic operations. It can perform normal renames,
+    exchange two files atomically, or ensure the destination doesn't exist.
+
+    Parameters
+    ----------
+    oldpath : str | bytes
+        Source path (relative to src_dir_fd)
+    newpath : str | bytes
+        Destination path (relative to dst_dir_fd)
+    src_dir_fd : int, optional
+        Source directory file descriptor (default: AT_FDCWD)
+    dst_dir_fd : int, optional
+        Destination directory file descriptor (default: AT_FDCWD)
+    flags : int, optional
+        Rename flags (AT_RENAME_* constants)
+
+    AT_RENAME_* flags
+    -----------------
+    AT_RENAME_NOREPLACE : Don't overwrite newpath if it exists (fails with EEXIST)
+    AT_RENAME_EXCHANGE : Atomically exchange oldpath and newpath (both must exist)
+    AT_RENAME_WHITEOUT : Create a whiteout object at oldpath after rename
+
+    Notes
+    -----
+    - AT_RENAME_NOREPLACE and AT_RENAME_EXCHANGE are mutually exclusive
+    - With AT_RENAME_EXCHANGE, both paths must exist or ENOENT is raised
+    - The operation is atomic - either completes fully or fails completely
+    - Inode numbers are preserved during rename operations
+    """
+    ...
+
 # STATX constants
 STATX_TYPE: int
 STATX_MODE: int
@@ -454,6 +497,11 @@ AT_STATX_SYNC_AS_STAT: int
 AT_STATX_FORCE_SYNC: int
 AT_STATX_DONT_SYNC: int
 AT_RECURSIVE: int  # Apply to entire subtree (for mount_setattr)
+
+# AT_RENAME constants (for renameat2)
+AT_RENAME_NOREPLACE: int  # Don't overwrite newpath if it exists
+AT_RENAME_EXCHANGE: int  # Atomically exchange oldpath and newpath
+AT_RENAME_WHITEOUT: int  # Create whiteout object at oldpath
 
 # STATX_ATTR constants
 STATX_ATTR_COMPRESSED: int
