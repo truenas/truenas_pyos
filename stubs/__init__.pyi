@@ -180,8 +180,8 @@ def iter_mount(
 # openat2 function
 def openat2(
     path: str | bytes,
-    *,
     dir_fd: int = ...,  # Default: AT_FDCWD
+    *,
     flags: int = 0,
     mode: int = 0,
     resolve: int = 0,
@@ -422,8 +422,8 @@ def umount2(
 
 # renameat2 function
 def renameat2(
-    oldpath: str | bytes,
-    newpath: str | bytes,
+    src: str | bytes,
+    dst: str | bytes,
     *,
     src_dir_fd: int = ...,  # Default: AT_FDCWD
     dst_dir_fd: int = ...,  # Default: AT_FDCWD
@@ -437,9 +437,9 @@ def renameat2(
 
     Parameters
     ----------
-    oldpath : str | bytes
+    src : str | bytes
         Source path (relative to src_dir_fd)
-    newpath : str | bytes
+    dst : str | bytes
         Destination path (relative to dst_dir_fd)
     src_dir_fd : int, optional
         Source directory file descriptor (default: AT_FDCWD)
