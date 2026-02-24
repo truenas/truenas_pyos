@@ -12,6 +12,7 @@ This module provides Python access to Linux-specific system calls that are not a
 - **File Handles**: Create and use filesystem-independent file handles
 - **Extended Stat**: Get detailed file metadata including creation time and mount IDs
 - **Filesystem Iteration**: Secure recursive iteration over filesystem contents
+- **ACL Support**: Read and write NFS4 and POSIX1E access control lists via file descriptor
 
 ## Installation
 
@@ -636,6 +637,204 @@ for item in iterator2:
   - `depth` attribute: The directory stack depth (0-indexed) where restoration failed
   - `path` attribute: The directory path where the expected subdirectory was not found
   - Error message includes both the depth and path for easy debugging
+
+---
+
+### ACL Operations
+
+The ACL API operates on open file descriptors. `fgetacl` probes the filesystem
+type automatically and returns either an `NFS4ACL` or `POSIXACL` object.
+
+#### `fgetacl(fd)`
+
+Read the ACL from an open file descriptor.
+
+```python
+import truenas_os, os
+
+fd = os.open("/mnt/tank/file", os.O_RDONLY)
+acl = truenas_os.fgetacl(fd)
+os.close(fd)
+
+if isinstance(acl, truenas_os.NFS4ACL):
+    for ace in acl.aces:
+        print(ace)
+```
+
+**Parameters:**
+- `fd` (int): Open file descriptor
+
+**Returns:** `NFS4ACL` on NFS4/ZFS filesystems, `POSIXACL` on POSIX1E filesystems
+
+**Raises:** `OSError(EOPNOTSUPP)` if ACLs are disabled on the filesystem
+
+---
+
+#### `fsetacl(fd, acl)`
+
+Write an ACL to an open file descriptor. The ACL type must match the filesystem.
+
+```python
+import truenas_os, os
+
+fd = os.open("/mnt/tank/file", os.O_RDONLY)
+acl = truenas_os.fgetacl(fd)
+# modify acl ...
+truenas_os.fsetacl(fd, acl)
+os.close(fd)
+```
+
+**Parameters:**
+- `fd` (int): Open file descriptor
+- `acl` (`NFS4ACL` | `POSIXACL`): ACL to write
+
+**Raises:** `OSError` on failure, `TypeError` if `acl` is neither `NFS4ACL` nor `POSIXACL`
+
+---
+
+#### `fsetacl_nfs4(fd, data)` / `fsetacl_posix(fd, access_bytes, default_bytes)`
+
+Low-level interfaces that write raw xattr bytes directly, bypassing the
+`NFS4ACL`/`POSIXACL` wrappers. Prefer `fsetacl` unless you are managing the
+wire format yourself.
+
+---
+
+#### `NFS4ACL`
+
+Wraps the `system.nfs4_acl_xdr` xattr (big-endian XDR encoding).
+
+```python
+import truenas_os
+
+# Construct from ACE objects
+ace = truenas_os.NFS4Ace(
+    truenas_os.NFS4AceType.ALLOW,
+    truenas_os.NFS4Flag.FILE_INHERIT | truenas_os.NFS4Flag.DIRECTORY_INHERIT,
+    truenas_os.NFS4Perm.READ_DATA | truenas_os.NFS4Perm.EXECUTE,
+    truenas_os.NFS4Who.EVERYONE,
+)
+acl = truenas_os.NFS4ACL.from_aces([ace])
+
+# Inspect
+print(acl.acl_flags)   # NFS4ACLFlag
+print(acl.trivial)     # True if ACL_IS_TRIVIAL is set
+for ace in acl.aces:
+    print(ace)
+
+# Compute inherited ACL for a new child directory
+child_acl = acl.generate_inherited_acl(is_dir=True)
+
+# Round-trip through raw bytes
+raw = bytes(acl)
+acl2 = truenas_os.NFS4ACL(raw)
+```
+
+**Constructor:** `NFS4ACL(data: bytes)` — wrap raw XDR bytes
+
+**Class method:**
+- `from_aces(aces, acl_flags=NFS4ACLFlag(0))` — build from an iterable of `NFS4Ace` objects; ACEs are sorted into MS canonical order automatically
+
+**Properties:**
+- `acl_flags` (`NFS4ACLFlag`): ACL-level flags from the XDR header
+- `aces` (`list[NFS4Ace]`): Parsed list of access control entries
+- `trivial` (`bool`): True if `ACL_IS_TRIVIAL` is set (ACL is equivalent to mode bits)
+
+**Methods:**
+- `generate_inherited_acl(is_dir=False) -> NFS4ACL`: Apply NFS4 inheritance rules to produce the ACL for a new child object. File children include only `FILE_INHERIT` ACEs; directory children include `FILE_INHERIT` or `DIRECTORY_INHERIT` ACEs, with propagation flags adjusted according to `NO_PROPAGATE_INHERIT`. Raises `ValueError` if no ACEs would be inherited.
+- `__bytes__() -> bytes`: Return the raw XDR bytes
+- `__len__() -> int`: Number of ACEs
+
+---
+
+#### `NFS4Ace`
+
+An individual NFS4 access control entry.
+
+**Constructor:** `NFS4Ace(ace_type, ace_flags, access_mask, who_type, who_id=-1)`
+
+**Properties:**
+- `ace_type` (`NFS4AceType`): `ALLOW`, `DENY`, `AUDIT`, or `ALARM`
+- `ace_flags` (`NFS4Flag`): Inheritance and audit flags
+- `access_mask` (`NFS4Perm`): Permission bits
+- `who_type` (`NFS4Who`): `NAMED`, `OWNER`, `GROUP`, or `EVERYONE`
+- `who_id` (`int`): uid/gid for `NAMED` entries; `-1` for special principals
+
+**NFS4AceType constants:** `ALLOW`, `DENY`, `AUDIT`, `ALARM`
+
+**NFS4Who constants:** `NAMED`, `OWNER`, `GROUP`, `EVERYONE`
+
+**NFS4Perm flags:** `READ_DATA`, `WRITE_DATA`, `APPEND_DATA`, `READ_NAMED_ATTRS`, `WRITE_NAMED_ATTRS`, `EXECUTE`, `DELETE_CHILD`, `READ_ATTRIBUTES`, `WRITE_ATTRIBUTES`, `DELETE`, `READ_ACL`, `WRITE_ACL`, `WRITE_OWNER`, `SYNCHRONIZE`
+
+**NFS4Flag flags:** `FILE_INHERIT`, `DIRECTORY_INHERIT`, `NO_PROPAGATE_INHERIT`, `INHERIT_ONLY`, `SUCCESSFUL_ACCESS`, `FAILED_ACCESS`, `IDENTIFIER_GROUP`, `INHERITED`
+
+**NFS4ACLFlag flags:** `AUTO_INHERIT`, `PROTECTED`, `DEFAULTED`
+
+---
+
+#### `POSIXACL`
+
+Wraps the `system.posix_acl_access` and `system.posix_acl_default` xattrs
+(little-endian Linux wire format).
+
+```python
+import truenas_os
+
+# Construct from ACE objects
+aces = [
+    truenas_os.POSIXAce(truenas_os.POSIXTag.USER_OBJ,  truenas_os.POSIXPerm.READ | truenas_os.POSIXPerm.WRITE),
+    truenas_os.POSIXAce(truenas_os.POSIXTag.GROUP_OBJ, truenas_os.POSIXPerm.READ),
+    truenas_os.POSIXAce(truenas_os.POSIXTag.OTHER,     truenas_os.POSIXPerm(0)),
+]
+acl = truenas_os.POSIXACL.from_aces(aces)
+
+# Inspect
+print(acl.trivial)        # True if no named users/groups and no MASK entry
+for ace in acl.aces:
+    print(ace)
+for ace in acl.default_aces:
+    print(ace)
+
+# Compute inherited ACL for a new child directory
+child_acl = acl.generate_inherited_acl(is_dir=True)
+
+# Raw bytes for each xattr
+access_raw  = acl.access_bytes()
+default_raw = acl.default_bytes()  # None if no default ACL
+```
+
+**Constructor:** `POSIXACL(access_data: bytes, default_data: bytes | None = None)` — wrap raw xattr bytes
+
+**Class method:**
+- `from_aces(aces)` — build from an iterable of `POSIXAce` objects; entries with `default=True` populate the default ACL
+
+**Properties:**
+- `aces` (`list[POSIXAce]`): Access ACL entries
+- `default_aces` (`list[POSIXAce]`): Default ACL entries (empty if no default ACL)
+- `trivial` (`bool`): True if the ACL contains only `USER_OBJ`, `GROUP_OBJ`, and `OTHER` entries without a `MASK` entry
+
+**Methods:**
+- `generate_inherited_acl(is_dir=True) -> POSIXACL`: Derive the ACL for a new child by promoting the default ACL. Raises `ValueError` if no default ACL is present.
+- `access_bytes() -> bytes`: Raw access ACL xattr bytes
+- `default_bytes() -> bytes | None`: Raw default ACL xattr bytes, or `None` if absent
+
+---
+
+#### `POSIXAce`
+
+An individual POSIX ACL entry.
+
+**Constructor:** `POSIXAce(tag, perms, id=-1, default=False)`
+
+**Properties:**
+- `tag` (`POSIXTag`): Entry type
+- `perms` (`POSIXPerm`): Permission bits
+- `id` (`int`): uid/gid for `USER`/`GROUP` entries; `-1` for special entries
+- `default` (`bool`): True if this entry belongs to the default ACL
+
+**POSIXTag constants:** `USER_OBJ`, `USER`, `GROUP_OBJ`, `GROUP`, `MASK`, `OTHER`
+
+**POSIXPerm flags:** `READ`, `WRITE`, `EXECUTE`
 
 ---
 
