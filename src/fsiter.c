@@ -135,7 +135,7 @@ static inline void cleanup_iter_dir(iter_dir_t *iter)
 static PyObject *
 py_fsiter_state_from_struct(const iter_state_t *c_state, const char *current_dir)
 {
-	PyObject *state_obj;
+	PyObject *state_obj = NULL;
 	truenas_os_state_t *state;
 
 	state = get_truenas_os_state(NULL);
@@ -359,8 +359,8 @@ process_next_entry(FilesystemIteratorObject *self,
 static bool
 push_dir_stack(FilesystemIteratorObject *self, iter_dir_t *cur_dir, fsiter_error_t *err)
 {
-	iter_dir_t *new_dir;
-	DIR *dirp;
+	iter_dir_t *new_dir = NULL;
+	DIR *dirp = NULL;
 	int dup_fd;
 	char full_path[PATH_MAX];
 
@@ -411,7 +411,7 @@ push_dir_stack(FilesystemIteratorObject *self, iter_dir_t *cur_dir, fsiter_error
 static bool
 pop_dir_stack(FilesystemIteratorObject *self, fsiter_error_t *err)
 {
-	iter_dir_t *dir;
+	iter_dir_t *dir = NULL;
 
 	if (self->cur_depth == 0) {
 		return true;  /* Nothing to pop */
@@ -545,8 +545,8 @@ check_and_invoke_reporting_callback(FilesystemIteratorObject *self,
 				    const char *current_dir,
 				    bool final)
 {
-	PyObject *state_obj, *dir_stack_obj;
-	PyObject *callback_result;
+	PyObject *state_obj = NULL, *dir_stack_obj = NULL;
+	PyObject *callback_result = NULL;
 
 	if ((self->reporting_cb != NULL) && (final ||
 	    (self->reporting_cb_increment &&
@@ -651,10 +651,10 @@ static PyObject *
 FilesystemIterator_next(FilesystemIteratorObject *self)
 {
 	enum fsiter_action action;
-	PyObject *result;
+	PyObject *result = NULL;
 	bool push_ok;
-	struct dirent *direntp;
-	iter_dir_t *cur_dir;
+	struct dirent *direntp = NULL;
+	iter_dir_t *cur_dir = NULL;
 	int async_err = 0;
 
 	/* Check if iterator is closed */
@@ -888,7 +888,7 @@ PyDoc_STRVAR(FilesystemIterator_get_stats__doc__,
 static PyObject *
 FilesystemIterator_get_stats(FilesystemIteratorObject *self, PyObject *Py_UNUSED(ignored))
 {
-	const char *current_dir;
+	const char *current_dir = NULL;
 
 	if (self->is_closed) {
 		PyErr_SetString(PyExc_ValueError, "I/O operation on closed iterator");
@@ -1077,15 +1077,15 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 			   PyObject *reporting_cb_private_data,
 			   PyObject *dir_stack)
 {
-	FilesystemIteratorObject *iter;
+	FilesystemIteratorObject *iter = NULL;
 	int root_fd;
 	struct statx root_st;
 	int ret;
 	char root_path[PATH_MAX];
-	DIR *root_dirp;
-	iter_dir_t *root_dir;
-	struct statmount *sm;
-	const char *sb_source;
+	DIR *root_dirp = NULL;
+	iter_dir_t *root_dir = NULL;
+	struct statmount *sm = NULL;
+	const char *sb_source = NULL;
 	uint64_t *cookies = NULL;
 	size_t cookie_sz = 0;
 

@@ -213,7 +213,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	size_t buf_size = sizeof(stack_buf);
 	ssize_t ret;
 	PyObject *result = NULL;
-	truenas_os_state_t *state;
+	truenas_os_state_t *state = NULL;
 
 	req.size = MNT_ID_REQ_SIZE_VER1;
 	req.mnt_id = mnt_id;
@@ -631,7 +631,7 @@ cleanup:
 struct statmount *statmount_impl(uint64_t mnt_id, uint64_t mask)
 {
 	struct mnt_id_req req = {0};
-	struct statmount *sm;
+	struct statmount *sm = NULL;
 	size_t buf_size = 4096;
 	ssize_t ret;
 

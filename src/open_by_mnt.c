@@ -35,7 +35,7 @@ int open_by_mount_id(uint64_t mount_id, int flags)
 	struct statmount *sm = (struct statmount *)buf;
 	ssize_t ret;
 	int fd = -1;
-	const char *mnt_point;
+	const char *mnt_point = NULL;
 
 	req.size = MNT_ID_REQ_SIZE_VER1;
 	req.mnt_id = mount_id;

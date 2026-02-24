@@ -196,9 +196,9 @@ POSIXAce_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
 	POSIXAce_t *self = (POSIXAce_t *)type->tp_alloc(type, 0);
 	if (self == NULL)
 		return NULL;
-	self->tag      = Py_NewRef(Py_None);
-	self->perms    = Py_NewRef(Py_None);
-	self->id       = PyLong_FromLong(-1);
+	self->tag = Py_NewRef(Py_None);
+	self->perms = Py_NewRef(Py_None);
+	self->id = PyLong_FromLong(-1);
 	self->default_ = Py_NewRef(Py_False);
 	if (self->id == NULL) {
 		Py_DECREF(self);
@@ -280,7 +280,7 @@ static PyObject *
 POSIXAce_richcompare(PyObject *self, PyObject *other, int op)
 {
 	long tag_a, tag_b, id_a, id_b;
-	int  cmp;
+	int cmp;
 	POSIXAce_t *a;
 	POSIXAce_t *b;
 
@@ -292,8 +292,8 @@ POSIXAce_richcompare(PyObject *self, PyObject *other, int op)
 
 	tag_a = PyLong_AsLong(a->tag);
 	tag_b = PyLong_AsLong(b->tag);
-	id_a  = PyLong_AsLong(a->id);
-	id_b  = PyLong_AsLong(b->id);
+	id_a = PyLong_AsLong(a->id);
+	id_b = PyLong_AsLong(b->id);
 	if (PyErr_Occurred())
 		return NULL;
 
@@ -360,7 +360,7 @@ POSIXACL_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
 	POSIXACL_t *self = (POSIXACL_t *)type->tp_alloc(type, 0);
 	if (self == NULL)
 		return NULL;
-	self->access_data  = PyBytes_FromStringAndSize("", 0);
+	self->access_data = PyBytes_FromStringAndSize("", 0);
 	self->default_data = Py_NewRef(Py_None);
 	if (self->access_data == NULL) {
 		Py_DECREF(self);
@@ -418,9 +418,9 @@ encode_posix_aces(PyObject *ace_seq)
 		}
 		POSIXAce_t *a = (POSIXAce_t *)ace;
 
-		long tag_v  = PyLong_AsLong(a->tag);
+		long tag_v = PyLong_AsLong(a->tag);
 		long perm_v = PyLong_AsLong(a->perms);
-		long id_v   = PyLong_AsLong(a->id);
+		long id_v = PyLong_AsLong(a->id);
 		if (PyErr_Occurred()) {
 			PyMem_Free(buf);
 			return NULL;
@@ -563,9 +563,9 @@ parse_posix_aces(const uint8_t *buf, Py_ssize_t bufsz, int is_default)
 
 	for (Py_ssize_t i = 0; i < naces; i++) {
 		const uint8_t *p = buf + POSIX_HDR_SZ + (size_t)i * POSIX_ACE_SZ;
-		uint16_t tag_raw  = read_le16(p + 0);
+		uint16_t tag_raw = read_le16(p + 0);
 		uint16_t perm_raw = read_le16(p + 2);
-		uint32_t xid      = read_le32(p + 4);
+		uint32_t xid = read_le32(p + 4);
 
 		long id_v = (xid == POSIX_SPECIAL_ID) ? -1L : (long)xid;
 
@@ -713,8 +713,8 @@ static PyObject *
 POSIXACL_generate_inherited_acl(POSIXACL_t *self, PyObject *args, PyObject *kwargs)
 {
 	static char *kwlist[] = { "is_dir", NULL };
-	int          is_dir;
-	PyObject    *new_default;
+	int is_dir;
+	PyObject *new_default;
 
 	is_dir = 1;
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|p", kwlist, &is_dir))
@@ -794,7 +794,7 @@ POSIXACL_get_xattr_bytes(PyObject *acl,
                           PyObject **default_out)
 {
 	POSIXACL_t *self = (POSIXACL_t *)acl;
-	*access_out  = Py_NewRef(self->access_data);
+	*access_out = Py_NewRef(self->access_data);
 	*default_out = Py_NewRef(self->default_data);
 }
 
@@ -809,25 +809,25 @@ POSIXACL_get_xattr_bytes(PyObject *acl,
 static int
 validate_posix_blob(const char *data, size_t len, const char *label)
 {
-	const uint8_t *p;
-	const uint8_t *ace_p;
-	size_t         naces;
-	size_t         i;
-	uint32_t       version;
-	int            n_user_obj;
-	int            n_group_obj;
-	int            n_other;
-	int            n_mask;
-	int            n_named;
-	uint16_t       tag;
-	uint32_t       xid;
+	const uint8_t *p = NULL;
+	const uint8_t *ace_p = NULL;
+	size_t naces;
+	size_t i;
+	uint32_t version;
+	int n_user_obj;
+	int n_group_obj;
+	int n_other;
+	int n_mask;
+	int n_named;
+	uint16_t tag;
+	uint32_t xid;
 
 	if (len < POSIX_HDR_SZ) {
 		PyErr_Format(PyExc_ValueError, "%s ACL too short", label);
 		return -1;
 	}
 
-	p       = (const uint8_t *)data;
+	p = (const uint8_t *)data;
 	version = read_le32(p);
 	if (version != POSIX_ACL_VERSION) {
 		PyErr_Format(PyExc_ValueError,
@@ -835,17 +835,17 @@ validate_posix_blob(const char *data, size_t len, const char *label)
 		return -1;
 	}
 
-	naces      = (len - POSIX_HDR_SZ) / POSIX_ACE_SZ;
+	naces = (len - POSIX_HDR_SZ) / POSIX_ACE_SZ;
 	n_user_obj = 0;
 	n_group_obj = 0;
-	n_other    = 0;
-	n_mask     = 0;
-	n_named    = 0;
+	n_other = 0;
+	n_mask = 0;
+	n_named = 0;
 
 	for (i = 0; i < naces; i++) {
 		ace_p = p + POSIX_HDR_SZ + i * POSIX_ACE_SZ;
-		tag   = read_le16(ace_p + 0);
-		xid   = read_le32(ace_p + 4);
+		tag = read_le16(ace_p + 0);
+		xid = read_le32(ace_p + 4);
 
 		switch (tag) {
 		case POSIX_TAG_USER_OBJ:

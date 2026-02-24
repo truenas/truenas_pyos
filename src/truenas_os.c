@@ -901,7 +901,7 @@ py_fgetacl(PyObject *obj, PyObject *args)
 {
 	int fd;
 	acl_xattr_t acl;
-	PyObject *result;
+	PyObject *result = NULL;
 
 	if (!PyArg_ParseTuple(args, "i:fgetacl", &fd))
 		return NULL;
@@ -1113,7 +1113,7 @@ py_fsetacl_posix(PyObject *obj, PyObject *args)
 
 	if (default_obj == Py_None) {
 		default_data = NULL;
-		default_len  = 0;
+		default_len = 0;
 	} else if (PyBytes_Check(default_obj)) {
 		if (PyBytes_AsStringAndSize(default_obj,
 		                            (char **)&default_data, &default_len) < 0)

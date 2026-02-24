@@ -93,7 +93,7 @@ do_fgetacl(int fd, acl_xattr_t *out)
 		} else {
 			/* ENODATA: ACL present but empty. */
 			out->data.nfs4.data = NULL;
-			out->data.nfs4.len  = 0;
+			out->data.nfs4.len = 0;
 		}
 		return 0;
 	}
@@ -129,7 +129,7 @@ do_fgetacl(int fd, acl_xattr_t *out)
 			return -1;
 	} else {
 		out->data.posix.access_data = NULL;
-		out->data.posix.access_len  = 0;
+		out->data.posix.access_len = 0;
 	}
 
 	/* Probe for default ACL. */
@@ -148,7 +148,7 @@ do_fgetacl(int fd, acl_xattr_t *out)
 	if (dsz == -1 && errno == ENODATA) {
 		/* No default ACL. */
 		out->data.posix.default_data = NULL;
-		out->data.posix.default_len  = 0;
+		out->data.posix.default_len = 0;
 	} else if (dsz == -1) {
 		free(out->data.posix.access_data);
 		PyErr_SetFromErrno(PyExc_OSError);
@@ -162,7 +162,7 @@ do_fgetacl(int fd, acl_xattr_t *out)
 		}
 	} else {
 		out->data.posix.default_data = NULL;
-		out->data.posix.default_len  = 0;
+		out->data.posix.default_len = 0;
 	}
 
 	return 0;
@@ -207,8 +207,8 @@ int
 do_fremoveacl(int fd)
 {
 	ssize_t sz;
-	int     ret;
-	int     async_err;
+	int ret;
+	int async_err;
 
 	async_err = 0;
 

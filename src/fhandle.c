@@ -78,7 +78,7 @@ static int do_fhandle_from_bytes(py_fhandle_t *self,
 {
 	size_t header_size;
 	Py_ssize_t min_size;
-	struct file_handle *src_handle;
+	struct file_handle *src_handle = NULL;
 	size_t data_bytes;
 
 	header_size = offsetof(struct file_handle, f_handle);

@@ -220,11 +220,11 @@ NFS4Ace_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
 	if (self == NULL)
 		return NULL;
 
-	self->ace_type    = Py_NewRef(Py_None);
-	self->ace_flags   = Py_NewRef(Py_None);
+	self->ace_type = Py_NewRef(Py_None);
+	self->ace_flags = Py_NewRef(Py_None);
 	self->access_mask = Py_NewRef(Py_None);
-	self->who_type    = Py_NewRef(Py_None);
-	self->who_id      = PyLong_FromLong(-1);
+	self->who_type = Py_NewRef(Py_None);
+	self->who_id = PyLong_FromLong(-1);
 	if (self->who_id == NULL) {
 		Py_DECREF(self);
 		return NULL;
@@ -321,13 +321,13 @@ NFS4Ace_richcompare(PyObject *self, PyObject *other, int op)
 {
 	NFS4Ace_t *a;
 	NFS4Ace_t *b;
-	long       type_a;
-	long       flags_a;
-	long       type_b;
-	long       flags_b;
-	int        key_a;
-	int        key_b;
-	int        cmp;
+	long type_a;
+	long flags_a;
+	long type_b;
+	long flags_b;
+	int key_a;
+	int key_b;
+	int cmp;
 
 	if (!PyObject_TypeCheck(other, &NFS4Ace_Type))
 		Py_RETURN_NOTIMPLEMENTED;
@@ -335,9 +335,9 @@ NFS4Ace_richcompare(PyObject *self, PyObject *other, int op)
 	a = (NFS4Ace_t *)self;
 	b = (NFS4Ace_t *)other;
 
-	type_a  = PyLong_AsLong(a->ace_type);
+	type_a = PyLong_AsLong(a->ace_type);
 	flags_a = PyLong_AsLong(a->ace_flags);
-	type_b  = PyLong_AsLong(b->ace_type);
+	type_b = PyLong_AsLong(b->ace_type);
 	flags_b = PyLong_AsLong(b->ace_flags);
 	if (PyErr_Occurred())
 		return NULL;
@@ -346,7 +346,7 @@ NFS4Ace_richcompare(PyObject *self, PyObject *other, int op)
 	      + ((type_a == 0) ? 1 : 0);
 	key_b = ((flags_b & NFS4_INHERITED_FLAG) ? 1 : 0) * 2
 	      + ((type_b == 0) ? 1 : 0);
-	cmp   = (key_a < key_b) ? -1 : (key_a > key_b) ? 1 : 0;
+	cmp = (key_a < key_b) ? -1 : (key_a > key_b) ? 1 : 0;
 
 	switch (op) {
 	case Py_LT: return PyBool_FromLong(cmp <  0);
@@ -432,30 +432,30 @@ static PyObject *
 NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
 	static char *kwlist[] = { "aces", "acl_flags", NULL };
-	PyObject   *aces_arg;
-	PyObject   *acl_flags_obj;
-	PyObject   *aces_list;
-	PyObject   *aces_seq;
-	PyObject   *ace;
-	PyObject   *bytes_obj;
-	PyObject   *result;
-	NFS4Ace_t  *a;
-	Py_ssize_t  naces;
-	Py_ssize_t  i;
-	size_t      bufsz;
-	uint8_t    *buf;
-	uint8_t    *p;
-	uint32_t    acl_flags_val;
-	uint32_t    iflag;
-	uint32_t    who;
-	long        v;
-	long        ace_type_v;
-	long        ace_flags_v;
-	long        access_mask_v;
-	long        who_type_v;
-	long        who_id_v;
+	PyObject *aces_arg;
+	PyObject *acl_flags_obj;
+	PyObject *aces_list;
+	PyObject *aces_seq;
+	PyObject *ace;
+	PyObject *bytes_obj;
+	PyObject *result;
+	NFS4Ace_t *a;
+	Py_ssize_t naces;
+	Py_ssize_t i;
+	size_t bufsz;
+	uint8_t *buf;
+	uint8_t *p;
+	uint32_t acl_flags_val;
+	uint32_t iflag;
+	uint32_t who;
+	long v;
+	long ace_type_v;
+	long ace_flags_v;
+	long access_mask_v;
+	long who_type_v;
+	long who_id_v;
 
-	aces_arg      = NULL;
+	aces_arg = NULL;
 	acl_flags_obj = NULL;
 
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|O", kwlist,
@@ -479,7 +479,7 @@ NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 
 	naces = PySequence_Fast_GET_SIZE(aces_seq);
 	bufsz = NFS4_HDR_SZ + (size_t)naces * NFS4_ACE_SZ;
-	buf   = (uint8_t *)PyMem_Malloc(bufsz);
+	buf = (uint8_t *)PyMem_Malloc(bufsz);
 	if (buf == NULL) {
 		Py_DECREF(aces_seq);
 		return PyErr_NoMemory();
@@ -511,11 +511,11 @@ NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 		}
 		a = (NFS4Ace_t *)ace;
 
-		ace_type_v    = PyLong_AsLong(a->ace_type);
-		ace_flags_v   = PyLong_AsLong(a->ace_flags);
+		ace_type_v = PyLong_AsLong(a->ace_type);
+		ace_flags_v = PyLong_AsLong(a->ace_flags);
 		access_mask_v = PyLong_AsLong(a->access_mask);
-		who_type_v    = PyLong_AsLong(a->who_type);
-		who_id_v      = PyLong_AsLong(a->who_id);
+		who_type_v = PyLong_AsLong(a->who_type);
+		who_id_v = PyLong_AsLong(a->who_id);
 
 		if (PyErr_Occurred()) {
 			PyMem_Free(buf);
@@ -525,10 +525,10 @@ NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 
 		if (who_type_v == NFS4_WHO_NAMED) {
 			iflag = 0;
-			who   = (uint32_t)who_id_v;
+			who = (uint32_t)who_id_v;
 		} else {
 			iflag = 1;
-			who   = (uint32_t)who_type_v; /* 1=OWNER, 2=GROUP, 3=EVERYONE */
+			who = (uint32_t)who_type_v; /* 1=OWNER, 2=GROUP, 3=EVERYONE */
 		}
 
 		p = buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
@@ -608,15 +608,15 @@ NFS4ACL_get_aces(NFS4ACL_t *self, void *closure)
 
 	for (uint32_t i = 0; i < naces; i++) {
 		const uint8_t *p = buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
-		uint32_t ace_type_v    = read_be32(p +  0);
-		uint32_t ace_flags_v   = read_be32(p +  4);
-		uint32_t iflag         = read_be32(p +  8);
+		uint32_t ace_type_v = read_be32(p +  0);
+		uint32_t ace_flags_v = read_be32(p +  4);
+		uint32_t iflag = read_be32(p +  8);
 		uint32_t access_mask_v = read_be32(p + 12);
-		uint32_t who_raw       = read_be32(p + 16);
+		uint32_t who_raw = read_be32(p + 16);
 
 		/* who_type: 0=NAMED if iflag==0, else 1/2/3 special */
 		uint32_t who_type_v = iflag ? who_raw : NFS4_WHO_NAMED;
-		long who_id_v       = iflag ? -1L : (long)who_raw;
+		long who_id_v = iflag ? -1L : (long)who_raw;
 
 #define CALL_ENUM(e, v) PyObject_CallOneArg((e), tmp = PyLong_FromUnsignedLong(v))
 
@@ -708,13 +708,13 @@ PyDoc_STRVAR(NFS4ACL_trivial_doc,
 static PyObject *
 NFS4ACL_get_trivial(NFS4ACL_t *self, void *closure)
 {
-	const uint8_t *p;
-	uint32_t       flags;
+	const uint8_t *p = NULL;
+	uint32_t flags;
 
 	if (PyBytes_GET_SIZE(self->data) < NFS4_HDR_SZ)
 		Py_RETURN_TRUE;
 
-	p     = (const uint8_t *)PyBytes_AS_STRING(self->data);
+	p = (const uint8_t *)PyBytes_AS_STRING(self->data);
 	flags = read_be32(p);
 	return PyBool_FromLong((flags & NFS4_ACL_IS_TRIVIAL) != 0);
 }
@@ -761,27 +761,27 @@ PyDoc_STRVAR(NFS4ACL_generate_inherited_acl_doc,
 static PyObject *
 NFS4ACL_generate_inherited_acl(NFS4ACL_t *self, PyObject *args, PyObject *kwargs)
 {
-	static char    *kwlist[] = { "is_dir", NULL };
-	const uint8_t  *buf;
-	const uint8_t  *ace_p;
-	uint8_t        *outbuf;
-	uint8_t        *outp;
-	Py_ssize_t      datasz;
-	uint32_t        naces_in;
-	uint32_t        naces_out;
-	uint32_t        i;
-	uint32_t        ace_type;
-	uint32_t        ace_flags;
-	uint32_t        ace_iflag;
-	uint32_t        access_mask;
-	uint32_t        who;
-	uint32_t        new_flags;
-	uint32_t        out_acl_flags;
-	size_t          bufsz;
-	int             is_dir;
-	int             include;
-	PyObject       *bytes_obj;
-	PyObject       *result;
+	static char *kwlist[] = { "is_dir", NULL };
+	const uint8_t *buf = NULL;
+	const uint8_t *ace_p = NULL;
+	uint8_t *outbuf = NULL;
+	uint8_t *outp = NULL;
+	Py_ssize_t datasz;
+	uint32_t naces_in;
+	uint32_t naces_out;
+	uint32_t i;
+	uint32_t ace_type;
+	uint32_t ace_flags;
+	uint32_t ace_iflag;
+	uint32_t access_mask;
+	uint32_t who;
+	uint32_t new_flags;
+	uint32_t out_acl_flags;
+	size_t bufsz;
+	int is_dir;
+	int include;
+	PyObject *bytes_obj = NULL;
+	PyObject *result = NULL;
 
 	is_dir = 0;
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|p", kwlist, &is_dir))
@@ -794,7 +794,7 @@ NFS4ACL_generate_inherited_acl(NFS4ACL_t *self, PyObject *args, PyObject *kwargs
 		return NULL;
 	}
 
-	buf      = (const uint8_t *)PyBytes_AS_STRING(self->data);
+	buf = (const uint8_t *)PyBytes_AS_STRING(self->data);
 	naces_in = read_be32(buf + 4);
 
 	/* First pass: count output ACEs. */
@@ -802,7 +802,7 @@ NFS4ACL_generate_inherited_acl(NFS4ACL_t *self, PyObject *args, PyObject *kwargs
 	for (i = 0; i < naces_in; i++) {
 		if (NFS4_HDR_SZ + (size_t)(i + 1) * NFS4_ACE_SZ > (size_t)datasz)
 			break;
-		ace_p     = buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
+		ace_p = buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
 		ace_flags = read_be32(ace_p + 4);
 		if (is_dir)
 			include = (ace_flags &
@@ -819,7 +819,7 @@ NFS4ACL_generate_inherited_acl(NFS4ACL_t *self, PyObject *args, PyObject *kwargs
 		return NULL;
 	}
 
-	bufsz  = NFS4_HDR_SZ + (size_t)naces_out * NFS4_ACE_SZ;
+	bufsz = NFS4_HDR_SZ + (size_t)naces_out * NFS4_ACE_SZ;
 	outbuf = (uint8_t *)PyMem_Malloc(bufsz);
 	if (outbuf == NULL)
 		return PyErr_NoMemory();
@@ -833,12 +833,12 @@ NFS4ACL_generate_inherited_acl(NFS4ACL_t *self, PyObject *args, PyObject *kwargs
 	for (i = 0; i < naces_in; i++) {
 		if (NFS4_HDR_SZ + (size_t)(i + 1) * NFS4_ACE_SZ > (size_t)datasz)
 			break;
-		ace_p       = buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
-		ace_type    = read_be32(ace_p +  0);
-		ace_flags   = read_be32(ace_p +  4);
-		ace_iflag   = read_be32(ace_p +  8);
+		ace_p = buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
+		ace_type = read_be32(ace_p +  0);
+		ace_flags = read_be32(ace_p +  4);
+		ace_iflag = read_be32(ace_p +  8);
 		access_mask = read_be32(ace_p + 12);
-		who         = read_be32(ace_p + 16);
+		who = read_be32(ace_p + 16);
 
 		if (is_dir)
 			include = (ace_flags &
@@ -961,32 +961,32 @@ NFS4ACL_get_xattr_bytes(PyObject *acl)
 int
 nfs4acl_valid(int fd, const char *data, size_t len)
 {
-	struct stat     st;
-	const uint8_t  *p;
-	const uint8_t  *ace_p;
-	uint32_t        naces;
-	uint32_t        i;
-	uint32_t        ace_type;
-	uint32_t        ace_flags;
-	uint32_t        ace_iflag;
-	int             has_propagate;
-	int             has_inheritable;
-	int             is_dir;
+	struct stat st;
+	const uint8_t *p = NULL;
+	const uint8_t *ace_p = NULL;
+	uint32_t naces;
+	uint32_t i;
+	uint32_t ace_type;
+	uint32_t ace_flags;
+	uint32_t ace_iflag;
+	int has_propagate;
+	int has_inheritable;
+	int is_dir;
 
 	if (len < NFS4_HDR_SZ)
 		return 0;
 
-	p               = (const uint8_t *)data;
-	naces           = read_be32(p + 4);
-	has_propagate   = 0;
+	p = (const uint8_t *)data;
+	naces = read_be32(p + 4);
+	has_propagate = 0;
 	has_inheritable = 0;
 
 	for (i = 0; i < naces; i++) {
 		if (NFS4_HDR_SZ + (size_t)(i + 1) * NFS4_ACE_SZ > len)
 			break;
 
-		ace_p     = p + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
-		ace_type  = read_be32(ace_p + 0);
+		ace_p = p + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
+		ace_type = read_be32(ace_p + 0);
 		ace_flags = read_be32(ace_p + 4);
 		ace_iflag = read_be32(ace_p + 8);
 
