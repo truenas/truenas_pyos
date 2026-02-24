@@ -427,6 +427,54 @@ PyDoc_STRVAR(NFS4ACL_from_aces_doc,
 "Construct an NFS4ACL by packing a list of NFS4Ace objects into XDR bytes.\n"
 "acl_flags is written into the 4-byte XDR header.");
 
+/*
+ * Encode one NFS4Ace into the 20-byte XDR slot at p.
+ * endp is one past the end of the allocated buffer; the check guards
+ * against a buffer overrun if naces and the allocation ever diverge.
+ * Returns 0 on success, -1 with a Python exception set on failure.
+ */
+static int
+nfs4ace_encode(const NFS4Ace_t *a, uint8_t *p, const uint8_t *endp)
+{
+	long ace_type_v;
+	long ace_flags_v;
+	long access_mask_v;
+	long who_type_v;
+	long who_id_v;
+	uint32_t iflag;
+	uint32_t who;
+
+	if ((size_t)(endp - p) < NFS4_ACE_SZ) {
+		PyErr_SetString(PyExc_RuntimeError,
+		                "nfs4ace_encode: write would overrun ACE buffer");
+		return -1;
+	}
+
+	ace_type_v = PyLong_AsLong(a->ace_type);
+	ace_flags_v = PyLong_AsLong(a->ace_flags);
+	access_mask_v = PyLong_AsLong(a->access_mask);
+	who_type_v = PyLong_AsLong(a->who_type);
+	who_id_v = PyLong_AsLong(a->who_id);
+
+	if (PyErr_Occurred())
+		return -1;
+
+	if (who_type_v == NFS4_WHO_NAMED) {
+		iflag = 0;
+		who = (uint32_t)who_id_v;
+	} else {
+		iflag = 1;
+		who = (uint32_t)who_type_v; /* 1=OWNER, 2=GROUP, 3=EVERYONE */
+	}
+
+	write_be32(p +  0, (uint32_t)ace_type_v);
+	write_be32(p +  4, (uint32_t)ace_flags_v);
+	write_be32(p +  8, iflag);
+	write_be32(p + 12, (uint32_t)access_mask_v);
+	write_be32(p + 16, who);
+	return 0;
+}
+
 /* NFS4ACL.from_aces(aces, acl_flags=NFS4ACLFlag(0)) classmethod */
 static PyObject *
 NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
@@ -439,21 +487,14 @@ NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 	PyObject *ace;
 	PyObject *bytes_obj;
 	PyObject *result;
-	NFS4Ace_t *a;
 	Py_ssize_t naces;
 	Py_ssize_t i;
 	size_t bufsz;
 	uint8_t *buf;
 	uint8_t *p;
+	uint8_t *endp;
 	uint32_t acl_flags_val;
-	uint32_t iflag;
-	uint32_t who;
 	long v;
-	long ace_type_v;
-	long ace_flags_v;
-	long access_mask_v;
-	long who_type_v;
-	long who_id_v;
 
 	aces_arg = NULL;
 	acl_flags_obj = NULL;
@@ -484,6 +525,7 @@ NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 		Py_DECREF(aces_seq);
 		return PyErr_NoMemory();
 	}
+	endp = buf + bufsz;
 
 	acl_flags_val = 0;
 	if (acl_flags_obj != NULL && acl_flags_obj != Py_None) {
@@ -509,34 +551,13 @@ NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 			Py_DECREF(aces_seq);
 			return NULL;
 		}
-		a = (NFS4Ace_t *)ace;
 
-		ace_type_v = PyLong_AsLong(a->ace_type);
-		ace_flags_v = PyLong_AsLong(a->ace_flags);
-		access_mask_v = PyLong_AsLong(a->access_mask);
-		who_type_v = PyLong_AsLong(a->who_type);
-		who_id_v = PyLong_AsLong(a->who_id);
-
-		if (PyErr_Occurred()) {
+		p = buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
+		if (nfs4ace_encode((NFS4Ace_t *)ace, p, endp) < 0) {
 			PyMem_Free(buf);
 			Py_DECREF(aces_seq);
 			return NULL;
 		}
-
-		if (who_type_v == NFS4_WHO_NAMED) {
-			iflag = 0;
-			who = (uint32_t)who_id_v;
-		} else {
-			iflag = 1;
-			who = (uint32_t)who_type_v; /* 1=OWNER, 2=GROUP, 3=EVERYONE */
-		}
-
-		p = buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
-		write_be32(p +  0, (uint32_t)ace_type_v);
-		write_be32(p +  4, (uint32_t)ace_flags_v);
-		write_be32(p +  8, iflag);
-		write_be32(p + 12, (uint32_t)access_mask_v);
-		write_be32(p + 16, who);
 	}
 
 	Py_DECREF(aces_seq);
