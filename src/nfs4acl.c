@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
 #include <Python.h>
+#include <endian.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/stat.h>
 #include "acl.h"
 #include "truenas_os_state.h"
@@ -33,17 +35,16 @@
 static inline uint32_t
 read_be32(const uint8_t *p)
 {
-	return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
-	       ((uint32_t)p[2] <<  8) |  (uint32_t)p[3];
+	uint32_t v;
+	memcpy(&v, p, sizeof(v));
+	return be32toh(v);
 }
 
 static inline void
 write_be32(uint8_t *p, uint32_t v)
 {
-	p[0] = (v >> 24) & 0xFF;
-	p[1] = (v >> 16) & 0xFF;
-	p[2] = (v >>  8) & 0xFF;
-	p[3] =  v        & 0xFF;
+	v = htobe32(v);
+	memcpy(p, &v, sizeof(v));
 }
 
 /* ── enum member tables ─────────────────────────────────────────────────── */
@@ -428,6 +429,55 @@ PyDoc_STRVAR(NFS4ACL_from_aces_doc,
 "acl_flags is written into the 4-byte XDR header.");
 
 /*
+ * Sort aces_arg into MS canonical order, allocate the XDR ACE buffer, and
+ * return the fast sequence, buffer pointer, end pointer, and count via
+ * out-parameters.  On success returns 0; caller owns *aces_seq_out and
+ * *buf_out.  On failure returns -1 with a Python exception set.
+ */
+static int
+nfs4acl_alloc_ace_buf(PyObject *aces_arg,
+                      PyObject **aces_seq_out,
+                      uint8_t **buf_out,
+                      uint8_t **endp_out,
+                      Py_ssize_t *naces_out)
+{
+	PyObject *aces_list;
+	PyObject *aces_seq;
+	Py_ssize_t naces;
+	size_t bufsz;
+	uint8_t *buf;
+
+	aces_list = PySequence_List(aces_arg);
+	if (aces_list == NULL)
+		return -1;
+
+	if (PyList_Sort(aces_list) < 0) {
+		Py_DECREF(aces_list);
+		return -1;
+	}
+
+	aces_seq = PySequence_Fast(aces_list, "from_aces: aces must be iterable");
+	Py_DECREF(aces_list);
+	if (aces_seq == NULL)
+		return -1;
+
+	naces = PySequence_Fast_GET_SIZE(aces_seq);
+	bufsz = NFS4_HDR_SZ + (size_t)naces * NFS4_ACE_SZ;
+	buf = (uint8_t *)PyMem_Malloc(bufsz);
+	if (buf == NULL) {
+		Py_DECREF(aces_seq);
+		PyErr_NoMemory();
+		return -1;
+	}
+
+	*aces_seq_out = aces_seq;
+	*buf_out = buf;
+	*endp_out = buf + bufsz;
+	*naces_out = naces;
+	return 0;
+}
+
+/*
  * Encode one NFS4Ace into the 20-byte XDR slot at p.
  * endp is one past the end of the allocated buffer; the check guards
  * against a buffer overrun if naces and the allocation ever diverge.
@@ -482,14 +532,12 @@ NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 	static char *kwlist[] = { "aces", "acl_flags", NULL };
 	PyObject *aces_arg;
 	PyObject *acl_flags_obj;
-	PyObject *aces_list;
 	PyObject *aces_seq;
 	PyObject *ace;
 	PyObject *bytes_obj;
 	PyObject *result;
 	Py_ssize_t naces;
 	Py_ssize_t i;
-	size_t bufsz;
 	uint8_t *buf;
 	uint8_t *p;
 	uint8_t *endp;
@@ -503,29 +551,8 @@ NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 	                                 &aces_arg, &acl_flags_obj))
 		return NULL;
 
-	/* Build a list and sort into MS canonical order via NFS4Ace_richcompare. */
-	aces_list = PySequence_List(aces_arg);
-	if (aces_list == NULL)
+	if (nfs4acl_alloc_ace_buf(aces_arg, &aces_seq, &buf, &endp, &naces) < 0)
 		return NULL;
-
-	if (PyList_Sort(aces_list) < 0) {
-		Py_DECREF(aces_list);
-		return NULL;
-	}
-
-	aces_seq = PySequence_Fast(aces_list, "from_aces: aces must be iterable");
-	Py_DECREF(aces_list);
-	if (aces_seq == NULL)
-		return NULL;
-
-	naces = PySequence_Fast_GET_SIZE(aces_seq);
-	bufsz = NFS4_HDR_SZ + (size_t)naces * NFS4_ACE_SZ;
-	buf = (uint8_t *)PyMem_Malloc(bufsz);
-	if (buf == NULL) {
-		Py_DECREF(aces_seq);
-		return PyErr_NoMemory();
-	}
-	endp = buf + bufsz;
 
 	acl_flags_val = 0;
 	if (acl_flags_obj != NULL && acl_flags_obj != Py_None) {
@@ -562,7 +589,7 @@ NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 
 	Py_DECREF(aces_seq);
 
-	bytes_obj = PyBytes_FromStringAndSize((char *)buf, (Py_ssize_t)bufsz);
+	bytes_obj = PyBytes_FromStringAndSize((char *)buf, (Py_ssize_t)(endp - buf));
 	PyMem_Free(buf);
 	if (bytes_obj == NULL)
 		return NULL;
@@ -601,79 +628,110 @@ NFS4ACL_get_acl_flags(NFS4ACL_t *self, void *closure)
 PyDoc_STRVAR(NFS4ACL_aces_doc,
 "list[NFS4Ace]: parsed list of access control entries.");
 
+/*
+ * Decode one 20-byte XDR ACE slot at p into a new NFS4Ace object.
+ * Returns a new reference, or NULL with a Python exception set on failure.
+ */
+static PyObject *
+nfs4ace_decode(const uint8_t *p, truenas_os_state_t *state)
+{
+	PyObject *tmp;
+	PyObject *ace_type_o;
+	PyObject *ace_flags_o;
+	PyObject *access_mask_o;
+	PyObject *who_type_o;
+	PyObject *who_id_o;
+	PyObject *ace;
+	uint32_t ace_type_v;
+	uint32_t ace_flags_v;
+	uint32_t iflag;
+	uint32_t access_mask_v;
+	uint32_t who_raw;
+	uint32_t who_type_v;
+	long who_id_v;
+
+	ace_type_v = read_be32(p +  0);
+	ace_flags_v = read_be32(p +  4);
+	iflag = read_be32(p +  8);
+	access_mask_v = read_be32(p + 12);
+	who_raw = read_be32(p + 16);
+
+	/* who_type: NFS4_WHO_NAMED if iflag==0, else 1/2/3 special */
+	who_type_v = iflag ? who_raw : NFS4_WHO_NAMED;
+	who_id_v = iflag ? -1L : (long)who_raw;
+
+#define CALL_ENUM(e, v) PyObject_CallOneArg((e), tmp = PyLong_FromUnsignedLong(v))
+
+	ace_type_o = CALL_ENUM(state->NFS4AceType_enum, ace_type_v);
+	Py_XDECREF(tmp);
+	ace_flags_o = CALL_ENUM(state->NFS4Flag_enum, ace_flags_v);
+	Py_XDECREF(tmp);
+	access_mask_o = CALL_ENUM(state->NFS4Perm_enum, access_mask_v);
+	Py_XDECREF(tmp);
+	who_type_o = CALL_ENUM(state->NFS4Who_enum, who_type_v);
+	Py_XDECREF(tmp);
+	who_id_o = PyLong_FromLong(who_id_v);
+
+#undef CALL_ENUM
+
+	if (!ace_type_o || !ace_flags_o || !access_mask_o ||
+	    !who_type_o || !who_id_o) {
+		Py_XDECREF(ace_type_o);
+		Py_XDECREF(ace_flags_o);
+		Py_XDECREF(access_mask_o);
+		Py_XDECREF(who_type_o);
+		Py_XDECREF(who_id_o);
+		return NULL;
+	}
+
+	ace = PyObject_CallFunction(
+	    (PyObject *)&NFS4Ace_Type, "OOOOO",
+	    ace_type_o, ace_flags_o, access_mask_o, who_type_o, who_id_o);
+	Py_DECREF(ace_type_o);
+	Py_DECREF(ace_flags_o);
+	Py_DECREF(access_mask_o);
+	Py_DECREF(who_type_o);
+	Py_DECREF(who_id_o);
+	return ace;
+}
+
 /* NFS4ACL.aces property */
 static PyObject *
 NFS4ACL_get_aces(NFS4ACL_t *self, void *closure)
 {
-	Py_ssize_t datasz = PyBytes_GET_SIZE(self->data);
+	const uint8_t *buf;
+	truenas_os_state_t *state;
+	PyObject *result;
+	PyObject *ace;
+	Py_ssize_t datasz;
+	uint32_t naces;
+	uint32_t i;
+
+	datasz = PyBytes_GET_SIZE(self->data);
 	if (datasz < NFS4_HDR_SZ) {
 		PyErr_SetString(PyExc_ValueError, "NFS4ACL data too short");
 		return NULL;
 	}
 
-	const uint8_t *buf = (const uint8_t *)PyBytes_AS_STRING(self->data);
-	uint32_t naces = read_be32(buf + 4);
+	buf = (const uint8_t *)PyBytes_AS_STRING(self->data);
+	naces = read_be32(buf + 4);
 
 	if ((Py_ssize_t)(NFS4_HDR_SZ + (size_t)naces * NFS4_ACE_SZ) > datasz) {
 		PyErr_SetString(PyExc_ValueError, "NFS4ACL data truncated");
 		return NULL;
 	}
 
-	truenas_os_state_t *state = get_truenas_os_state(NULL);
+	state = get_truenas_os_state(NULL);
 	if (state == NULL)
 		return NULL;
 
-	PyObject *result = PyList_New((Py_ssize_t)naces);
+	result = PyList_New((Py_ssize_t)naces);
 	if (result == NULL)
 		return NULL;
 
-	for (uint32_t i = 0; i < naces; i++) {
-		const uint8_t *p = buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
-		uint32_t ace_type_v = read_be32(p +  0);
-		uint32_t ace_flags_v = read_be32(p +  4);
-		uint32_t iflag = read_be32(p +  8);
-		uint32_t access_mask_v = read_be32(p + 12);
-		uint32_t who_raw = read_be32(p + 16);
-
-		/* who_type: 0=NAMED if iflag==0, else 1/2/3 special */
-		uint32_t who_type_v = iflag ? who_raw : NFS4_WHO_NAMED;
-		long who_id_v = iflag ? -1L : (long)who_raw;
-
-#define CALL_ENUM(e, v) PyObject_CallOneArg((e), tmp = PyLong_FromUnsignedLong(v))
-
-		PyObject *tmp;
-		PyObject *ace_type_o = CALL_ENUM(state->NFS4AceType_enum, ace_type_v);
-		Py_XDECREF(tmp);
-		PyObject *ace_flags_o = CALL_ENUM(state->NFS4Flag_enum, ace_flags_v);
-		Py_XDECREF(tmp);
-		PyObject *access_mask_o = CALL_ENUM(state->NFS4Perm_enum, access_mask_v);
-		Py_XDECREF(tmp);
-		PyObject *who_type_o = CALL_ENUM(state->NFS4Who_enum, who_type_v);
-		Py_XDECREF(tmp);
-		PyObject *who_id_o = PyLong_FromLong(who_id_v);
-
-#undef CALL_ENUM
-
-		if (!ace_type_o || !ace_flags_o || !access_mask_o ||
-		    !who_type_o || !who_id_o) {
-			Py_XDECREF(ace_type_o);
-			Py_XDECREF(ace_flags_o);
-			Py_XDECREF(access_mask_o);
-			Py_XDECREF(who_type_o);
-			Py_XDECREF(who_id_o);
-			Py_DECREF(result);
-			return NULL;
-		}
-
-		PyObject *ace = PyObject_CallFunction(
-		    (PyObject *)&NFS4Ace_Type, "OOOOO",
-		    ace_type_o, ace_flags_o, access_mask_o, who_type_o, who_id_o);
-		Py_DECREF(ace_type_o);
-		Py_DECREF(ace_flags_o);
-		Py_DECREF(access_mask_o);
-		Py_DECREF(who_type_o);
-		Py_DECREF(who_id_o);
-
+	for (i = 0; i < naces; i++) {
+		ace = nfs4ace_decode(buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ,
+		                     state);
 		if (ace == NULL) {
 			Py_DECREF(result);
 			return NULL;
