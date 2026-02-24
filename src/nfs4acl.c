@@ -247,10 +247,14 @@ NFS4Ace_init(NFS4Ace_t *self, PyObject *args, PyObject *kwargs)
 	                                 &who_type, &who_id))
 		return -1;
 
-	Py_INCREF(ace_type);    Py_SETREF(self->ace_type, ace_type);
-	Py_INCREF(ace_flags);   Py_SETREF(self->ace_flags, ace_flags);
-	Py_INCREF(access_mask); Py_SETREF(self->access_mask, access_mask);
-	Py_INCREF(who_type);    Py_SETREF(self->who_type, who_type);
+	Py_INCREF(ace_type);
+	Py_SETREF(self->ace_type, ace_type);
+	Py_INCREF(ace_flags);
+	Py_SETREF(self->ace_flags, ace_flags);
+	Py_INCREF(access_mask);
+	Py_SETREF(self->access_mask, access_mask);
+	Py_INCREF(who_type);
+	Py_SETREF(self->who_type, who_type);
 
 	if (who_id != NULL) {
 		Py_INCREF(who_id);
@@ -617,15 +621,15 @@ NFS4ACL_get_aces(NFS4ACL_t *self, void *closure)
 #define CALL_ENUM(e, v) PyObject_CallOneArg((e), tmp = PyLong_FromUnsignedLong(v))
 
 		PyObject *tmp;
-		PyObject *ace_type_o    = CALL_ENUM(state->NFS4AceType_enum, ace_type_v);
+		PyObject *ace_type_o = CALL_ENUM(state->NFS4AceType_enum, ace_type_v);
 		Py_XDECREF(tmp);
-		PyObject *ace_flags_o   = CALL_ENUM(state->NFS4Flag_enum, ace_flags_v);
+		PyObject *ace_flags_o = CALL_ENUM(state->NFS4Flag_enum, ace_flags_v);
 		Py_XDECREF(tmp);
 		PyObject *access_mask_o = CALL_ENUM(state->NFS4Perm_enum, access_mask_v);
 		Py_XDECREF(tmp);
-		PyObject *who_type_o    = CALL_ENUM(state->NFS4Who_enum, who_type_v);
+		PyObject *who_type_o = CALL_ENUM(state->NFS4Who_enum, who_type_v);
 		Py_XDECREF(tmp);
-		PyObject *who_id_o      = PyLong_FromLong(who_id_v);
+		PyObject *who_id_o = PyLong_FromLong(who_id_v);
 
 #undef CALL_ENUM
 
@@ -683,7 +687,7 @@ static PyObject *
 NFS4ACL_repr(NFS4ACL_t *self)
 {
 	PyObject *flags = NFS4ACL_get_acl_flags(self, NULL);
-	PyObject *aces  = NFS4ACL_get_aces(self, NULL);
+	PyObject *aces = NFS4ACL_get_aces(self, NULL);
 	if (!flags || !aces) {
 		Py_XDECREF(flags);
 		Py_XDECREF(aces);
@@ -1036,10 +1040,10 @@ int
 init_nfs4acl(PyObject *module)
 {
 	int err = -1;
-	PyObject *enum_mod    = NULL;
-	PyObject *int_enum    = NULL;
-	PyObject *intflag     = NULL;
-	PyObject *kwargs      = NULL;
+	PyObject *enum_mod = NULL;
+	PyObject *int_enum = NULL;
+	PyObject *intflag = NULL;
+	PyObject *kwargs = NULL;
 	truenas_os_state_t *state = NULL;
 
 	state = get_truenas_os_state(module);

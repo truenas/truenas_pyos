@@ -1001,7 +1001,7 @@ py_fsetacl(PyObject *obj, PyObject *args)
 	}
 
 	if (PyObject_TypeCheck(acl, &POSIXACL_Type)) {
-		PyObject *access_data  = NULL;
+		PyObject *access_data = NULL;
 		PyObject *default_data = NULL;
 		const char *def_ptr = NULL;
 		size_t      def_len = 0;

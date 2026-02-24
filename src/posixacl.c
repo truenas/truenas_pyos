@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
 #include <Python.h>
+#include <endian.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/stat.h>
 #include "acl.h"
 #include "truenas_os_state.h"
@@ -26,32 +28,31 @@
 static inline uint32_t
 read_le32(const uint8_t *p)
 {
-	return (uint32_t)p[0]
-	     | ((uint32_t)p[1] <<  8)
-	     | ((uint32_t)p[2] << 16)
-	     | ((uint32_t)p[3] << 24);
+	uint32_t v;
+	memcpy(&v, p, sizeof(v));
+	return le32toh(v);
 }
 
 static inline void
 write_le32(uint8_t *p, uint32_t v)
 {
-	p[0] =  v        & 0xFF;
-	p[1] = (v >>  8) & 0xFF;
-	p[2] = (v >> 16) & 0xFF;
-	p[3] = (v >> 24) & 0xFF;
+	v = htole32(v);
+	memcpy(p, &v, sizeof(v));
 }
 
 static inline uint16_t
 read_le16(const uint8_t *p)
 {
-	return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+	uint16_t v;
+	memcpy(&v, p, sizeof(v));
+	return le16toh(v);
 }
 
 static inline void
 write_le16(uint8_t *p, uint16_t v)
 {
-	p[0] =  v       & 0xFF;
-	p[1] = (v >> 8) & 0xFF;
+	v = htole16(v);
+	memcpy(p, &v, sizeof(v));
 }
 
 /* ── enum member tables ─────────────────────────────────────────────────── */
@@ -116,9 +117,9 @@ add_enum(PyObject *module,
          PyObject *kwargs,
          PyObject **penum_out)
 {
-	PyObject *name     = NULL;
-	PyObject *attrs    = NULL;
-	PyObject *args     = NULL;
+	PyObject *name = NULL;
+	PyObject *attrs = NULL;
+	PyObject *args = NULL;
 	PyObject *enum_obj = NULL;
 	int ret = -1;
 
@@ -211,15 +212,17 @@ POSIXAce_init(POSIXAce_t *self, PyObject *args, PyObject *kwargs)
 {
 	static char *kwlist[] = { "tag", "perms", "id", "default", NULL };
 	PyObject *tag, *perms;
-	PyObject *id       = NULL;
+	PyObject *id = NULL;
 	PyObject *default_ = NULL;
 
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO|OO", kwlist,
 	                                 &tag, &perms, &id, &default_))
 		return -1;
 
-	Py_INCREF(tag);   Py_SETREF(self->tag, tag);
-	Py_INCREF(perms); Py_SETREF(self->perms, perms);
+	Py_INCREF(tag);
+	Py_SETREF(self->tag, tag);
+	Py_INCREF(perms);
+	Py_SETREF(self->perms, perms);
 
 	if (id != NULL) {
 		Py_INCREF(id);
@@ -384,8 +387,10 @@ POSIXACL_init(POSIXACL_t *self, PyObject *args, PyObject *kwargs)
 		return -1;
 	}
 
-	Py_INCREF(access_data);  Py_SETREF(self->access_data, access_data);
-	Py_INCREF(default_data); Py_SETREF(self->default_data, default_data);
+	Py_INCREF(access_data);
+	Py_SETREF(self->access_data, access_data);
+	Py_INCREF(default_data);
+	Py_SETREF(self->default_data, default_data);
 	return 0;
 }
 
@@ -460,7 +465,7 @@ POSIXACL_from_aces(PyObject *cls, PyObject *args)
 	Py_ssize_t total = PySequence_Fast_GET_SIZE(seq);
 
 	/* Separate into access and default lists */
-	PyObject *access_list  = PyList_New(0);
+	PyObject *access_list = PyList_New(0);
 	PyObject *default_list = PyList_New(0);
 	if (!access_list || !default_list) {
 		Py_XDECREF(access_list);
@@ -497,7 +502,7 @@ POSIXACL_from_aces(PyObject *cls, PyObject *args)
 		return NULL;
 	}
 
-	PyObject *access_seq  = PySequence_Fast(access_list, "");
+	PyObject *access_seq = PySequence_Fast(access_list, "");
 	PyObject *default_seq = PySequence_Fast(default_list, "");
 	Py_DECREF(access_list);
 	Py_DECREF(default_list);
@@ -565,13 +570,13 @@ parse_posix_aces(const uint8_t *buf, Py_ssize_t bufsz, int is_default)
 		long id_v = (xid == POSIX_SPECIAL_ID) ? -1L : (long)xid;
 
 		PyObject *tmp;
-		PyObject *tag_o  = PyObject_CallOneArg(state->POSIXTag_enum,
+		PyObject *tag_o = PyObject_CallOneArg(state->POSIXTag_enum,
 		    tmp = PyLong_FromUnsignedLong(tag_raw));
 		Py_XDECREF(tmp);
 		PyObject *perm_o = PyObject_CallOneArg(state->POSIXPerm_enum,
 		    tmp = PyLong_FromUnsignedLong(perm_raw));
 		Py_XDECREF(tmp);
-		PyObject *id_o   = PyLong_FromLong(id_v);
+		PyObject *id_o = PyLong_FromLong(id_v);
 
 		if (!tag_o || !perm_o || !id_o) {
 			Py_XDECREF(tag_o);
@@ -647,7 +652,7 @@ POSIXACL_default_bytes(POSIXACL_t *self, PyObject *Py_UNUSED(args))
 static PyObject *
 POSIXACL_repr(POSIXACL_t *self)
 {
-	PyObject *aces         = POSIXACL_get_aces(self, NULL);
+	PyObject *aces = POSIXACL_get_aces(self, NULL);
 	PyObject *default_aces = POSIXACL_get_default_aces(self, NULL);
 	if (!aces || !default_aces) {
 		Py_XDECREF(aces);
@@ -942,8 +947,8 @@ init_posixacl(PyObject *module)
 	int err = -1;
 	PyObject *enum_mod = NULL;
 	PyObject *int_enum = NULL;
-	PyObject *intflag  = NULL;
-	PyObject *kwargs   = NULL;
+	PyObject *intflag = NULL;
+	PyObject *kwargs = NULL;
 	truenas_os_state_t *state = NULL;
 
 	state = get_truenas_os_state(module);
