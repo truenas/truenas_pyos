@@ -87,8 +87,8 @@ fi
 sudo virsh net-update default add ip-dhcp-host \
   "<host mac='$VM_MAC' ip='$VM_IP'/>" --live --config || true
 
-# Start the VM (using --cloud-init like ZFS does)
-# Note: Debian Trixie requires UEFI boot (like ZFS workflow does for debian13)
+# Start the VM with UEFI but Secure Boot disabled so unsigned ZFS
+# kernel modules are not rejected.
 echo "Starting VM..."
 sudo virt-install \
   --name "$VM_NAME" \
@@ -101,7 +101,7 @@ sudo virt-install \
   --network bridge=virbr0,model=virtio,mac="$VM_MAC" \
   --cloud-init user-data=/tmp/user-data \
   --disk path="$WORK_DIR/vm-disk.qcow2",format=qcow2,bus=virtio \
-  --boot uefi=on \
+  --boot uefi=on,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
   --import \
   --noautoconsole >/dev/null
 

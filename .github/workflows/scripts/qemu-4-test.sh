@@ -11,21 +11,58 @@ echo "Running pytest tests..."
 # Load VM info
 source /tmp/vm-info.sh
 
-# Run tests in VM
-ssh debian@$VM_IP 'bash -s' <<'REMOTE_SCRIPT'
+# Run tests in VM as root
+ssh debian@$VM_IP 'sudo bash -s' <<'REMOTE_SCRIPT'
 set -eu
 
-cd ~/truenas_pyos
+echo "=========================================="
+echo "Loading ZFS kernel modules"
+echo "=========================================="
 
-echo "=========================================="
-echo "Running pytest tests"
-echo "=========================================="
+# Load ZFS kernel module (after reboot, modules should load cleanly)
+echo "Loading ZFS kernel module..."
+sudo modprobe zfs || {
+  echo "ERROR: Failed to load ZFS kernel module"
+  sudo dmesg | tail -20
+  exit 1
+}
+
+# Verify module is loaded
+if ! lsmod | grep zfs; then
+  echo "ERROR: ZFS module not loaded"
+  exit 1
+fi
+
+echo "ZFS kernel module loaded successfully"
+lsmod | grep zfs
+
+cd /home/debian/truenas_pyos
+
+# Diagnose ZFS availability exactly as conftest.py sees it
+echo "=== ZFS Python diagnostic ==="
+sudo sh -c "python3 - <<'PYEOF'
+import subprocess, os, shutil
+print('euid:', os.geteuid())
+print('zfs path:', shutil.which('zfs'))
+print('zpool path:', shutil.which('zpool'))
+try:
+    r = subprocess.run(['zfs', 'version'], capture_output=True, timeout=5)
+    print('zfs version rc:', r.returncode)
+    print('zfs version stdout:', r.stdout.decode().strip())
+    print('zfs version stderr:', r.stderr.decode().strip())
+except Exception as e:
+    print('zfs version exception:', type(e).__name__, e)
+PYEOF
+"
+echo "=== end ZFS diagnostic ==="
 
 # Install debug symbols for better crash reports
+echo ""
 echo "Installing debug symbols..."
 sudo apt-get install -y python3-dbg gdb systemd-coredump 2>&1 | grep -v "^\(Reading\|Building\|Extracting\)" || true
 
 # Configure core dumps - bypass systemd-coredump and dump directly to files
+echo ""
 echo "Configuring core dumps..."
 
 # Create directory for core dumps
@@ -42,71 +79,74 @@ ulimit -c unlimited
 echo "Core dump configuration:"
 cat /proc/sys/kernel/core_pattern
 echo "ulimit -c: $(ulimit -c)"
-
-# Run pytest with detailed output
-echo "=========================================="
-echo "Starting pytest..."
-echo "=========================================="
-
-# Set environment for core dumps
-export PYTHONFAULTHANDLER=1
-export PYTEST_TIMEOUT=300
-
-# Run tests with verbose output
-python3 -m pytest tests/ -v --tb=short --color=yes 2>&1 | tee /tmp/pytest-output.log
-
-TEST_EXIT_CODE=${PIPESTATUS[0]}
-
-# Check for core dumps
-if ls /tmp/cores/core.* 1> /dev/null 2>&1; then
-    echo ""
-    echo "=========================================="
-    echo "CORE DUMPS DETECTED"
-    echo "=========================================="
-    ls -lh /tmp/cores/
-
-    # Analyze each core dump
-    for core in /tmp/cores/core.*; do
-        if [ -f "$core" ]; then
-            echo ""
-            echo "Analyzing $core..."
-            # Extract binary name and PID from core filename (core.BINARY.PID.TIMESTAMP)
-            binary_name=$(basename "$core" | cut -d. -f2)
-
-            # Try to find the binary
-            binary_path=$(which "$binary_name" 2>/dev/null || echo "")
-            if [ -z "$binary_path" ] && [ "$binary_name" = "python3" ]; then
-                binary_path=$(which python3)
-            fi
-
-            if [ -n "$binary_path" ]; then
-                echo "Binary: $binary_path"
-                gdb -batch -ex "thread apply all bt" "$binary_path" "$core" 2>&1 || true
-            else
-                echo "Could not find binary for $binary_name"
-                file "$core"
-            fi
-        fi
-    done
-fi
+echo ""
+echo "Core dump directory:"
+ls -la /tmp/cores/
 
 echo ""
 echo "=========================================="
-echo "Test execution completed"
+echo "Running pytest tests"
 echo "=========================================="
-echo "Exit code: $TEST_EXIT_CODE"
 
-# Save test results
-mkdir -p ~/test-results
-cp /tmp/pytest-output.log ~/test-results/ || true
-if ls /tmp/cores/core.* 1> /dev/null 2>&1; then
-    cp /tmp/cores/core.* ~/test-results/ 2>/dev/null || true
+# Verify ulimit is set before running tests
+echo "Current ulimit -c: $(ulimit -c)"
+echo "Verifying core dumps will work with sudo:"
+sudo sh -c "ulimit -c unlimited && ulimit -c"
+
+echo ""
+echo "Now running full test suite..."
+sudo sh -c "ulimit -c unlimited && cd /home/debian/truenas_pyos && python3 -m pytest tests/ -v --tb=short" 2>&1 | tee /home/debian/test-output.txt
+TEST_EXIT_CODE=${PIPESTATUS[0]}
+
+# Check if there was a core dump
+echo ""
+echo "=========================================="
+echo "Checking for core dumps..."
+echo "=========================================="
+ls -lh /tmp/cores/
+echo ""
+
+if ls /tmp/cores/core.* 2>/dev/null; then
+    echo "Core dumps found!"
+    echo ""
+    for core in /tmp/cores/core.*; do
+        echo "=========================================="
+        echo "Analyzing $core"
+        echo "=========================================="
+        exe_name=$(echo "$core" | sed 's|.*core\.\([^.]*\)\..*|\1|')
+        exe_path="/usr/bin/$exe_name"
+
+        echo "Executable: $exe_path"
+        echo "Core file: $core"
+
+        echo "Extracting full backtrace..."
+        echo "----------------------------------------"
+        sudo gdb -batch \
+            -ex "set pagination off" \
+            -ex "thread apply all bt full" \
+            -ex "quit" \
+            "$exe_path" "$core" 2>&1 | tee -a ~/test-output.txt
+        echo "----------------------------------------"
+        echo ""
+    done
+    echo "=========================================="
+else
+    echo "No core dumps found in /tmp/cores/"
 fi
+
+echo $TEST_EXIT_CODE > ~/test-exitcode.txt
+
+echo "=========================================="
+echo "Test run complete (exit code: $TEST_EXIT_CODE)"
+echo "=========================================="
 
 exit $TEST_EXIT_CODE
 REMOTE_SCRIPT
 
 TEST_RESULT=$?
+
+scp debian@$VM_IP:~/test-output.txt /tmp/ || true
+scp debian@$VM_IP:~/test-exitcode.txt /tmp/ || true
 
 if [ $TEST_RESULT -ne 0 ]; then
     echo "Tests failed with exit code $TEST_RESULT"

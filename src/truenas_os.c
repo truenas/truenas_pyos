@@ -15,6 +15,7 @@
 #include "fsiter.h"
 #include "renameat2.h"
 #include "truenas_os_state.h"
+#include "acl.h"
 
 #define MODULE_DOC "TrueNAS OS module"
 
@@ -872,6 +873,266 @@ PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
 "    Iterator yielding IterInstance objects for each file and directory\n"
 );
 
+PyDoc_STRVAR(py_fgetacl__doc__,
+"fgetacl(fd)\n"
+"--\n\n"
+"Get the ACL on an open file descriptor.\n\n"
+"Probes the filesystem by attempting to read the NFS4 xattr\n"
+"(system.nfs4_acl_xdr) first.  If the filesystem supports NFS4 ACLs an\n"
+"NFS4ACL object is returned.  Otherwise the POSIX ACL xattrs\n"
+"(system.posix_acl_access / system.posix_acl_default) are read and a\n"
+"POSIXACL object is returned.\n\n"
+"Parameters\n"
+"----------\n"
+"fd : int\n"
+"    Open file descriptor\n\n"
+"Returns\n"
+"-------\n"
+"NFS4ACL or POSIXACL\n\n"
+"Raises\n"
+"------\n"
+"OSError\n"
+"    On any xattr error.  OSError(EOPNOTSUPP) is raised when ACLs are\n"
+"    disabled on the underlying filesystem.\n"
+);
+
+static PyObject *
+py_fgetacl(PyObject *obj, PyObject *args)
+{
+	int fd;
+	acl_xattr_t acl;
+	PyObject *result;
+
+	if (!PyArg_ParseTuple(args, "i:fgetacl", &fd))
+		return NULL;
+
+	if (do_fgetacl(fd, &acl) < 0)
+		return NULL;
+
+	if (acl.type == ACLTYPE_NFS4) {
+		PyObject *data = PyBytes_FromStringAndSize(
+		    acl.data.nfs4.data ? acl.data.nfs4.data : "",
+		    (Py_ssize_t)acl.data.nfs4.len);
+		acl_xattr_free(&acl);
+		if (data == NULL)
+			return NULL;
+		result = NFS4ACL_from_xattr_bytes(data);
+		Py_DECREF(data);
+	} else {
+		PyObject *access = PyBytes_FromStringAndSize(
+		    acl.data.posix.access_data ? acl.data.posix.access_data : "",
+		    (Py_ssize_t)acl.data.posix.access_len);
+		PyObject *dflt = acl.data.posix.default_data
+		    ? PyBytes_FromStringAndSize(acl.data.posix.default_data,
+		                                (Py_ssize_t)acl.data.posix.default_len)
+		    : Py_NewRef(Py_None);
+		acl_xattr_free(&acl);
+		if (access == NULL || dflt == NULL) {
+			Py_XDECREF(access);
+			Py_XDECREF(dflt);
+			return NULL;
+		}
+		result = POSIXACL_from_xattr_bytes(access, dflt);
+		Py_DECREF(access);
+		Py_DECREF(dflt);
+	}
+	return result;
+}
+
+PyDoc_STRVAR(py_fsetacl__doc__,
+"fsetacl(fd, acl)\n"
+"--\n\n"
+"Set the ACL on an open file descriptor.\n\n"
+"acl must be an NFS4ACL or POSIXACL matching the filesystem ACL type,\n"
+"or None to remove the ACL xattr(s) entirely.  For NFS4 the single\n"
+"system.nfs4_acl_xdr xattr is removed; for POSIX both\n"
+"system.posix_acl_access and system.posix_acl_default are removed.\n"
+"ENODATA on any individual removal is silently ignored.\n\n"
+"Parameters\n"
+"----------\n"
+"fd : int\n"
+"    Open file descriptor\n"
+"acl : NFS4ACL, POSIXACL, or None\n"
+"    ACL to set, or None to remove existing ACL xattr(s)\n\n"
+"Returns\n"
+"-------\n"
+"None\n\n"
+"Raises\n"
+"------\n"
+"OSError\n"
+"    On fsetxattr/fremovexattr failure\n"
+"TypeError\n"
+"    If acl is not NFS4ACL, POSIXACL, or None\n"
+);
+
+static PyObject *
+py_fsetacl(PyObject *obj, PyObject *args)
+{
+	int fd;
+	PyObject *acl;
+
+	if (!PyArg_ParseTuple(args, "iO:fsetacl", &fd, &acl))
+		return NULL;
+
+	if (acl == Py_None) {
+		if (do_fremoveacl(fd) < 0)
+			return NULL;
+		Py_RETURN_NONE;
+	}
+
+	if (PyObject_TypeCheck(acl, &NFS4ACL_Type)) {
+		PyObject *data;
+		int ret;
+
+		data = NFS4ACL_get_xattr_bytes(acl);
+		if (data == NULL)
+			return NULL;
+		ret = nfs4acl_valid(fd,
+		    PyBytes_AS_STRING(data),
+		    (size_t)PyBytes_GET_SIZE(data));
+		if (ret == 0)
+			ret = do_fsetacl_nfs4(fd,
+			    PyBytes_AS_STRING(data),
+			    (size_t)PyBytes_GET_SIZE(data));
+		Py_DECREF(data);
+		if (ret < 0)
+			return NULL;
+		Py_RETURN_NONE;
+	}
+
+	if (PyObject_TypeCheck(acl, &POSIXACL_Type)) {
+		PyObject *access_data  = NULL;
+		PyObject *default_data = NULL;
+		const char *def_ptr = NULL;
+		size_t      def_len = 0;
+		int ret;
+
+		POSIXACL_get_xattr_bytes(acl, &access_data, &default_data);
+		if (default_data != Py_None) {
+			def_ptr = PyBytes_AS_STRING(default_data);
+			def_len = (size_t)PyBytes_GET_SIZE(default_data);
+		}
+		ret = posixacl_valid(fd,
+		    PyBytes_AS_STRING(access_data),
+		    (size_t)PyBytes_GET_SIZE(access_data),
+		    def_ptr, def_len);
+		if (ret == 0)
+			ret = do_fsetacl_posix(fd,
+			    PyBytes_AS_STRING(access_data),
+			    (size_t)PyBytes_GET_SIZE(access_data),
+			    def_ptr, def_len);
+		Py_DECREF(access_data);
+		Py_DECREF(default_data);
+		if (ret < 0)
+			return NULL;
+		Py_RETURN_NONE;
+	}
+
+	PyErr_SetString(PyExc_TypeError, "fsetacl: acl must be NFS4ACL or POSIXACL");
+	return NULL;
+}
+
+PyDoc_STRVAR(py_fsetacl_nfs4__doc__,
+"fsetacl_nfs4(fd, data)\n"
+"--\n\n"
+"Set the NFS4 ACL on an open file descriptor from raw XDR bytes.\n\n"
+"Writes data directly to the system.nfs4_acl_xdr extended attribute.\n"
+"No validation is performed; use fsetacl() with an NFS4ACL object for\n"
+"a higher-level interface.\n\n"
+"Parameters\n"
+"----------\n"
+"fd : int\n"
+"    Open file descriptor\n"
+"data : bytes\n"
+"    Raw NFS4 XDR ACL bytes\n\n"
+"Returns\n"
+"-------\n"
+"None\n\n"
+"Raises\n"
+"------\n"
+"OSError\n"
+"    On fsetxattr failure\n"
+);
+
+static PyObject *
+py_fsetacl_nfs4(PyObject *obj, PyObject *args)
+{
+	int fd;
+	const char *data;
+	Py_ssize_t len;
+	if (!PyArg_ParseTuple(args, "iy#:fsetacl_nfs4", &fd, &data, &len))
+		return NULL;
+	if (nfs4acl_valid(fd, data, (size_t)len) < 0)
+		return NULL;
+	if (do_fsetacl_nfs4(fd, data, (size_t)len) < 0)
+		return NULL;
+	Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(py_fsetacl_posix__doc__,
+"fsetacl_posix(fd, access_bytes, default_bytes)\n"
+"--\n\n"
+"Set the POSIX ACL on an open file descriptor from raw xattr bytes.\n\n"
+"Writes access_bytes to system.posix_acl_access.  If default_bytes is\n"
+"not None it is written to system.posix_acl_default; if None the default\n"
+"ACL xattr is removed (ENODATA is silently ignored).  No validation is\n"
+"performed; use fsetacl() with a POSIXACL object for a higher-level\n"
+"interface.\n\n"
+"Parameters\n"
+"----------\n"
+"fd : int\n"
+"    Open file descriptor\n"
+"access_bytes : bytes\n"
+"    Raw POSIX access ACL bytes\n"
+"default_bytes : bytes or None\n"
+"    Raw POSIX default ACL bytes, or None to remove\n\n"
+"Returns\n"
+"-------\n"
+"None\n\n"
+"Raises\n"
+"------\n"
+"OSError\n"
+"    On fsetxattr/fremovexattr failure\n"
+"TypeError\n"
+"    If default_bytes is neither bytes nor None\n"
+);
+
+static PyObject *
+py_fsetacl_posix(PyObject *obj, PyObject *args)
+{
+	int fd;
+	const char *access_data;
+	Py_ssize_t access_len;
+	PyObject *default_obj;
+	const char *default_data;
+	Py_ssize_t default_len;
+
+	if (!PyArg_ParseTuple(args, "iy#O:fsetacl_posix",
+	                      &fd, &access_data, &access_len, &default_obj))
+		return NULL;
+
+	if (default_obj == Py_None) {
+		default_data = NULL;
+		default_len  = 0;
+	} else if (PyBytes_Check(default_obj)) {
+		if (PyBytes_AsStringAndSize(default_obj,
+		                            (char **)&default_data, &default_len) < 0)
+			return NULL;
+	} else {
+		PyErr_SetString(PyExc_TypeError,
+		                "fsetacl_posix: default_bytes must be bytes or None");
+		return NULL;
+	}
+
+	if (posixacl_valid(fd, access_data, (size_t)access_len,
+	                   default_data, (size_t)default_len) < 0)
+		return NULL;
+	if (do_fsetacl_posix(fd, access_data, (size_t)access_len,
+	                     default_data, (size_t)default_len) < 0)
+		return NULL;
+	Py_RETURN_NONE;
+}
+
 /*
  * Python wrapper for iter_filesystem_contents
  */
@@ -1002,6 +1263,30 @@ static PyMethodDef truenas_os_methods[] = {
 		.ml_flags = METH_VARARGS|METH_KEYWORDS,
 		.ml_doc = py_iter_filesystem_contents__doc__
 	},
+	{
+		.ml_name  = "fgetacl",
+		.ml_meth  = (PyCFunction)py_fgetacl,
+		.ml_flags = METH_VARARGS,
+		.ml_doc   = py_fgetacl__doc__
+	},
+	{
+		.ml_name  = "fsetacl",
+		.ml_meth  = (PyCFunction)py_fsetacl,
+		.ml_flags = METH_VARARGS,
+		.ml_doc   = py_fsetacl__doc__
+	},
+	{
+		.ml_name  = "fsetacl_nfs4",
+		.ml_meth  = (PyCFunction)py_fsetacl_nfs4,
+		.ml_flags = METH_VARARGS,
+		.ml_doc   = py_fsetacl_nfs4__doc__
+	},
+	{
+		.ml_name  = "fsetacl_posix",
+		.ml_meth  = (PyCFunction)py_fsetacl_posix,
+		.ml_flags = METH_VARARGS,
+		.ml_doc   = py_fsetacl_posix__doc__
+	},
 	{ .ml_name = NULL }
 };
 
@@ -1111,6 +1396,18 @@ PyObject* module_init(void)
 
 	// Initialize filesystem iterator types
 	if (init_iter_types(m) < 0) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	// Initialize NFS4 ACL enums and types
+	if (init_nfs4acl(m) < 0) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	// Initialize POSIX ACL enums and types
+	if (init_posixacl(m) < 0) {
 		Py_DECREF(m);
 		return NULL;
 	}

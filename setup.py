@@ -16,7 +16,10 @@ truenas_os_ext = Extension(
         'src/fsmount.c',
         'src/umount2.c',
         'src/renameat2.c',
-        'src/fsiter.c'
+        'src/fsiter.c',
+        'src/acl.c',
+        'src/nfs4acl.c',
+        'src/posixacl.c',
     ],
     include_dirs=['src']
 )
