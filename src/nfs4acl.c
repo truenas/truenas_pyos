@@ -478,6 +478,21 @@ nfs4acl_alloc_ace_buf(PyObject *aces_arg,
 }
 
 /*
+ * Write one 20-byte XDR ACE slot at p from raw uint32 field values.
+ * Shared by nfs4ace_encode() and NFS4ACL_generate_inherited_acl().
+ */
+static void
+nfs4ace_write_raw(uint8_t *p, uint32_t ace_type, uint32_t ace_flags,
+                  uint32_t ace_iflag, uint32_t access_mask, uint32_t who)
+{
+	write_be32(p +  0, ace_type);
+	write_be32(p +  4, ace_flags);
+	write_be32(p +  8, ace_iflag);
+	write_be32(p + 12, access_mask);
+	write_be32(p + 16, who);
+}
+
+/*
  * Encode one NFS4Ace into the 20-byte XDR slot at p.
  * endp is one past the end of the allocated buffer; the check guards
  * against a buffer overrun if naces and the allocation ever diverge.
@@ -517,11 +532,8 @@ nfs4ace_encode(const NFS4Ace_t *a, uint8_t *p, const uint8_t *endp)
 		who = (uint32_t)who_type_v; /* 1=OWNER, 2=GROUP, 3=EVERYONE */
 	}
 
-	write_be32(p +  0, (uint32_t)ace_type_v);
-	write_be32(p +  4, (uint32_t)ace_flags_v);
-	write_be32(p +  8, iflag);
-	write_be32(p + 12, (uint32_t)access_mask_v);
-	write_be32(p + 16, who);
+	nfs4ace_write_raw(p, (uint32_t)ace_type_v, (uint32_t)ace_flags_v,
+	                  iflag, (uint32_t)access_mask_v, who);
 	return 0;
 }
 
@@ -819,6 +831,20 @@ PyDoc_STRVAR(NFS4ACL_generate_inherited_acl_doc,
 "Raises ValueError if no ACEs would be inherited.");
 
 /*
+ * Return non-zero if an ACE with ace_flags should be inherited by a child
+ * of the given type: directories match FILE_INHERIT or DIRECTORY_INHERIT;
+ * files match only FILE_INHERIT.
+ */
+static int
+ace_is_inheritable(uint32_t ace_flags, int is_dir)
+{
+	if (is_dir)
+		return (ace_flags &
+		    (NFS4_FILE_INHERIT_FLAG | NFS4_DIR_INHERIT_FLAG)) != 0;
+	return (ace_flags & NFS4_FILE_INHERIT_FLAG) != 0;
+}
+
+/*
  * NFS4ACL.generate_inherited_acl(is_dir=False)
  *
  * Apply NFS4 ACE inheritance rules to produce the ACL for a new child object.
@@ -858,7 +884,6 @@ NFS4ACL_generate_inherited_acl(NFS4ACL_t *self, PyObject *args, PyObject *kwargs
 	uint32_t out_acl_flags;
 	size_t bufsz;
 	int is_dir;
-	int include;
 	PyObject *bytes_obj = NULL;
 	PyObject *result = NULL;
 
@@ -883,12 +908,7 @@ NFS4ACL_generate_inherited_acl(NFS4ACL_t *self, PyObject *args, PyObject *kwargs
 			break;
 		ace_p = buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
 		ace_flags = read_be32(ace_p + 4);
-		if (is_dir)
-			include = (ace_flags &
-			    (NFS4_FILE_INHERIT_FLAG | NFS4_DIR_INHERIT_FLAG)) != 0;
-		else
-			include = (ace_flags & NFS4_FILE_INHERIT_FLAG) != 0;
-		if (include)
+		if (ace_is_inheritable(ace_flags, is_dir))
 			naces_out++;
 	}
 
@@ -919,12 +939,7 @@ NFS4ACL_generate_inherited_acl(NFS4ACL_t *self, PyObject *args, PyObject *kwargs
 		access_mask = read_be32(ace_p + 12);
 		who = read_be32(ace_p + 16);
 
-		if (is_dir)
-			include = (ace_flags &
-			    (NFS4_FILE_INHERIT_FLAG | NFS4_DIR_INHERIT_FLAG)) != 0;
-		else
-			include = (ace_flags & NFS4_FILE_INHERIT_FLAG) != 0;
-		if (!include)
+		if (!ace_is_inheritable(ace_flags, is_dir))
 			continue;
 
 		if (is_dir && !(ace_flags & NFS4_NO_PROPAGATE_FLAG)) {
@@ -944,11 +959,8 @@ NFS4ACL_generate_inherited_acl(NFS4ACL_t *self, PyObject *args, PyObject *kwargs
 			          | NFS4_INHERITED_FLAG;
 		}
 
-		write_be32(outp +  0, ace_type);
-		write_be32(outp +  4, new_flags);
-		write_be32(outp +  8, ace_iflag);
-		write_be32(outp + 12, access_mask);
-		write_be32(outp + 16, who);
+		nfs4ace_write_raw(outp, ace_type, new_flags,
+		                  ace_iflag, access_mask, who);
 		outp += NFS4_ACE_SZ;
 	}
 
