@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include "acl.h"
 #include "truenas_os_state.h"
+#include "util_enum.h"
 
 #define POSIX_HDR_SZ       4    /* version u32 LE */
 #define POSIX_ACE_SZ       8    /* tag u16 LE + perm u16 LE + id u32 LE */
@@ -57,7 +58,7 @@ write_le16(uint8_t *p, uint16_t v)
 
 /* ── enum member tables ─────────────────────────────────────────────────── */
 
-static const struct { const char *name; long val; } posix_tag_table[] = {
+static const py_intenum_tbl_t posix_tag_table[] = {
 	{ "USER_OBJ",  0x0001 },
 	{ "USER",      0x0002 },
 	{ "GROUP_OBJ", 0x0004 },
@@ -66,96 +67,11 @@ static const struct { const char *name; long val; } posix_tag_table[] = {
 	{ "OTHER",     0x0020 },
 };
 
-static const struct { const char *name; long val; } posix_perm_table[] = {
+static const py_intenum_tbl_t posix_perm_table[] = {
 	{ "EXECUTE", 0x01 },
 	{ "WRITE",   0x02 },
 	{ "READ",    0x04 },
 };
-
-/* ── generic add_enum (mirrors nfs4acl.c) ───────────────────────────────── */
-
-#define TABLE_SIZE(t) (sizeof(t) / sizeof((t)[0]))
-
-static PyObject *
-table_to_dict(const char *names[], const long vals[], size_t n)
-{
-	PyObject *dict = PyDict_New();
-	if (dict == NULL)
-		return NULL;
-	for (size_t i = 0; i < n; i++) {
-		PyObject *v = PyLong_FromLong(vals[i]);
-		if (v == NULL || PyDict_SetItemString(dict, names[i], v) < 0) {
-			Py_XDECREF(v);
-			Py_DECREF(dict);
-			return NULL;
-		}
-		Py_DECREF(v);
-	}
-	return dict;
-}
-
-#define MAKE_DICT_FN(fname, tbl)                                            \
-static PyObject *fname(void) {                                              \
-	size_t n = TABLE_SIZE(tbl);                                         \
-	const char *names[TABLE_SIZE(tbl)];                                 \
-	long vals[TABLE_SIZE(tbl)];                                         \
-	for (size_t i = 0; i < n; i++) {                                    \
-		names[i] = (tbl)[i].name;                                   \
-		vals[i]  = (tbl)[i].val;                                    \
-	}                                                                   \
-	return table_to_dict(names, vals, n);                               \
-}
-
-MAKE_DICT_FN(posix_tag_dict,  posix_tag_table)
-MAKE_DICT_FN(posix_perm_dict, posix_perm_table)
-
-static int
-add_enum(PyObject *module,
-         PyObject *enum_type,
-         const char *class_name,
-         PyObject *(*get_dict)(void),
-         PyObject *kwargs,
-         PyObject **penum_out)
-{
-	PyObject *name = NULL;
-	PyObject *attrs = NULL;
-	PyObject *args = NULL;
-	PyObject *enum_obj = NULL;
-	int ret = -1;
-
-	name = PyUnicode_FromString(class_name);
-	if (name == NULL)
-		goto out;
-
-	attrs = get_dict();
-	if (attrs == NULL)
-		goto out;
-
-	args = PyTuple_Pack(2, name, attrs);
-	if (args == NULL)
-		goto out;
-
-	enum_obj = PyObject_Call(enum_type, args, kwargs);
-	if (enum_obj == NULL)
-		goto out;
-
-	if (PyModule_AddObjectRef(module, class_name, enum_obj) < 0)
-		goto out;
-
-	ret = 0;
-	if (penum_out != NULL)
-		*penum_out = enum_obj;
-	else
-		Py_DECREF(enum_obj);
-	enum_obj = NULL;
-
-out:
-	Py_XDECREF(name);
-	Py_XDECREF(attrs);
-	Py_XDECREF(args);
-	Py_XDECREF(enum_obj);
-	return ret;
-}
 
 /* ── helper: is this tag a "special" entry (id always POSIX_SPECIAL_ID)? ── */
 
@@ -972,13 +888,13 @@ init_posixacl(PyObject *module)
 		goto out;
 
 	if (add_enum(module, int_enum, "POSIXTag",
-	             posix_tag_dict, kwargs,
-	             &state->POSIXTag_enum) < 0)
+	             posix_tag_table, TABLE_SIZE(posix_tag_table),
+	             kwargs, &state->POSIXTag_enum) < 0)
 		goto out;
 
 	if (add_enum(module, intflag, "POSIXPerm",
-	             posix_perm_dict, kwargs,
-	             &state->POSIXPerm_enum) < 0)
+	             posix_perm_table, TABLE_SIZE(posix_perm_table),
+	             kwargs, &state->POSIXPerm_enum) < 0)
 		goto out;
 
 	if (PyType_Ready(&POSIXAce_Type) < 0)

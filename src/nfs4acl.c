@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include "acl.h"
 #include "truenas_os_state.h"
+#include "util_enum.h"
 
 #define NFS4_HDR_SZ   8    /* acl_flags (u32 BE) + naces (u32 BE) */
 #define NFS4_ACE_SZ  20    /* type + flags + iflag + access_mask + who (each u32 BE) */
@@ -49,21 +50,21 @@ write_be32(uint8_t *p, uint32_t v)
 
 /* ── enum member tables ─────────────────────────────────────────────────── */
 
-static const struct { const char *name; long val; } nfs4_ace_type_table[] = {
+static const py_intenum_tbl_t nfs4_ace_type_table[] = {
 	{ "ALLOW", 0 },
 	{ "DENY",  1 },
 	{ "AUDIT", 2 },
 	{ "ALARM", 3 },
 };
 
-static const struct { const char *name; long val; } nfs4_who_table[] = {
+static const py_intenum_tbl_t nfs4_who_table[] = {
 	{ "NAMED",    0 },
 	{ "OWNER",    1 },
 	{ "GROUP",    2 },
 	{ "EVERYONE", 3 },
 };
 
-static const struct { const char *name; long val; } nfs4_perm_table[] = {
+static const py_intenum_tbl_t nfs4_perm_table[] = {
 	{ "READ_DATA",         0x00000001 },
 	{ "WRITE_DATA",        0x00000002 },
 	{ "APPEND_DATA",       0x00000004 },
@@ -80,7 +81,7 @@ static const struct { const char *name; long val; } nfs4_perm_table[] = {
 	{ "SYNCHRONIZE",       0x00100000 },
 };
 
-static const struct { const char *name; long val; } nfs4_flag_table[] = {
+static const py_intenum_tbl_t nfs4_flag_table[] = {
 	{ "FILE_INHERIT",          0x00000001 },
 	{ "DIRECTORY_INHERIT",     0x00000002 },
 	{ "NO_PROPAGATE_INHERIT",  0x00000004 },
@@ -91,7 +92,7 @@ static const struct { const char *name; long val; } nfs4_flag_table[] = {
 	{ "INHERITED",             0x00000080 },
 };
 
-static const struct { const char *name; long val; } nfs4_acl_flag_table[] = {
+static const py_intenum_tbl_t nfs4_acl_flag_table[] = {
 	{ "AUTO_INHERIT", 0x0001 },
 	{ "PROTECTED",    0x0002 },
 	{ "DEFAULTED",    0x0004 },
@@ -99,96 +100,6 @@ static const struct { const char *name; long val; } nfs4_acl_flag_table[] = {
 	{ "ACL_IS_TRIVIAL", 0x10000 }, /* ACL is equivalent to mode bits */
 	{ "ACL_IS_DIR",     0x20000 }, /* ACL belongs to a directory      */
 };
-
-/* ── generic helpers matching pylibzfs pattern ──────────────────────────── */
-
-#define TABLE_SIZE(t) (sizeof(t) / sizeof((t)[0]))
-
-static PyObject *
-table_to_dict(const char *names[], const long vals[], size_t n)
-{
-	PyObject *dict = PyDict_New();
-	if (dict == NULL)
-		return NULL;
-
-	for (size_t i = 0; i < n; i++) {
-		PyObject *v = PyLong_FromLong(vals[i]);
-		if (v == NULL || PyDict_SetItemString(dict, names[i], v) < 0) {
-			Py_XDECREF(v);
-			Py_DECREF(dict);
-			return NULL;
-		}
-		Py_DECREF(v);
-	}
-	return dict;
-}
-
-/* Per-table dict builders */
-#define MAKE_DICT_FN(fname, tbl)                                            \
-static PyObject *fname(void) {                                              \
-	size_t n = TABLE_SIZE(tbl);                                         \
-	const char *names[TABLE_SIZE(tbl)];                                 \
-	long vals[TABLE_SIZE(tbl)];                                         \
-	for (size_t i = 0; i < n; i++) {                                    \
-		names[i] = (tbl)[i].name;                                   \
-		vals[i]  = (tbl)[i].val;                                    \
-	}                                                                   \
-	return table_to_dict(names, vals, n);                               \
-}
-
-MAKE_DICT_FN(nfs4_ace_type_dict,  nfs4_ace_type_table)
-MAKE_DICT_FN(nfs4_who_dict,       nfs4_who_table)
-MAKE_DICT_FN(nfs4_perm_dict,      nfs4_perm_table)
-MAKE_DICT_FN(nfs4_flag_dict,      nfs4_flag_table)
-MAKE_DICT_FN(nfs4_acl_flag_dict,  nfs4_acl_flag_table)
-
-static int
-add_enum(PyObject *module,
-         PyObject *enum_type,
-         const char *class_name,
-         PyObject *(*get_dict)(void),
-         PyObject *kwargs,
-         PyObject **penum_out)
-{
-	PyObject *name = NULL;
-	PyObject *attrs = NULL;
-	PyObject *args = NULL;
-	PyObject *enum_obj = NULL;
-	int ret = -1;
-
-	name = PyUnicode_FromString(class_name);
-	if (name == NULL)
-		goto out;
-
-	attrs = get_dict();
-	if (attrs == NULL)
-		goto out;
-
-	args = PyTuple_Pack(2, name, attrs);
-	if (args == NULL)
-		goto out;
-
-	enum_obj = PyObject_Call(enum_type, args, kwargs);
-	if (enum_obj == NULL)
-		goto out;
-
-	if (PyModule_AddObjectRef(module, class_name, enum_obj) < 0)
-		goto out;
-
-	ret = 0;
-	if (penum_out != NULL)
-		*penum_out = enum_obj;
-	else
-		Py_DECREF(enum_obj);
-	enum_obj = NULL;  /* ownership transferred */
-
-out:
-	Py_XDECREF(name);
-	Py_XDECREF(attrs);
-	Py_XDECREF(args);
-	Py_XDECREF(enum_obj);
-	return ret;
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * NFS4Ace type
@@ -1158,28 +1069,28 @@ init_nfs4acl(PyObject *module)
 		goto out;
 
 	if (add_enum(module, int_enum, "NFS4AceType",
-	             nfs4_ace_type_dict, kwargs,
-	             &state->NFS4AceType_enum) < 0)
+	             nfs4_ace_type_table, TABLE_SIZE(nfs4_ace_type_table),
+	             kwargs, &state->NFS4AceType_enum) < 0)
 		goto out;
 
 	if (add_enum(module, int_enum, "NFS4Who",
-	             nfs4_who_dict, kwargs,
-	             &state->NFS4Who_enum) < 0)
+	             nfs4_who_table, TABLE_SIZE(nfs4_who_table),
+	             kwargs, &state->NFS4Who_enum) < 0)
 		goto out;
 
 	if (add_enum(module, intflag, "NFS4Perm",
-	             nfs4_perm_dict, kwargs,
-	             &state->NFS4Perm_enum) < 0)
+	             nfs4_perm_table, TABLE_SIZE(nfs4_perm_table),
+	             kwargs, &state->NFS4Perm_enum) < 0)
 		goto out;
 
 	if (add_enum(module, intflag, "NFS4Flag",
-	             nfs4_flag_dict, kwargs,
-	             &state->NFS4Flag_enum) < 0)
+	             nfs4_flag_table, TABLE_SIZE(nfs4_flag_table),
+	             kwargs, &state->NFS4Flag_enum) < 0)
 		goto out;
 
 	if (add_enum(module, intflag, "NFS4ACLFlag",
-	             nfs4_acl_flag_dict, kwargs,
-	             &state->NFS4ACLFlag_enum) < 0)
+	             nfs4_acl_flag_table, TABLE_SIZE(nfs4_acl_flag_table),
+	             kwargs, &state->NFS4ACLFlag_enum) < 0)
 		goto out;
 
 	/* Register NFS4Ace type */

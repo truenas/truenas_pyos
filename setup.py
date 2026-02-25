@@ -18,6 +18,7 @@ truenas_os_ext = Extension(
         'src/renameat2.c',
         'src/fsiter.c',
         'src/acl.c',
+        'src/util_enum.c',
         'src/nfs4acl.c',
         'src/posixacl.c',
     ],
