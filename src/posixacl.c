@@ -290,7 +290,7 @@ static int
 POSIXACL_init(POSIXACL_t *self, PyObject *args, PyObject *kwargs)
 {
 	static char *kwlist[] = { "access_data", "default_data", NULL };
-	PyObject *access_data;
+	PyObject *access_data = NULL;
 	PyObject *default_data = Py_None;
 
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O!|O", kwlist,
