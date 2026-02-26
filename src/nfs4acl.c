@@ -167,7 +167,10 @@ NFS4Ace_init(NFS4Ace_t *self, PyObject *args, PyObject *kwargs)
 		"ace_type", "ace_flags", "access_mask",
 		"who_type", "who_id", NULL
 	};
-	PyObject *ace_type, *ace_flags, *access_mask, *who_type;
+	PyObject *ace_type = NULL;
+	PyObject *ace_flags = NULL;
+	PyObject *access_mask = NULL;
+	PyObject *who_type = NULL;
 	PyObject *who_id = NULL;
 
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OOOO|O", kwlist,
@@ -338,7 +341,7 @@ NFS4ACL_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
 static int
 NFS4ACL_init(NFS4ACL_t *self, PyObject *args, PyObject *kwargs)
 {
-	PyObject *data;
+	PyObject *data = NULL;
 	if (!PyArg_ParseTuple(args, "O!:NFS4ACL", &PyBytes_Type, &data))
 		return -1;
 	Py_INCREF(data);
@@ -365,11 +368,11 @@ nfs4acl_alloc_ace_buf(PyObject *aces_arg,
                       uint32_t **endp_out,
                       Py_ssize_t *naces_out)
 {
-	PyObject *aces_list;
-	PyObject *aces_seq;
+	PyObject *aces_list = NULL;
+	PyObject *aces_seq = NULL;
 	Py_ssize_t naces;
 	size_t nwords;
-	uint32_t *buf;
+	uint32_t *buf = NULL;
 
 	aces_list = PySequence_List(aces_arg);
 	if (aces_list == NULL)
@@ -471,7 +474,7 @@ NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 	PyObject *aces_seq = NULL;
 	PyObject *ace = NULL;
 	PyObject *bytes_obj = NULL;
-	PyObject *result;
+	PyObject *result = NULL;
 	Py_ssize_t naces;
 	Py_ssize_t i;
 	uint32_t *buf = NULL;
@@ -479,9 +482,6 @@ NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 	uint32_t *endp = NULL;
 	uint32_t acl_flags_val;
 	long v;
-
-	aces_arg = NULL;
-	acl_flags_obj = NULL;
 
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|O", kwlist,
 	                                 &aces_arg, &acl_flags_obj))
@@ -578,13 +578,13 @@ PyDoc_STRVAR(NFS4ACL_aces_doc,
 static PyObject *
 nfs4ace_decode(const uint32_t *p, truenas_os_state_t *state)
 {
-	PyObject *tmp;
-	PyObject *ace_type_o;
-	PyObject *ace_flags_o;
-	PyObject *access_mask_o;
-	PyObject *who_type_o;
-	PyObject *who_id_o;
-	PyObject *ace;
+	PyObject *tmp = NULL;
+	PyObject *ace_type_o = NULL;
+	PyObject *ace_flags_o = NULL;
+	PyObject *access_mask_o = NULL;
+	PyObject *who_type_o = NULL;
+	PyObject *who_id_o = NULL;
+	PyObject *ace = NULL;
 	uint32_t ace_type_v;
 	uint32_t ace_flags_v;
 	uint32_t iflag;
@@ -710,9 +710,9 @@ NFS4ACL_len(NFS4ACL_t *self)
 static PyObject *
 NFS4ACL_repr(NFS4ACL_t *self)
 {
-	PyObject *flags;
-	PyObject *aces;
-	PyObject *result;
+	PyObject *flags = NULL;
+	PyObject *aces = NULL;
+	PyObject *result = NULL;
 
 	flags = NFS4ACL_get_acl_flags(self, NULL);
 	aces = NFS4ACL_get_aces(self, NULL);

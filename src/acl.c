@@ -19,7 +19,7 @@
 static char *
 read_xattr_raw(int fd, const char *name, ssize_t sz, size_t *out_len)
 {
-	char *buf;
+	char *buf = NULL;
 	ssize_t ret;
 	int async_err = 0;
 

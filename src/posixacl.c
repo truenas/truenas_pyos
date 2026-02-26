@@ -127,7 +127,8 @@ static int
 POSIXAce_init(POSIXAce_t *self, PyObject *args, PyObject *kwargs)
 {
 	static char *kwlist[] = { "tag", "perms", "id", "default", NULL };
-	PyObject *tag, *perms;
+	PyObject *tag = NULL;
+	PyObject *perms = NULL;
 	PyObject *id = NULL;
 	PyObject *default_ = NULL;
 
@@ -197,8 +198,8 @@ POSIXAce_richcompare(PyObject *self, PyObject *other, int op)
 {
 	long tag_a, tag_b, id_a, id_b;
 	int cmp;
-	POSIXAce_t *a;
-	POSIXAce_t *b;
+	POSIXAce_t *a = NULL;
+	POSIXAce_t *b = NULL;
 
 	if (!PyObject_TypeCheck(other, &POSIXAce_Type))
 		Py_RETURN_NOTIMPLEMENTED;
@@ -317,16 +318,16 @@ encode_posix_aces(PyObject *ace_seq)
 {
 	Py_ssize_t naces;
 	size_t bufsz;
-	uint8_t *buf;
-	PyObject *result;
+	uint8_t *buf = NULL;
+	PyObject *result = NULL;
 	Py_ssize_t i;
-	PyObject *ace;
-	POSIXAce_t *a;
+	PyObject *ace = NULL;
+	POSIXAce_t *a = NULL;
 	long tag_v;
 	long perm_v;
 	long id_v;
 	uint32_t xid;
-	uint8_t *p;
+	uint8_t *p = NULL;
 
 	naces = PySequence_Fast_GET_SIZE(ace_seq);
 	bufsz = POSIX_HDR_SZ + (size_t)naces * POSIX_ACE_SZ;
@@ -379,20 +380,20 @@ PyDoc_STRVAR(POSIXACL_from_aces_doc,
 static PyObject *
 POSIXACL_from_aces(PyObject *cls, PyObject *args)
 {
-	PyObject *aces_arg;
-	PyObject *seq;
+	PyObject *aces_arg = NULL;
+	PyObject *seq = NULL;
 	Py_ssize_t total;
-	PyObject *access_list;
-	PyObject *default_list;
+	PyObject *access_list = NULL;
+	PyObject *default_list = NULL;
 	Py_ssize_t i;
-	PyObject *ace;
-	POSIXAce_t *a;
-	PyObject *target;
-	PyObject *access_seq;
-	PyObject *default_seq;
-	PyObject *access_bytes;
-	PyObject *default_bytes_or_none;
-	PyObject *result;
+	PyObject *ace = NULL;
+	POSIXAce_t *a = NULL;
+	PyObject *target = NULL;
+	PyObject *access_seq = NULL;
+	PyObject *default_seq = NULL;
+	PyObject *access_bytes = NULL;
+	PyObject *default_bytes_or_none = NULL;
+	PyObject *result = NULL;
 
 	if (!PyArg_ParseTuple(args, "O:from_aces", &aces_arg))
 		return NULL;
@@ -444,10 +445,6 @@ POSIXACL_from_aces(PyObject *cls, PyObject *args)
 	default_seq = PySequence_Fast(default_list, "");
 	Py_DECREF(access_list);
 	Py_DECREF(default_list);
-
-	access_bytes = NULL;
-	default_bytes_or_none = NULL;
-	result = NULL;
 
 	if (!access_seq || !default_seq)
 		goto done;
