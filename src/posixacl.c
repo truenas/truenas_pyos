@@ -315,16 +315,29 @@ POSIXACL_init(POSIXACL_t *self, PyObject *args, PyObject *kwargs)
 static PyObject *
 encode_posix_aces(PyObject *ace_seq)
 {
-	Py_ssize_t naces = PySequence_Fast_GET_SIZE(ace_seq);
-	size_t bufsz = POSIX_HDR_SZ + (size_t)naces * POSIX_ACE_SZ;
-	uint8_t *buf = (uint8_t *)PyMem_Malloc(bufsz);
+	Py_ssize_t naces;
+	size_t bufsz;
+	uint8_t *buf;
+	PyObject *result;
+	Py_ssize_t i;
+	PyObject *ace;
+	POSIXAce_t *a;
+	long tag_v;
+	long perm_v;
+	long id_v;
+	uint32_t xid;
+	uint8_t *p;
+
+	naces = PySequence_Fast_GET_SIZE(ace_seq);
+	bufsz = POSIX_HDR_SZ + (size_t)naces * POSIX_ACE_SZ;
+	buf = (uint8_t *)PyMem_Malloc(bufsz);
 	if (buf == NULL)
 		return PyErr_NoMemory();
 
 	write_le32(buf, POSIX_ACL_VERSION);
 
-	for (Py_ssize_t i = 0; i < naces; i++) {
-		PyObject *ace = PySequence_Fast_GET_ITEM(ace_seq, i);
+	for (i = 0; i < naces; i++) {
+		ace = PySequence_Fast_GET_ITEM(ace_seq, i);
 
 		if (!PyObject_TypeCheck(ace, &POSIXAce_Type)) {
 			PyMem_Free(buf);
@@ -332,28 +345,25 @@ encode_posix_aces(PyObject *ace_seq)
 			                "from_aces: aces must contain POSIXAce objects");
 			return NULL;
 		}
-		POSIXAce_t *a = (POSIXAce_t *)ace;
+		a = (POSIXAce_t *)ace;
 
-		long tag_v = PyLong_AsLong(a->tag);
-		long perm_v = PyLong_AsLong(a->perms);
-		long id_v = PyLong_AsLong(a->id);
+		tag_v = PyLong_AsLong(a->tag);
+		perm_v = PyLong_AsLong(a->perms);
+		id_v = PyLong_AsLong(a->id);
 		if (PyErr_Occurred()) {
 			PyMem_Free(buf);
 			return NULL;
 		}
 
-		uint32_t xid = is_special_tag(tag_v)
-		               ? POSIX_SPECIAL_ID
-		               : (uint32_t)id_v;
+		xid = is_special_tag(tag_v) ? POSIX_SPECIAL_ID : (uint32_t)id_v;
 
-		uint8_t *p = buf + POSIX_HDR_SZ + (size_t)i * POSIX_ACE_SZ;
+		p = buf + POSIX_HDR_SZ + (size_t)i * POSIX_ACE_SZ;
 		write_le16(p + 0, (uint16_t)tag_v);
 		write_le16(p + 2, (uint16_t)perm_v);
 		write_le32(p + 4, xid);
 	}
 
-	PyObject *result = PyBytes_FromStringAndSize((char *)buf,
-	                                             (Py_ssize_t)bufsz);
+	result = PyBytes_FromStringAndSize((char *)buf, (Py_ssize_t)bufsz);
 	PyMem_Free(buf);
 	return result;
 }
@@ -370,19 +380,32 @@ static PyObject *
 POSIXACL_from_aces(PyObject *cls, PyObject *args)
 {
 	PyObject *aces_arg;
+	PyObject *seq;
+	Py_ssize_t total;
+	PyObject *access_list;
+	PyObject *default_list;
+	Py_ssize_t i;
+	PyObject *ace;
+	POSIXAce_t *a;
+	PyObject *target;
+	PyObject *access_seq;
+	PyObject *default_seq;
+	PyObject *access_bytes;
+	PyObject *default_bytes_or_none;
+	PyObject *result;
+
 	if (!PyArg_ParseTuple(args, "O:from_aces", &aces_arg))
 		return NULL;
 
-	PyObject *seq = PySequence_Fast(aces_arg,
-	                                "from_aces: aces must be iterable");
+	seq = PySequence_Fast(aces_arg, "from_aces: aces must be iterable");
 	if (seq == NULL)
 		return NULL;
 
-	Py_ssize_t total = PySequence_Fast_GET_SIZE(seq);
+	total = PySequence_Fast_GET_SIZE(seq);
 
 	/* Separate into access and default lists */
-	PyObject *access_list = PyList_New(0);
-	PyObject *default_list = PyList_New(0);
+	access_list = PyList_New(0);
+	default_list = PyList_New(0);
 	if (!access_list || !default_list) {
 		Py_XDECREF(access_list);
 		Py_XDECREF(default_list);
@@ -390,8 +413,8 @@ POSIXACL_from_aces(PyObject *cls, PyObject *args)
 		return NULL;
 	}
 
-	for (Py_ssize_t i = 0; i < total; i++) {
-		PyObject *ace = PySequence_Fast_GET_ITEM(seq, i);
+	for (i = 0; i < total; i++) {
+		ace = PySequence_Fast_GET_ITEM(seq, i);
 		if (!PyObject_TypeCheck(ace, &POSIXAce_Type)) {
 			PyErr_SetString(PyExc_TypeError,
 			                "from_aces: aces must contain POSIXAce objects");
@@ -400,9 +423,8 @@ POSIXACL_from_aces(PyObject *cls, PyObject *args)
 			Py_DECREF(seq);
 			return NULL;
 		}
-		POSIXAce_t *a = (POSIXAce_t *)ace;
-		PyObject *target = PyObject_IsTrue(a->default_)
-		                   ? default_list : access_list;
+		a = (POSIXAce_t *)ace;
+		target = PyObject_IsTrue(a->default_) ? default_list : access_list;
 		if (PyList_Append(target, ace) < 0) {
 			Py_DECREF(access_list);
 			Py_DECREF(default_list);
@@ -418,14 +440,14 @@ POSIXACL_from_aces(PyObject *cls, PyObject *args)
 		return NULL;
 	}
 
-	PyObject *access_seq = PySequence_Fast(access_list, "");
-	PyObject *default_seq = PySequence_Fast(default_list, "");
+	access_seq = PySequence_Fast(access_list, "");
+	default_seq = PySequence_Fast(default_list, "");
 	Py_DECREF(access_list);
 	Py_DECREF(default_list);
 
-	PyObject *access_bytes = NULL;
-	PyObject *default_bytes_or_none = NULL;
-	PyObject *result = NULL;
+	access_bytes = NULL;
+	default_bytes_or_none = NULL;
+	result = NULL;
 
 	if (!access_seq || !default_seq)
 		goto done;
@@ -457,6 +479,22 @@ done:
 static PyObject *
 parse_posix_aces(const uint8_t *buf, Py_ssize_t bufsz, int is_default)
 {
+	Py_ssize_t naces;
+	truenas_os_state_t *state = NULL;
+	PyObject *result = NULL;
+	PyObject *default_flag = NULL;
+	Py_ssize_t i;
+	const uint8_t *p = NULL;
+	uint16_t tag_raw;
+	uint16_t perm_raw;
+	uint32_t xid;
+	long id_v;
+	PyObject *tmp = NULL;
+	PyObject *tag_o = NULL;
+	PyObject *perm_o = NULL;
+	PyObject *id_o = NULL;
+	PyObject *ace = NULL;
+
 	if (bufsz == 0)
 		return PyList_New(0);
 
@@ -465,34 +503,33 @@ parse_posix_aces(const uint8_t *buf, Py_ssize_t bufsz, int is_default)
 		return NULL;
 	}
 
-	Py_ssize_t naces = (bufsz - POSIX_HDR_SZ) / POSIX_ACE_SZ;
+	naces = (bufsz - POSIX_HDR_SZ) / POSIX_ACE_SZ;
 
-	truenas_os_state_t *state = get_truenas_os_state(NULL);
+	state = get_truenas_os_state(NULL);
 	if (state == NULL)
 		return NULL;
 
-	PyObject *result = PyList_New(naces);
+	result = PyList_New(naces);
 	if (result == NULL)
 		return NULL;
 
-	PyObject *default_flag = is_default ? Py_True : Py_False;
+	default_flag = is_default ? Py_True : Py_False;
 
-	for (Py_ssize_t i = 0; i < naces; i++) {
-		const uint8_t *p = buf + POSIX_HDR_SZ + (size_t)i * POSIX_ACE_SZ;
-		uint16_t tag_raw = read_le16(p + 0);
-		uint16_t perm_raw = read_le16(p + 2);
-		uint32_t xid = read_le32(p + 4);
+	for (i = 0; i < naces; i++) {
+		p = buf + POSIX_HDR_SZ + (size_t)i * POSIX_ACE_SZ;
+		tag_raw = read_le16(p + 0);
+		perm_raw = read_le16(p + 2);
+		xid = read_le32(p + 4);
 
-		long id_v = (xid == POSIX_SPECIAL_ID) ? -1L : (long)xid;
+		id_v = (xid == POSIX_SPECIAL_ID) ? -1L : (long)xid;
 
-		PyObject *tmp;
-		PyObject *tag_o = PyObject_CallOneArg(state->POSIXTag_enum,
+		tag_o = PyObject_CallOneArg(state->POSIXTag_enum,
 		    tmp = PyLong_FromUnsignedLong(tag_raw));
 		Py_XDECREF(tmp);
-		PyObject *perm_o = PyObject_CallOneArg(state->POSIXPerm_enum,
+		perm_o = PyObject_CallOneArg(state->POSIXPerm_enum,
 		    tmp = PyLong_FromUnsignedLong(perm_raw));
 		Py_XDECREF(tmp);
-		PyObject *id_o = PyLong_FromLong(id_v);
+		id_o = PyLong_FromLong(id_v);
 
 		if (!tag_o || !perm_o || !id_o) {
 			Py_XDECREF(tag_o);
@@ -502,7 +539,7 @@ parse_posix_aces(const uint8_t *buf, Py_ssize_t bufsz, int is_default)
 			return NULL;
 		}
 
-		PyObject *ace = PyObject_CallFunction(
+		ace = PyObject_CallFunction(
 		    (PyObject *)&POSIXAce_Type, "OOOO",
 		    tag_o, perm_o, id_o, default_flag);
 		Py_DECREF(tag_o);
@@ -568,14 +605,18 @@ POSIXACL_default_bytes(POSIXACL_t *self, PyObject *Py_UNUSED(args))
 static PyObject *
 POSIXACL_repr(POSIXACL_t *self)
 {
-	PyObject *aces = POSIXACL_get_aces(self, NULL);
-	PyObject *default_aces = POSIXACL_get_default_aces(self, NULL);
+	PyObject *aces = NULL;
+	PyObject *default_aces = NULL;
+	PyObject *result = NULL;
+
+	aces = POSIXACL_get_aces(self, NULL);
+	default_aces = POSIXACL_get_default_aces(self, NULL);
 	if (!aces || !default_aces) {
 		Py_XDECREF(aces);
 		Py_XDECREF(default_aces);
 		return NULL;
 	}
-	PyObject *result = PyUnicode_FromFormat(
+	result = PyUnicode_FromFormat(
 	    "POSIXACL(aces=%R, default_aces=%R)", aces, default_aces);
 	Py_DECREF(aces);
 	Py_DECREF(default_aces);

@@ -3,102 +3,118 @@
 #include <Python.h>
 #include <endian.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/stat.h>
 #include "acl.h"
 #include "truenas_os_state.h"
 #include "util_enum.h"
 
-#define NFS4_HDR_SZ   8    /* acl_flags (u32 BE) + naces (u32 BE) */
-#define NFS4_ACE_SZ  20    /* type + flags + iflag + access_mask + who (each u32 BE) */
+#define NFS4_HDR_SZ     8   /* bytes: acl_flags (u32 BE) + naces (u32 BE) */
+#define NFS4_ACE_SZ    20   /* bytes: type + flags + iflag + access_mask + who (each u32 BE) */
+#define NFS4_HDR_WORDS  2   /* uint32_t words in header */
+#define NFS4_ACE_WORDS  5   /* uint32_t words per ACE */
 
-/* NFS4Who.NAMED value — who field is uid/gid, iflag=0 */
-#define NFS4_WHO_NAMED 0
+/* NFS4Who special-principal values (XDR encoding, matches nfs4_acl_whotype) */
+#define NFS4_ACL_WHO_NAMED    0
+#define NFS4_ACL_WHO_OWNER    1
+#define NFS4_ACL_WHO_GROUP    2
+#define NFS4_ACL_WHO_EVERYONE 3
 
-/* ACE flag bits used for canonicalization and validation */
-#define NFS4_FILE_INHERIT_FLAG  0x01U
-#define NFS4_DIR_INHERIT_FLAG   0x02U
-#define NFS4_NO_PROPAGATE_FLAG  0x04U
-#define NFS4_INHERIT_ONLY_FLAG  0x08U
-#define NFS4_INHERITED_FLAG     0x80U  /* ACE was inherited from a parent object */
+/* ACE type values */
+#define NFS4_ACE_ACCESS_ALLOWED_ACE_TYPE  0
+#define NFS4_ACE_ACCESS_DENIED_ACE_TYPE   1
+#define NFS4_ACE_SYSTEM_AUDIT_ACE_TYPE    2
+#define NFS4_ACE_SYSTEM_ALARM_ACE_TYPE    3
+
+/* ACE permission bits */
+#define NFS4_ACE_READ_DATA            0x00000001
+#define NFS4_ACE_WRITE_DATA           0x00000002
+#define NFS4_ACE_APPEND_DATA          0x00000004
+#define NFS4_ACE_READ_NAMED_ATTRS     0x00000008
+#define NFS4_ACE_WRITE_NAMED_ATTRS    0x00000010
+#define NFS4_ACE_EXECUTE              0x00000020
+#define NFS4_ACE_DELETE_CHILD         0x00000040
+#define NFS4_ACE_READ_ATTRIBUTES      0x00000080
+#define NFS4_ACE_WRITE_ATTRIBUTES     0x00000100
+#define NFS4_ACE_DELETE               0x00010000
+#define NFS4_ACE_READ_ACL             0x00020000
+#define NFS4_ACE_WRITE_ACL            0x00040000
+#define NFS4_ACE_WRITE_OWNER          0x00080000
+#define NFS4_ACE_SYNCHRONIZE          0x00100000
+
+/* ACE flag bits */
+#define NFS4_ACE_FILE_INHERIT_ACE             0x00000001
+#define NFS4_ACE_DIRECTORY_INHERIT_ACE        0x00000002
+#define NFS4_ACE_NO_PROPAGATE_INHERIT_ACE     0x00000004
+#define NFS4_ACE_INHERIT_ONLY_ACE             0x00000008
+#define NFS4_ACE_SUCCESSFUL_ACCESS_ACE_FLAG   0x00000010
+#define NFS4_ACE_FAILED_ACCESS_ACE_FLAG       0x00000020
+#define NFS4_ACE_IDENTIFIER_GROUP             0x00000040
+#define NFS4_ACE_INHERITED_ACE                0x00000080
 
 /* Mask covering all ACE-level inheritance flag bits */
 #define NFS4_ACE_INHERIT_MASK \
-	(NFS4_FILE_INHERIT_FLAG | NFS4_DIR_INHERIT_FLAG | \
-	 NFS4_NO_PROPAGATE_FLAG | NFS4_INHERIT_ONLY_FLAG)
+	(NFS4_ACE_FILE_INHERIT_ACE | NFS4_ACE_DIRECTORY_INHERIT_ACE | \
+	 NFS4_ACE_NO_PROPAGATE_INHERIT_ACE | NFS4_ACE_INHERIT_ONLY_ACE)
 
-/* ACL-level flag bits (XDR header word) */
-#define NFS4_ACL_IS_TRIVIAL     0x10000U  /* ACL is equivalent to mode bits */
-#define NFS4_ACL_IS_DIR         0x20000U  /* ACL belongs to a directory      */
-
-/* ── big-endian I/O helpers ─────────────────────────────────────────────── */
-
-static inline uint32_t
-read_be32(const uint8_t *p)
-{
-	uint32_t v;
-	memcpy(&v, p, sizeof(v));
-	return be32toh(v);
-}
-
-static inline void
-write_be32(uint8_t *p, uint32_t v)
-{
-	v = htobe32(v);
-	memcpy(p, &v, sizeof(v));
-}
+/* ACL-level flag bits */
+#define ACL_AUTO_INHERIT  0x0001
+#define ACL_PROTECTED     0x0002
+#define ACL_DEFAULTED     0x0004
+/* ZFS extensions stored in the on-disk acl_flags field */
+#define NFS4_ACL_IS_TRIVIAL  0x10000  /* ACL is equivalent to mode bits */
+#define NFS4_ACL_IS_DIR      0x20000  /* ACL belongs to a directory      */
 
 /* ── enum member tables ─────────────────────────────────────────────────── */
 
 static const py_intenum_tbl_t nfs4_ace_type_table[] = {
-	{ "ALLOW", 0 },
-	{ "DENY",  1 },
-	{ "AUDIT", 2 },
-	{ "ALARM", 3 },
+	{ "ALLOW", NFS4_ACE_ACCESS_ALLOWED_ACE_TYPE },
+	{ "DENY",  NFS4_ACE_ACCESS_DENIED_ACE_TYPE  },
+	{ "AUDIT", NFS4_ACE_SYSTEM_AUDIT_ACE_TYPE   },
+	{ "ALARM", NFS4_ACE_SYSTEM_ALARM_ACE_TYPE   },
 };
 
 static const py_intenum_tbl_t nfs4_who_table[] = {
-	{ "NAMED",    0 },
-	{ "OWNER",    1 },
-	{ "GROUP",    2 },
-	{ "EVERYONE", 3 },
+	{ "NAMED",    NFS4_ACL_WHO_NAMED    },
+	{ "OWNER",    NFS4_ACL_WHO_OWNER    },
+	{ "GROUP",    NFS4_ACL_WHO_GROUP    },
+	{ "EVERYONE", NFS4_ACL_WHO_EVERYONE },
 };
 
 static const py_intenum_tbl_t nfs4_perm_table[] = {
-	{ "READ_DATA",         0x00000001 },
-	{ "WRITE_DATA",        0x00000002 },
-	{ "APPEND_DATA",       0x00000004 },
-	{ "READ_NAMED_ATTRS",  0x00000008 },
-	{ "WRITE_NAMED_ATTRS", 0x00000010 },
-	{ "EXECUTE",           0x00000020 },
-	{ "DELETE_CHILD",      0x00000040 },
-	{ "READ_ATTRIBUTES",   0x00000080 },
-	{ "WRITE_ATTRIBUTES",  0x00000100 },
-	{ "DELETE",            0x00010000 },
-	{ "READ_ACL",          0x00020000 },
-	{ "WRITE_ACL",         0x00040000 },
-	{ "WRITE_OWNER",       0x00080000 },
-	{ "SYNCHRONIZE",       0x00100000 },
+	{ "READ_DATA",         NFS4_ACE_READ_DATA         },
+	{ "WRITE_DATA",        NFS4_ACE_WRITE_DATA        },
+	{ "APPEND_DATA",       NFS4_ACE_APPEND_DATA       },
+	{ "READ_NAMED_ATTRS",  NFS4_ACE_READ_NAMED_ATTRS  },
+	{ "WRITE_NAMED_ATTRS", NFS4_ACE_WRITE_NAMED_ATTRS },
+	{ "EXECUTE",           NFS4_ACE_EXECUTE           },
+	{ "DELETE_CHILD",      NFS4_ACE_DELETE_CHILD      },
+	{ "READ_ATTRIBUTES",   NFS4_ACE_READ_ATTRIBUTES   },
+	{ "WRITE_ATTRIBUTES",  NFS4_ACE_WRITE_ATTRIBUTES  },
+	{ "DELETE",            NFS4_ACE_DELETE            },
+	{ "READ_ACL",          NFS4_ACE_READ_ACL          },
+	{ "WRITE_ACL",         NFS4_ACE_WRITE_ACL         },
+	{ "WRITE_OWNER",       NFS4_ACE_WRITE_OWNER       },
+	{ "SYNCHRONIZE",       NFS4_ACE_SYNCHRONIZE       },
 };
 
 static const py_intenum_tbl_t nfs4_flag_table[] = {
-	{ "FILE_INHERIT",          0x00000001 },
-	{ "DIRECTORY_INHERIT",     0x00000002 },
-	{ "NO_PROPAGATE_INHERIT",  0x00000004 },
-	{ "INHERIT_ONLY",          0x00000008 },
-	{ "SUCCESSFUL_ACCESS",     0x00000010 },
-	{ "FAILED_ACCESS",         0x00000020 },
-	{ "IDENTIFIER_GROUP",      0x00000040 },
-	{ "INHERITED",             0x00000080 },
+	{ "FILE_INHERIT",         NFS4_ACE_FILE_INHERIT_ACE           },
+	{ "DIRECTORY_INHERIT",    NFS4_ACE_DIRECTORY_INHERIT_ACE      },
+	{ "NO_PROPAGATE_INHERIT", NFS4_ACE_NO_PROPAGATE_INHERIT_ACE   },
+	{ "INHERIT_ONLY",         NFS4_ACE_INHERIT_ONLY_ACE           },
+	{ "SUCCESSFUL_ACCESS",    NFS4_ACE_SUCCESSFUL_ACCESS_ACE_FLAG },
+	{ "FAILED_ACCESS",        NFS4_ACE_FAILED_ACCESS_ACE_FLAG     },
+	{ "IDENTIFIER_GROUP",     NFS4_ACE_IDENTIFIER_GROUP           },
+	{ "INHERITED",            NFS4_ACE_INHERITED_ACE              },
 };
 
 static const py_intenum_tbl_t nfs4_acl_flag_table[] = {
-	{ "AUTO_INHERIT", 0x0001 },
-	{ "PROTECTED",    0x0002 },
-	{ "DEFAULTED",    0x0004 },
+	{ "AUTO_INHERIT", ACL_AUTO_INHERIT },
+	{ "PROTECTED",    ACL_PROTECTED    },
+	{ "DEFAULTED",    ACL_DEFAULTED    },
 	/* ZFS extensions stored in the on-disk acl_flags field. */
-	{ "ACL_IS_TRIVIAL", 0x10000 }, /* ACL is equivalent to mode bits */
-	{ "ACL_IS_DIR",     0x20000 }, /* ACL belongs to a directory      */
+	{ "ACL_IS_TRIVIAL", NFS4_ACL_IS_TRIVIAL }, /* ACL is equivalent to mode bits */
+	{ "ACL_IS_DIR",     NFS4_ACL_IS_DIR     }, /* ACL belongs to a directory      */
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -231,8 +247,8 @@ static PyGetSetDef NFS4Ace_getsets[] = {
 static PyObject *
 NFS4Ace_richcompare(PyObject *self, PyObject *other, int op)
 {
-	NFS4Ace_t *a;
-	NFS4Ace_t *b;
+	NFS4Ace_t *a = (NFS4Ace_t *)self;
+	NFS4Ace_t *b = (NFS4Ace_t *)other;
 	long type_a;
 	long flags_a;
 	long type_b;
@@ -244,9 +260,6 @@ NFS4Ace_richcompare(PyObject *self, PyObject *other, int op)
 	if (!PyObject_TypeCheck(other, &NFS4Ace_Type))
 		Py_RETURN_NOTIMPLEMENTED;
 
-	a = (NFS4Ace_t *)self;
-	b = (NFS4Ace_t *)other;
-
 	type_a = PyLong_AsLong(a->ace_type);
 	flags_a = PyLong_AsLong(a->ace_flags);
 	type_b = PyLong_AsLong(b->ace_type);
@@ -254,10 +267,10 @@ NFS4Ace_richcompare(PyObject *self, PyObject *other, int op)
 	if (PyErr_Occurred())
 		return NULL;
 
-	key_a = ((flags_a & NFS4_INHERITED_FLAG) ? 1 : 0) * 2
-	      + ((type_a == 0) ? 1 : 0);
-	key_b = ((flags_b & NFS4_INHERITED_FLAG) ? 1 : 0) * 2
-	      + ((type_b == 0) ? 1 : 0);
+	key_a = ((flags_a & NFS4_ACE_INHERITED_ACE) ? 1 : 0) * 2
+	      + ((type_a == NFS4_ACE_ACCESS_ALLOWED_ACE_TYPE) ? 1 : 0);
+	key_b = ((flags_b & NFS4_ACE_INHERITED_ACE) ? 1 : 0) * 2
+	      + ((type_b == NFS4_ACE_ACCESS_ALLOWED_ACE_TYPE) ? 1 : 0);
 	cmp = (key_a < key_b) ? -1 : (key_a > key_b) ? 1 : 0;
 
 	switch (op) {
@@ -348,15 +361,15 @@ PyDoc_STRVAR(NFS4ACL_from_aces_doc,
 static int
 nfs4acl_alloc_ace_buf(PyObject *aces_arg,
                       PyObject **aces_seq_out,
-                      uint8_t **buf_out,
-                      uint8_t **endp_out,
+                      uint32_t **buf_out,
+                      uint32_t **endp_out,
                       Py_ssize_t *naces_out)
 {
 	PyObject *aces_list;
 	PyObject *aces_seq;
 	Py_ssize_t naces;
-	size_t bufsz;
-	uint8_t *buf;
+	size_t nwords;
+	uint32_t *buf;
 
 	aces_list = PySequence_List(aces_arg);
 	if (aces_list == NULL)
@@ -373,8 +386,8 @@ nfs4acl_alloc_ace_buf(PyObject *aces_arg,
 		return -1;
 
 	naces = PySequence_Fast_GET_SIZE(aces_seq);
-	bufsz = NFS4_HDR_SZ + (size_t)naces * NFS4_ACE_SZ;
-	buf = (uint8_t *)PyMem_Malloc(bufsz);
+	nwords = NFS4_HDR_WORDS + (size_t)naces * NFS4_ACE_WORDS;
+	buf = (uint32_t *)PyMem_Malloc(nwords * sizeof(uint32_t));
 	if (buf == NULL) {
 		Py_DECREF(aces_seq);
 		PyErr_NoMemory();
@@ -383,7 +396,7 @@ nfs4acl_alloc_ace_buf(PyObject *aces_arg,
 
 	*aces_seq_out = aces_seq;
 	*buf_out = buf;
-	*endp_out = buf + bufsz;
+	*endp_out = buf + nwords;
 	*naces_out = naces;
 	return 0;
 }
@@ -393,14 +406,14 @@ nfs4acl_alloc_ace_buf(PyObject *aces_arg,
  * Shared by nfs4ace_encode() and NFS4ACL_generate_inherited_acl().
  */
 static void
-nfs4ace_write_raw(uint8_t *p, uint32_t ace_type, uint32_t ace_flags,
+nfs4ace_write_raw(uint32_t *p, uint32_t ace_type, uint32_t ace_flags,
                   uint32_t ace_iflag, uint32_t access_mask, uint32_t who)
 {
-	write_be32(p +  0, ace_type);
-	write_be32(p +  4, ace_flags);
-	write_be32(p +  8, ace_iflag);
-	write_be32(p + 12, access_mask);
-	write_be32(p + 16, who);
+	p[0] = htobe32(ace_type);
+	p[1] = htobe32(ace_flags);
+	p[2] = htobe32(ace_iflag);
+	p[3] = htobe32(access_mask);
+	p[4] = htobe32(who);
 }
 
 /*
@@ -410,7 +423,7 @@ nfs4ace_write_raw(uint8_t *p, uint32_t ace_type, uint32_t ace_flags,
  * Returns 0 on success, -1 with a Python exception set on failure.
  */
 static int
-nfs4ace_encode(const NFS4Ace_t *a, uint8_t *p, const uint8_t *endp)
+nfs4ace_encode(const NFS4Ace_t *a, uint32_t *p, const uint32_t *endp)
 {
 	long ace_type_v;
 	long ace_flags_v;
@@ -420,7 +433,7 @@ nfs4ace_encode(const NFS4Ace_t *a, uint8_t *p, const uint8_t *endp)
 	uint32_t iflag;
 	uint32_t who;
 
-	if ((size_t)(endp - p) < NFS4_ACE_SZ) {
+	if ((size_t)(endp - p) < NFS4_ACE_WORDS) {
 		PyErr_SetString(PyExc_RuntimeError,
 		                "nfs4ace_encode: write would overrun ACE buffer");
 		return -1;
@@ -435,7 +448,7 @@ nfs4ace_encode(const NFS4Ace_t *a, uint8_t *p, const uint8_t *endp)
 	if (PyErr_Occurred())
 		return -1;
 
-	if (who_type_v == NFS4_WHO_NAMED) {
+	if (who_type_v == NFS4_ACL_WHO_NAMED) {
 		iflag = 0;
 		who = (uint32_t)who_id_v;
 	} else {
@@ -453,17 +466,17 @@ static PyObject *
 NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 {
 	static char *kwlist[] = { "aces", "acl_flags", NULL };
-	PyObject *aces_arg;
-	PyObject *acl_flags_obj;
-	PyObject *aces_seq;
-	PyObject *ace;
-	PyObject *bytes_obj;
+	PyObject *aces_arg = NULL;
+	PyObject *acl_flags_obj = NULL;
+	PyObject *aces_seq = NULL;
+	PyObject *ace = NULL;
+	PyObject *bytes_obj = NULL;
 	PyObject *result;
 	Py_ssize_t naces;
 	Py_ssize_t i;
-	uint8_t *buf;
-	uint8_t *p;
-	uint8_t *endp;
+	uint32_t *buf = NULL;
+	uint32_t *p = NULL;
+	uint32_t *endp = NULL;
 	uint32_t acl_flags_val;
 	long v;
 
@@ -488,8 +501,8 @@ NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 		acl_flags_val = (uint32_t)v;
 	}
 
-	write_be32(buf + 0, acl_flags_val);
-	write_be32(buf + 4, (uint32_t)naces);
+	buf[0] = htobe32(acl_flags_val);
+	buf[1] = htobe32((uint32_t)naces);
 
 	for (i = 0; i < naces; i++) {
 		ace = PySequence_Fast_GET_ITEM(aces_seq, i); /* borrowed */
@@ -502,7 +515,7 @@ NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 			return NULL;
 		}
 
-		p = buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
+		p = buf + NFS4_HDR_WORDS + (size_t)i * NFS4_ACE_WORDS;
 		if (nfs4ace_encode((NFS4Ace_t *)ace, p, endp) < 0) {
 			PyMem_Free(buf);
 			Py_DECREF(aces_seq);
@@ -512,7 +525,8 @@ NFS4ACL_from_aces(PyObject *cls, PyObject *args, PyObject *kwargs)
 
 	Py_DECREF(aces_seq);
 
-	bytes_obj = PyBytes_FromStringAndSize((char *)buf, (Py_ssize_t)(endp - buf));
+	bytes_obj = PyBytes_FromStringAndSize((char *)buf,
+	    (Py_ssize_t)((endp - buf) * sizeof(uint32_t)));
 	PyMem_Free(buf);
 	if (bytes_obj == NULL)
 		return NULL;
@@ -529,21 +543,27 @@ PyDoc_STRVAR(NFS4ACL_acl_flags_doc,
 static PyObject *
 NFS4ACL_get_acl_flags(NFS4ACL_t *self, void *closure)
 {
+	const uint32_t *p = NULL;
+	uint32_t flags;
+	truenas_os_state_t *state = NULL;
+	PyObject *tmp = NULL;
+	PyObject *result = NULL;
+
 	if (PyBytes_GET_SIZE(self->data) < NFS4_HDR_SZ) {
 		PyErr_SetString(PyExc_ValueError, "NFS4ACL data too short");
 		return NULL;
 	}
-	const uint8_t *p = (const uint8_t *)PyBytes_AS_STRING(self->data);
-	uint32_t flags = read_be32(p);
+	p = (const uint32_t *)PyBytes_AS_STRING(self->data);
+	flags = be32toh(p[0]);
 
-	truenas_os_state_t *state = get_truenas_os_state(NULL);
+	state = get_truenas_os_state(NULL);
 	if (state == NULL)
 		return NULL;
 
-	PyObject *tmp = PyLong_FromUnsignedLong(flags);
+	tmp = PyLong_FromUnsignedLong(flags);
 	if (tmp == NULL)
 		return NULL;
-	PyObject *result = PyObject_CallOneArg(state->NFS4ACLFlag_enum, tmp);
+	result = PyObject_CallOneArg(state->NFS4ACLFlag_enum, tmp);
 	Py_DECREF(tmp);
 	return result;
 }
@@ -556,7 +576,7 @@ PyDoc_STRVAR(NFS4ACL_aces_doc,
  * Returns a new reference, or NULL with a Python exception set on failure.
  */
 static PyObject *
-nfs4ace_decode(const uint8_t *p, truenas_os_state_t *state)
+nfs4ace_decode(const uint32_t *p, truenas_os_state_t *state)
 {
 	PyObject *tmp;
 	PyObject *ace_type_o;
@@ -573,14 +593,14 @@ nfs4ace_decode(const uint8_t *p, truenas_os_state_t *state)
 	uint32_t who_type_v;
 	long who_id_v;
 
-	ace_type_v = read_be32(p +  0);
-	ace_flags_v = read_be32(p +  4);
-	iflag = read_be32(p +  8);
-	access_mask_v = read_be32(p + 12);
-	who_raw = read_be32(p + 16);
+	ace_type_v = be32toh(p[0]);
+	ace_flags_v = be32toh(p[1]);
+	iflag = be32toh(p[2]);
+	access_mask_v = be32toh(p[3]);
+	who_raw = be32toh(p[4]);
 
-	/* who_type: NFS4_WHO_NAMED if iflag==0, else 1/2/3 special */
-	who_type_v = iflag ? who_raw : NFS4_WHO_NAMED;
+	/* who_type: NFS4_ACL_WHO_NAMED if iflag==0, else 1/2/3 special */
+	who_type_v = iflag ? who_raw : NFS4_ACL_WHO_NAMED;
 	who_id_v = iflag ? -1L : (long)who_raw;
 
 #define CALL_ENUM(e, v) PyObject_CallOneArg((e), tmp = PyLong_FromUnsignedLong(v))
@@ -622,10 +642,10 @@ nfs4ace_decode(const uint8_t *p, truenas_os_state_t *state)
 static PyObject *
 NFS4ACL_get_aces(NFS4ACL_t *self, void *closure)
 {
-	const uint8_t *buf;
-	truenas_os_state_t *state;
-	PyObject *result;
-	PyObject *ace;
+	const uint32_t *buf = NULL;
+	truenas_os_state_t *state = NULL;
+	PyObject *result = NULL;
+	PyObject *ace = NULL;
 	Py_ssize_t datasz;
 	uint32_t naces;
 	uint32_t i;
@@ -636,8 +656,8 @@ NFS4ACL_get_aces(NFS4ACL_t *self, void *closure)
 		return NULL;
 	}
 
-	buf = (const uint8_t *)PyBytes_AS_STRING(self->data);
-	naces = read_be32(buf + 4);
+	buf = (const uint32_t *)PyBytes_AS_STRING(self->data);
+	naces = be32toh(buf[1]);
 
 	if ((Py_ssize_t)(NFS4_HDR_SZ + (size_t)naces * NFS4_ACE_SZ) > datasz) {
 		PyErr_SetString(PyExc_ValueError, "NFS4ACL data truncated");
@@ -653,7 +673,7 @@ NFS4ACL_get_aces(NFS4ACL_t *self, void *closure)
 		return NULL;
 
 	for (i = 0; i < naces; i++) {
-		ace = nfs4ace_decode(buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ,
+		ace = nfs4ace_decode(buf + NFS4_HDR_WORDS + (size_t)i * NFS4_ACE_WORDS,
 		                     state);
 		if (ace == NULL) {
 			Py_DECREF(result);
@@ -678,25 +698,30 @@ NFS4ACL_bytes(NFS4ACL_t *self, PyObject *Py_UNUSED(args))
 static Py_ssize_t
 NFS4ACL_len(NFS4ACL_t *self)
 {
+	const uint32_t *p = NULL;
+
 	if (PyBytes_GET_SIZE(self->data) < NFS4_HDR_SZ)
 		return 0;
-	const uint8_t *p = (const uint8_t *)PyBytes_AS_STRING(self->data);
-	return (Py_ssize_t)read_be32(p + 4);
+	p = (const uint32_t *)PyBytes_AS_STRING(self->data);
+	return (Py_ssize_t)be32toh(p[1]);
 }
 
 /* NFS4ACL.__repr__ */
 static PyObject *
 NFS4ACL_repr(NFS4ACL_t *self)
 {
-	PyObject *flags = NFS4ACL_get_acl_flags(self, NULL);
-	PyObject *aces = NFS4ACL_get_aces(self, NULL);
+	PyObject *flags;
+	PyObject *aces;
+	PyObject *result;
+
+	flags = NFS4ACL_get_acl_flags(self, NULL);
+	aces = NFS4ACL_get_aces(self, NULL);
 	if (!flags || !aces) {
 		Py_XDECREF(flags);
 		Py_XDECREF(aces);
 		return NULL;
 	}
-	PyObject *result = PyUnicode_FromFormat("NFS4ACL(flags=%R, aces=%R)",
-	                                        flags, aces);
+	result = PyUnicode_FromFormat("NFS4ACL(flags=%R, aces=%R)", flags, aces);
 	Py_DECREF(flags);
 	Py_DECREF(aces);
 	return result;
@@ -710,14 +735,14 @@ PyDoc_STRVAR(NFS4ACL_trivial_doc,
 static PyObject *
 NFS4ACL_get_trivial(NFS4ACL_t *self, void *closure)
 {
-	const uint8_t *p = NULL;
+	const uint32_t *p = NULL;
 	uint32_t flags;
 
 	if (PyBytes_GET_SIZE(self->data) < NFS4_HDR_SZ)
 		Py_RETURN_TRUE;
 
-	p = (const uint8_t *)PyBytes_AS_STRING(self->data);
-	flags = read_be32(p);
+	p = (const uint32_t *)PyBytes_AS_STRING(self->data);
+	flags = be32toh(p[0]);
 	return PyBool_FromLong((flags & NFS4_ACL_IS_TRIVIAL) != 0);
 }
 
@@ -751,8 +776,8 @@ ace_is_inheritable(uint32_t ace_flags, int is_dir)
 {
 	if (is_dir)
 		return (ace_flags &
-		    (NFS4_FILE_INHERIT_FLAG | NFS4_DIR_INHERIT_FLAG)) != 0;
-	return (ace_flags & NFS4_FILE_INHERIT_FLAG) != 0;
+		    (NFS4_ACE_FILE_INHERIT_ACE | NFS4_ACE_DIRECTORY_INHERIT_ACE)) != 0;
+	return (ace_flags & NFS4_ACE_FILE_INHERIT_ACE) != 0;
 }
 
 /*
@@ -778,10 +803,10 @@ static PyObject *
 NFS4ACL_generate_inherited_acl(NFS4ACL_t *self, PyObject *args, PyObject *kwargs)
 {
 	static char *kwlist[] = { "is_dir", NULL };
-	const uint8_t *buf = NULL;
-	const uint8_t *ace_p = NULL;
-	uint8_t *outbuf = NULL;
-	uint8_t *outp = NULL;
+	const uint32_t *buf = NULL;
+	const uint32_t *ace_p = NULL;
+	uint32_t *outbuf = NULL;
+	uint32_t *outp = NULL;
 	Py_ssize_t datasz;
 	uint32_t naces_in;
 	uint32_t naces_out;
@@ -793,7 +818,7 @@ NFS4ACL_generate_inherited_acl(NFS4ACL_t *self, PyObject *args, PyObject *kwargs
 	uint32_t who;
 	uint32_t new_flags;
 	uint32_t out_acl_flags;
-	size_t bufsz;
+	size_t nwords;
 	int is_dir;
 	PyObject *bytes_obj = NULL;
 	PyObject *result = NULL;
@@ -809,16 +834,16 @@ NFS4ACL_generate_inherited_acl(NFS4ACL_t *self, PyObject *args, PyObject *kwargs
 		return NULL;
 	}
 
-	buf = (const uint8_t *)PyBytes_AS_STRING(self->data);
-	naces_in = read_be32(buf + 4);
+	buf = (const uint32_t *)PyBytes_AS_STRING(self->data);
+	naces_in = be32toh(buf[1]);
 
 	/* First pass: count output ACEs. */
 	naces_out = 0;
 	for (i = 0; i < naces_in; i++) {
 		if (NFS4_HDR_SZ + (size_t)(i + 1) * NFS4_ACE_SZ > (size_t)datasz)
 			break;
-		ace_p = buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
-		ace_flags = read_be32(ace_p + 4);
+		ace_p = buf + NFS4_HDR_WORDS + (size_t)i * NFS4_ACE_WORDS;
+		ace_flags = be32toh(ace_p[1]);
 		if (ace_is_inheritable(ace_flags, is_dir))
 			naces_out++;
 	}
@@ -829,53 +854,54 @@ NFS4ACL_generate_inherited_acl(NFS4ACL_t *self, PyObject *args, PyObject *kwargs
 		return NULL;
 	}
 
-	bufsz = NFS4_HDR_SZ + (size_t)naces_out * NFS4_ACE_SZ;
-	outbuf = (uint8_t *)PyMem_Malloc(bufsz);
+	nwords = NFS4_HDR_WORDS + (size_t)naces_out * NFS4_ACE_WORDS;
+	outbuf = (uint32_t *)PyMem_Malloc(nwords * sizeof(uint32_t));
 	if (outbuf == NULL)
 		return PyErr_NoMemory();
 
 	out_acl_flags = is_dir ? NFS4_ACL_IS_DIR : 0;
-	write_be32(outbuf + 0, out_acl_flags);
-	write_be32(outbuf + 4, naces_out);
+	outbuf[0] = htobe32(out_acl_flags);
+	outbuf[1] = htobe32(naces_out);
 
 	/* Second pass: write inherited ACEs. */
-	outp = outbuf + NFS4_HDR_SZ;
+	outp = outbuf + NFS4_HDR_WORDS;
 	for (i = 0; i < naces_in; i++) {
 		if (NFS4_HDR_SZ + (size_t)(i + 1) * NFS4_ACE_SZ > (size_t)datasz)
 			break;
-		ace_p = buf + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
-		ace_type = read_be32(ace_p +  0);
-		ace_flags = read_be32(ace_p +  4);
-		ace_iflag = read_be32(ace_p +  8);
-		access_mask = read_be32(ace_p + 12);
-		who = read_be32(ace_p + 16);
+		ace_p = buf + NFS4_HDR_WORDS + (size_t)i * NFS4_ACE_WORDS;
+		ace_type = be32toh(ace_p[0]);
+		ace_flags = be32toh(ace_p[1]);
+		ace_iflag = be32toh(ace_p[2]);
+		access_mask = be32toh(ace_p[3]);
+		who = be32toh(ace_p[4]);
 
 		if (!ace_is_inheritable(ace_flags, is_dir))
 			continue;
 
-		if (is_dir && !(ace_flags & NFS4_NO_PROPAGATE_FLAG)) {
+		if (is_dir && !(ace_flags & NFS4_ACE_NO_PROPAGATE_INHERIT_ACE)) {
 			/*
 			 * Directory child, propagation not suppressed:
 			 * keep FILE/DIR_INHERIT for further propagation,
 			 * clear INHERIT_ONLY so the ACE applies to this dir.
 			 */
-			new_flags = (ace_flags & ~NFS4_INHERIT_ONLY_FLAG)
-			          | NFS4_INHERITED_FLAG;
+			new_flags = (ace_flags & ~NFS4_ACE_INHERIT_ONLY_ACE)
+			          | NFS4_ACE_INHERITED_ACE;
 		} else {
 			/*
 			 * File child, or directory with NO_PROPAGATE:
 			 * strip all inheritance flags.
 			 */
 			new_flags = (ace_flags & ~NFS4_ACE_INHERIT_MASK)
-			          | NFS4_INHERITED_FLAG;
+			          | NFS4_ACE_INHERITED_ACE;
 		}
 
 		nfs4ace_write_raw(outp, ace_type, new_flags,
 		                  ace_iflag, access_mask, who);
-		outp += NFS4_ACE_SZ;
+		outp += NFS4_ACE_WORDS;
 	}
 
-	bytes_obj = PyBytes_FromStringAndSize((char *)outbuf, (Py_ssize_t)bufsz);
+	bytes_obj = PyBytes_FromStringAndSize((char *)outbuf,
+	    (Py_ssize_t)(nwords * sizeof(uint32_t)));
 	PyMem_Free(outbuf);
 	if (bytes_obj == NULL)
 		return NULL;
@@ -951,21 +977,19 @@ NFS4ACL_get_xattr_bytes(PyObject *acl)
  *
  * NB: FILE_INHERIT and DIR_INHERIT are bits inside NFS4_PROPAGATE_MASK,
  * so has_inheritable=1 always implies has_propagate=1.
- * NFS4_FILE_INHERIT_FLAG and NFS4_DIR_INHERIT_FLAG are defined at the top.
  */
 #define NFS4_PROPAGATE_MASK \
-	(NFS4_FILE_INHERIT_FLAG | NFS4_DIR_INHERIT_FLAG | \
-	 NFS4_NO_PROPAGATE_FLAG | NFS4_INHERIT_ONLY_FLAG)
+	(NFS4_ACE_FILE_INHERIT_ACE | NFS4_ACE_DIRECTORY_INHERIT_ACE | \
+	 NFS4_ACE_NO_PROPAGATE_INHERIT_ACE | NFS4_ACE_INHERIT_ONLY_ACE)
 
-#define NFS4_ACE_TYPE_DENY   1U   /* ace_type value for DENY */
 #define NFS4_IFLAG_SPECIAL   1U   /* iflag=1: special who (OWNER/GROUP/EVERYONE) */
 
 int
 nfs4acl_valid(int fd, const char *data, size_t len)
 {
 	struct stat st;
-	const uint8_t *p = NULL;
-	const uint8_t *ace_p = NULL;
+	const uint32_t *p = NULL;
+	const uint32_t *ace_p = NULL;
 	uint32_t naces;
 	uint32_t i;
 	uint32_t ace_type;
@@ -978,8 +1002,8 @@ nfs4acl_valid(int fd, const char *data, size_t len)
 	if (len < NFS4_HDR_SZ)
 		return 0;
 
-	p = (const uint8_t *)data;
-	naces = read_be32(p + 4);
+	p = (const uint32_t *)data;
+	naces = be32toh(p[1]);
 	has_propagate = 0;
 	has_inheritable = 0;
 
@@ -987,13 +1011,13 @@ nfs4acl_valid(int fd, const char *data, size_t len)
 		if (NFS4_HDR_SZ + (size_t)(i + 1) * NFS4_ACE_SZ > len)
 			break;
 
-		ace_p = p + NFS4_HDR_SZ + (size_t)i * NFS4_ACE_SZ;
-		ace_type = read_be32(ace_p + 0);
-		ace_flags = read_be32(ace_p + 4);
-		ace_iflag = read_be32(ace_p + 8);
+		ace_p = p + NFS4_HDR_WORDS + (size_t)i * NFS4_ACE_WORDS;
+		ace_type = be32toh(ace_p[0]);
+		ace_flags = be32toh(ace_p[1]);
+		ace_iflag = be32toh(ace_p[2]);
 
 		/* DENY is not permitted for special principals. */
-		if (ace_type == NFS4_ACE_TYPE_DENY && ace_iflag == NFS4_IFLAG_SPECIAL) {
+		if (ace_type == NFS4_ACE_ACCESS_DENIED_ACE_TYPE && ace_iflag == NFS4_IFLAG_SPECIAL) {
 			PyErr_SetString(PyExc_ValueError,
 			    "DENY entries are not permitted for special "
 			    "principals (OWNER@, GROUP@, EVERYONE@)");
@@ -1001,8 +1025,8 @@ nfs4acl_valid(int fd, const char *data, size_t len)
 		}
 
 		/* INHERIT_ONLY requires FILE_INHERIT or DIRECTORY_INHERIT. */
-		if ((ace_flags & NFS4_INHERIT_ONLY_FLAG) &&
-		    !(ace_flags & (NFS4_FILE_INHERIT_FLAG | NFS4_DIR_INHERIT_FLAG))) {
+		if ((ace_flags & NFS4_ACE_INHERIT_ONLY_ACE) &&
+		    !(ace_flags & (NFS4_ACE_FILE_INHERIT_ACE | NFS4_ACE_DIRECTORY_INHERIT_ACE))) {
 			PyErr_SetString(PyExc_ValueError,
 			    "INHERIT_ONLY requires FILE_INHERIT or "
 			    "DIRECTORY_INHERIT to also be set");
@@ -1011,7 +1035,7 @@ nfs4acl_valid(int fd, const char *data, size_t len)
 
 		if (ace_flags & NFS4_PROPAGATE_MASK)
 			has_propagate = 1;
-		if (ace_flags & (NFS4_FILE_INHERIT_FLAG | NFS4_DIR_INHERIT_FLAG))
+		if (ace_flags & (NFS4_ACE_FILE_INHERIT_ACE | NFS4_ACE_DIRECTORY_INHERIT_ACE))
 			has_inheritable = 1;
 	}
 
