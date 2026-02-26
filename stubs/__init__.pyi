@@ -1,10 +1,11 @@
 """Type stubs for truenas_os module.
 
 This module provides Python bindings to Linux kernel system calls for
-advanced filesystem and mount operations.
+advanced filesystem and mount operations, plus ACL support.
 """
 
-from typing import Any, Callable, Iterator, NamedTuple
+from typing import Any, Callable, Iterable, Iterator, NamedTuple
+from enum import IntEnum, IntFlag
 
 # StatxResult type - PyStructSequence from statx(2)
 class StatxResult(NamedTuple):
@@ -773,4 +774,196 @@ def iter_filesystem_contents(
         - When restoring from dir_stack, directories are not re-yielded, but files
           within the restored directory may be re-yielded (DIR* streams cannot seek)
     """
+    ...
+
+# ── NFS4 enums ────────────────────────────────────────────────────────────────
+
+class NFS4AceType(IntEnum):
+    ALLOW: int
+    DENY: int
+    AUDIT: int
+    ALARM: int
+
+class NFS4Who(IntEnum):
+    """Maps to the (iflag, who) pair in the XDR encoding."""
+    NAMED: int     # iflag=0, who=uid/gid
+    OWNER: int     # iflag=1, ACE4_SPECIAL_OWNER
+    GROUP: int     # iflag=1, ACE4_SPECIAL_GROUP
+    EVERYONE: int  # iflag=1, ACE4_SPECIAL_EVERYONE
+
+class NFS4Perm(IntFlag):
+    READ_DATA: int
+    WRITE_DATA: int
+    APPEND_DATA: int
+    READ_NAMED_ATTRS: int
+    WRITE_NAMED_ATTRS: int
+    EXECUTE: int
+    DELETE_CHILD: int
+    READ_ATTRIBUTES: int
+    WRITE_ATTRIBUTES: int
+    DELETE: int
+    READ_ACL: int
+    WRITE_ACL: int
+    WRITE_OWNER: int
+    SYNCHRONIZE: int
+
+class NFS4Flag(IntFlag):
+    FILE_INHERIT: int
+    DIRECTORY_INHERIT: int
+    NO_PROPAGATE_INHERIT: int
+    INHERIT_ONLY: int
+    SUCCESSFUL_ACCESS: int
+    FAILED_ACCESS: int
+    IDENTIFIER_GROUP: int
+    INHERITED: int
+
+class NFS4ACLFlag(IntFlag):
+    AUTO_INHERIT: int
+    PROTECTED: int
+    DEFAULTED: int
+
+# ── POSIX enums ───────────────────────────────────────────────────────────────
+
+class POSIXTag(IntEnum):
+    USER_OBJ: int
+    USER: int
+    GROUP_OBJ: int
+    GROUP: int
+    MASK: int
+    OTHER: int
+
+class POSIXPerm(IntFlag):
+    EXECUTE: int
+    WRITE: int
+    READ: int
+
+# ── ACE types ─────────────────────────────────────────────────────────────────
+
+class NFS4Ace:
+    """NFS4 Access Control Entry.
+
+    Fields: ace_type (NFS4AceType), ace_flags (NFS4Flag),
+    access_mask (NFS4Perm), who_type (NFS4Who), who_id (int).
+    who_id is the uid/gid for NAMED entries; -1 for special.
+    """
+    def __init__(
+        self,
+        ace_type: NFS4AceType,
+        ace_flags: NFS4Flag,
+        access_mask: NFS4Perm,
+        who_type: NFS4Who,
+        who_id: int = -1,
+    ) -> None: ...
+    @property
+    def ace_type(self) -> NFS4AceType: ...
+    @property
+    def ace_flags(self) -> NFS4Flag: ...
+    @property
+    def access_mask(self) -> NFS4Perm: ...
+    @property
+    def who_type(self) -> NFS4Who: ...
+    @property
+    def who_id(self) -> int: ...
+    def __repr__(self) -> str: ...
+
+class POSIXAce:
+    """POSIX ACL entry.
+
+    Fields: tag (POSIXTag), perms (POSIXPerm), id (int), default (bool).
+    id is the uid/gid for USER/GROUP; -1 for special entries.
+    default=True marks entries in the default ACL.
+    """
+    def __init__(
+        self,
+        tag: POSIXTag,
+        perms: POSIXPerm,
+        id: int = -1,
+        default: bool = False,
+    ) -> None: ...
+    @property
+    def tag(self) -> POSIXTag: ...
+    @property
+    def perms(self) -> POSIXPerm: ...
+    @property
+    def id(self) -> int: ...
+    @property
+    def default(self) -> bool: ...
+    def __repr__(self) -> str: ...
+
+# ── ACL types ─────────────────────────────────────────────────────────────────
+
+class NFS4ACL:
+    """NFS4 ACL wrapper (system.nfs4_acl_xdr).
+
+    Constructed from raw big-endian XDR bytes or via from_aces().
+    """
+    def __init__(self, data: bytes) -> None: ...
+    @classmethod
+    def from_aces(
+        cls,
+        aces: Iterable[NFS4Ace],
+        acl_flags: NFS4ACLFlag = ...,
+    ) -> NFS4ACL: ...
+    @property
+    def acl_flags(self) -> NFS4ACLFlag: ...
+    @property
+    def aces(self) -> list[NFS4Ace]: ...
+    @property
+    def trivial(self) -> bool: ...
+    def generate_inherited_acl(self, is_dir: bool = False) -> NFS4ACL: ...
+    def __bytes__(self) -> bytes: ...
+    def __len__(self) -> int: ...
+    def __repr__(self) -> str: ...
+
+class POSIXACL:
+    """POSIX1E ACL wrapper.
+
+    Constructed from raw little-endian xattr bytes or via from_aces().
+    """
+    def __init__(
+        self,
+        access_data: bytes,
+        default_data: bytes | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_aces(cls, aces: Iterable[POSIXAce]) -> POSIXACL: ...
+    @property
+    def aces(self) -> list[POSIXAce]: ...
+    @property
+    def default_aces(self) -> list[POSIXAce]: ...
+    @property
+    def trivial(self) -> bool: ...
+    def generate_inherited_acl(self, is_dir: bool = True) -> POSIXACL: ...
+    def access_bytes(self) -> bytes: ...
+    def default_bytes(self) -> bytes | None: ...
+    def __repr__(self) -> str: ...
+
+# ── ACL functions ─────────────────────────────────────────────────────────────
+
+def fgetacl(fd: int) -> NFS4ACL | POSIXACL:
+    """Get the ACL on an open file descriptor.
+
+    Returns NFS4ACL for NFS4/ZFS filesystems, POSIXACL for POSIX1E.
+    Raises OSError(EOPNOTSUPP) if ACLs are disabled on the filesystem.
+    """
+    ...
+
+def fsetacl(fd: int, acl: NFS4ACL | POSIXACL) -> None:
+    """Set the ACL on an open file descriptor.
+
+    acl must match the ACL type supported by the filesystem.
+    Raises OSError on failure, TypeError if acl is not NFS4ACL or POSIXACL.
+    """
+    ...
+
+def fsetacl_nfs4(fd: int, data: bytes) -> None:
+    """Set system.nfs4_acl_xdr from raw XDR bytes.  Low-level interface."""
+    ...
+
+def fsetacl_posix(
+    fd: int,
+    access_bytes: bytes,
+    default_bytes: bytes | None,
+) -> None:
+    """Set POSIX ACL xattrs from raw bytes.  Low-level interface."""
     ...
