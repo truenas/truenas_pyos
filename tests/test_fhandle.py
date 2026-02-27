@@ -173,18 +173,21 @@ def test_flag_constants_exist():
     assert hasattr(truenas_os, 'FH_AT_EMPTY_PATH')
     assert hasattr(truenas_os, 'FH_AT_HANDLE_FID')
     assert hasattr(truenas_os, 'FH_AT_HANDLE_CONNECTABLE')
+    assert hasattr(truenas_os, 'FH_AT_HANDLE_MNT_ID_UNIQUE')
 
     # Check they are integers
     assert isinstance(truenas_os.FH_AT_SYMLINK_FOLLOW, int)
     assert isinstance(truenas_os.FH_AT_EMPTY_PATH, int)
     assert isinstance(truenas_os.FH_AT_HANDLE_FID, int)
     assert isinstance(truenas_os.FH_AT_HANDLE_CONNECTABLE, int)
+    assert isinstance(truenas_os.FH_AT_HANDLE_MNT_ID_UNIQUE, int)
 
     # Check expected values
     assert truenas_os.FH_AT_SYMLINK_FOLLOW == 0x400
     assert truenas_os.FH_AT_EMPTY_PATH == 0x1000
     assert truenas_os.FH_AT_HANDLE_FID == 0x200
     assert truenas_os.FH_AT_HANDLE_CONNECTABLE == 0x002
+    assert truenas_os.FH_AT_HANDLE_MNT_ID_UNIQUE == 0x001
 
 
 def test_multiple_fhandles_same_path():

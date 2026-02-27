@@ -81,8 +81,25 @@ def _name_of_gid(gid, numeric):
 
 def _get_fhandle_hex(fd):
     try:
-        fh = t.fhandle(path='', dir_fd=fd, flags=t.FH_AT_EMPTY_PATH)
-        return bytes(fh).hex()
+        # Primary: unique mount ID (kernel 6.5+) + connectable handle.
+        # The unique ID makes the mount_id directly usable with statmount(2),
+        # avoiding /proc/self/mountinfo parsing when restoring via --fhandle.
+        try:
+            fh = t.fhandle(path='', dir_fd=fd,
+                           flags=t.FH_AT_EMPTY_PATH
+                                 | t.FH_AT_HANDLE_MNT_ID_UNIQUE
+                                 | t.FH_AT_HANDLE_CONNECTABLE)
+        except (OSError, NotImplementedError):
+            # FH_AT_HANDLE_CONNECTABLE not supported on this fs/kernel.
+            try:
+                fh = t.fhandle(path='', dir_fd=fd,
+                               flags=t.FH_AT_EMPTY_PATH
+                                     | t.FH_AT_HANDLE_MNT_ID_UNIQUE)
+            except (OSError, NotImplementedError):
+                # Fallback for kernels < 6.5 (e.g. GitHub Actions runners):
+                # use legacy mount ID without unique flag.
+                fh = t.fhandle(path='', dir_fd=fd, flags=t.FH_AT_EMPTY_PATH)
+        return f'{fh.mount_id}:{bytes(fh).hex()}'
     except (OSError, NotImplementedError):
         return None
 

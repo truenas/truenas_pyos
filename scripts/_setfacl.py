@@ -364,6 +364,20 @@ def _apply_nfs4_modify(acl, new_aces):
     return t.NFS4ACL.from_aces(aces, acl.acl_flags)
 
 
+def _apply_nfs4_insert(acl, position, new_aces):
+    """Insert new_aces at position (0-based, clamped to [0, len]) into acl.
+
+    NFS4ACL.from_aces applies Windows-compatible canonical ordering
+    (explicit DENY → explicit ALLOW → inherited DENY → inherited ALLOW,
+    stable within each bucket), so the final ACE position is best-effort.
+    """
+    aces = list(acl.aces)
+    position = max(0, min(position, len(aces)))
+    for i, ace in enumerate(new_aces):
+        aces.insert(position + i, ace)
+    return t.NFS4ACL.from_aces(aces, acl.acl_flags)
+
+
 def _apply_nfs4_remove(acl, remove_specs):
     aces = []
     for ace in acl.aces:
@@ -487,16 +501,20 @@ def _remove_posix_default(acl):
 
 
 def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
-                   acl_file_entries, no_mask, default_only):
+                   acl_file_entries, no_mask, default_only, insert_entries=()):
     """Apply operations to fd.  Returns the resulting ACL."""
     acl = t.fgetacl(fd)
     is_posix = isinstance(acl, t.POSIXACL)
+
+    if insert_entries and is_posix:
+        raise ValueError('-a (insert) is not supported on POSIX filesystems')
 
     changed = (strip
                or (remove_default and is_posix)
                or bool(remove_entries)
                or bool(modify_entries)
-               or acl_file_entries is not None)
+               or acl_file_entries is not None
+               or bool(insert_entries))
 
     # A trivial POSIX ACL has no xattr — permissions live in the mode bits
     # only and acl.aces is empty.  Incremental operations (modify/remove)
@@ -593,6 +611,15 @@ def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
                     list(acl.aces) + list(acl.default_aces))
                 acl = t.POSIXACL.from_aces(all_aces)
 
+    if insert_entries:
+        # is_posix was already rejected above; this is NFSv4-only.
+        for pos, entries in insert_entries:
+            aces = [_parse_nfs4_ace(e) for e in entries]
+            # pos=None means append to tail (after all existing ACEs).
+            if pos is None:
+                pos = len(list(acl.aces))
+            acl = _apply_nfs4_insert(acl, pos, aces)
+
     if acl_file_entries is not None:
         if not is_posix:
             aces = [_parse_nfs4_ace(e) for e in acl_file_entries]
@@ -667,6 +694,63 @@ def _get_mount_info(path):
     return mountpoint, fs_name, rel_path
 
 
+# ── fhandle open ─────────────────────────────────────────────────────────────
+
+def _mountpoint_from_legacy_id(mount_id):
+    """Return the mount point for a legacy mount ID from /proc/self/mountinfo.
+
+    Fallback for kernels < 6.5 where AT_HANDLE_MNT_ID_UNIQUE is unavailable.
+    Parsing /proc/self/mountinfo maps the legacy 32-bit mount ID → mount point.
+    """
+    with open('/proc/self/mountinfo') as f:
+        for line in f:
+            fields = line.split()
+            if fields and int(fields[0]) == mount_id:
+                return fields[4]
+    raise OSError(f'mount ID {mount_id} not found in /proc/self/mountinfo')
+
+
+def _open_by_fhandle(fhandle_str):
+    """Open a file by its fhandle string (format returned by truenas_getfacl).
+
+    The format is ``{mount_id}:{hex}`` where hex is the serialised
+    struct file_handle (as returned by ``bytes(fhandle_obj).hex()``).
+    Returns an open O_RDONLY file descriptor; caller must close it.
+
+    When mount_id is a unique mount ID (obtained via AT_HANDLE_MNT_ID_UNIQUE,
+    which is the default on kernel 6.5+), statmount(2) is used directly.
+    Falls back to /proc/self/mountinfo parsing for legacy mount IDs.
+    """
+    try:
+        colon = fhandle_str.index(':')
+        mount_id = int(fhandle_str[:colon])
+        handle_bytes = bytes.fromhex(fhandle_str[colon + 1:])
+    except (ValueError, IndexError):
+        raise ValueError(
+            f'invalid fhandle format (expected mount_id:hex): {fhandle_str!r}'
+        )
+
+    # Try statmount first: works when mount_id is the unique mount ID
+    # (from AT_HANDLE_MNT_ID_UNIQUE, available since kernel 6.5).
+    # Fall back to /proc/self/mountinfo for legacy mount IDs.
+    unique_mount_id = False
+    try:
+        sm = t.statmount(mount_id, mask=t.STATMOUNT_MNT_POINT)
+        mountpoint = sm.mnt_point
+        unique_mount_id = True
+    except OSError:
+        mountpoint = _mountpoint_from_legacy_id(mount_id)
+
+    fh = t.fhandle(handle_bytes=handle_bytes, mount_id=mount_id,
+                   unique_mount_id=unique_mount_id)
+    mount_fd = t.openat2(mountpoint, flags=os.O_RDONLY,
+                         resolve=t.RESOLVE_NO_SYMLINKS)
+    try:
+        return fh.open(mount_fd, os.O_RDONLY)
+    finally:
+        os.close(mount_fd)
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -698,15 +782,24 @@ def main():
     ap.add_argument('-f', dest='acl_file', default=None, metavar='file',
                     help='Replace entire ACL from file (- for stdin); '
                          'applied last')
+    ap.add_argument('-a', dest='insert', action='append', nargs=2,
+                    default=[], metavar=('position', 'entries'),
+                    help='Insert NFSv4 ACL entries at position (0-based); '
+                         'use "end" as position to append to the tail; '
+                         'error on POSIX; may be repeated; applied after -m')
     ap.add_argument('-n', '--no-mask', action='store_true',
                     help='Do not recalculate POSIX mask after -m')
     ap.add_argument('--restore', metavar='file',
                     help='Restore ACLs from a getfacl backup file '
                          '(- for stdin); paths are taken from the backup')
+    ap.add_argument('--fhandle', dest='fhandles', action='append', default=[],
+                    metavar='mount_id:hex',
+                    help='Target file by fhandle (format returned by '
+                         'truenas_getfacl); may be repeated')
     ap.add_argument('path', nargs='*')
     args = ap.parse_args()
 
-    if not args.restore and not args.path:
+    if not args.restore and not args.path and not args.fhandles:
         ap.error('path arguments are required when not using --restore')
 
     rc = 0
@@ -737,6 +830,19 @@ def main():
 
     remove_entries = _split_entries(','.join(args.remove))
     modify_entries = _split_entries(','.join(args.modify))
+    insert_entries = []
+    for pos_str, entries_str in args.insert:
+        if pos_str.lower() in ('end', 'tail', '$'):
+            pos = None  # append to tail; resolved to len(aces) at apply time
+        else:
+            try:
+                pos = int(pos_str)
+            except ValueError:
+                ap.error(
+                    f'-a: invalid position {pos_str!r}; '
+                    f'expected a non-negative integer or "end"'
+                )
+        insert_entries.append((pos, _split_entries(entries_str)))
 
     acl_file_entries = None
     if args.acl_file:
@@ -756,7 +862,7 @@ def main():
             root_acl = _do_setfacl_fd(fd, args.strip, args.remove_default,
                                       remove_entries, modify_entries,
                                       acl_file_entries, args.no_mask,
-                                      args.default_only)
+                                      args.default_only, insert_entries)
         except (OSError, ValueError) as e:
             print(f'truenas_setfacl: {path}: {e}', file=sys.stderr)
             rc = 1
@@ -794,7 +900,63 @@ def main():
                         _do_setfacl_fd(item.fd, args.strip, args.remove_default,
                                        remove_entries, modify_entries,
                                        acl_file_entries, args.no_mask,
-                                       args.default_only)
+                                       args.default_only, insert_entries)
+                except (OSError, ValueError) as e:
+                    print(f'truenas_setfacl: {full_path}: {e}',
+                          file=sys.stderr)
+                    rc = 1
+                finally:
+                    os.close(item.fd)
+
+    for fhandle_str in args.fhandles:
+        fd = None
+        root_acl = None
+        resolved = f'fhandle:{fhandle_str}'
+        try:
+            fd = _open_by_fhandle(fhandle_str)
+            resolved = os.readlink(f'/proc/self/fd/{fd}')
+            root_acl = _do_setfacl_fd(fd, args.strip, args.remove_default,
+                                      remove_entries, modify_entries,
+                                      acl_file_entries, args.no_mask,
+                                      args.default_only, insert_entries)
+        except (OSError, ValueError) as e:
+            print(f'truenas_setfacl: {resolved}: {e}', file=sys.stderr)
+            rc = 1
+        finally:
+            if fd is not None:
+                os.close(fd)
+
+        if not args.recursive or not os.path.isdir(resolved) \
+                or root_acl is None:
+            continue
+
+        try:
+            mountpoint, fs_name, rel_path = _get_mount_info(resolved)
+        except OSError as e:
+            print(f'truenas_setfacl: {resolved}: {e}', file=sys.stderr)
+            rc = 1
+            continue
+
+        nfs4_inh = None
+        if isinstance(root_acl, t.NFS4ACL):
+            nfs4_inh = _NFS4InheritedAcls.from_root(root_acl)
+
+        with t.iter_filesystem_contents(mountpoint, fs_name,
+                                        relative_path=rel_path) as it:
+            for item in it:
+                full_path = os.path.join(item.parent, item.name)
+                if item.islnk:
+                    os.close(item.fd)
+                    continue
+                try:
+                    if nfs4_inh is not None:
+                        acl = nfs4_inh.pick(len(it.dir_stack()), item.isdir)
+                        t.fsetacl(item.fd, acl)
+                    else:
+                        _do_setfacl_fd(item.fd, args.strip, args.remove_default,
+                                       remove_entries, modify_entries,
+                                       acl_file_entries, args.no_mask,
+                                       args.default_only, insert_entries)
                 except (OSError, ValueError) as e:
                     print(f'truenas_setfacl: {full_path}: {e}',
                           file=sys.stderr)

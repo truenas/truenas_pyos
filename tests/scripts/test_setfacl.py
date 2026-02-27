@@ -8,6 +8,7 @@ filesystem.  Live tests use the nfs4_dataset / posix_dataset fixtures from
 the parent conftest.
 """
 
+import errno
 import os
 
 import pytest
@@ -26,6 +27,7 @@ from _truenas_os_scripts._setfacl import (
     _mode_to_posix_perm,
     _make_trivial_nfs4,
     _make_trivial_posix,
+    _apply_nfs4_insert,
     _apply_nfs4_modify,
     _apply_nfs4_remove,
     _recalc_posix_mask,
@@ -34,6 +36,7 @@ from _truenas_os_scripts._setfacl import (
     _remove_posix_default,
     _parse_restore_file,
     _do_setfacl_fd,
+    _open_by_fhandle,
 )
 
 
@@ -693,7 +696,7 @@ def _do(fd, **kw):
     """Call _do_setfacl_fd with safe defaults for unspecified params."""
     defaults = dict(strip=False, remove_default=False, remove_entries=[],
                     modify_entries=[], acl_file_entries=None,
-                    no_mask=False, default_only=False)
+                    no_mask=False, default_only=False, insert_entries=[])
     defaults.update(kw)
     return _do_setfacl_fd(fd, **defaults)
 
@@ -797,3 +800,211 @@ def test_do_setfacl_fd_add_then_remove_named_user_nfs4(nfs4_dataset):
                        for a in t.fgetacl(fd).aces)
     finally:
         os.close(fd)
+
+
+# ── _apply_nfs4_insert (pure-Python) ─────────────────────────────────────────
+
+def _trivial_nfs4_acl():
+    return _make_trivial_nfs4(0o755)
+
+
+def test_apply_nfs4_insert_appends_when_position_at_end():
+    acl = _trivial_nfs4_acl()
+    uid = os.getuid()
+    new_ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
+                        t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, uid)
+    result = _apply_nfs4_insert(acl, len(acl.aces), [new_ace])
+    named = [a for a in result.aces
+             if a.who_type == t.NFS4Who.NAMED and a.who_id == uid]
+    assert len(named) == 1
+
+
+def test_apply_nfs4_insert_at_position_zero():
+    acl = _trivial_nfs4_acl()
+    uid = os.getuid()
+    new_ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
+                        t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, uid)
+    result = _apply_nfs4_insert(acl, 0, [new_ace])
+    assert any(a.who_type == t.NFS4Who.NAMED and a.who_id == uid
+               for a in result.aces)
+
+
+def test_apply_nfs4_insert_position_clamped_above_len():
+    acl = _trivial_nfs4_acl()
+    uid = os.getuid()
+    new_ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
+                        t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, uid)
+    # position >> len(acl.aces) should not raise
+    result = _apply_nfs4_insert(acl, 9999, [new_ace])
+    assert any(a.who_type == t.NFS4Who.NAMED and a.who_id == uid
+               for a in result.aces)
+
+
+def test_apply_nfs4_insert_deny_before_allow_after_canonicalization():
+    """A DENY inserted at pos 99 ends up before an ALLOW — canonical order."""
+    acl = _trivial_nfs4_acl()
+    uid = os.getuid()
+    allow_ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
+                          t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, uid)
+    deny_ace  = t.NFS4Ace(t.NFS4AceType.DENY,  t.NFS4Flag(0),
+                          t.NFS4Perm.WRITE_DATA, t.NFS4Who.NAMED, uid)
+    # Insert ALLOW first, then DENY at end — after sort DENY must precede ALLOW
+    result = _apply_nfs4_insert(acl, 0, [allow_ace])
+    result = _apply_nfs4_insert(result, len(result.aces), [deny_ace])
+    named = [a for a in result.aces if a.who_type == t.NFS4Who.NAMED
+             and a.who_id == uid]
+    types = [a.ace_type for a in named]
+    assert types.index(t.NFS4AceType.DENY) < types.index(t.NFS4AceType.ALLOW)
+
+
+def test_apply_nfs4_insert_multiple_aces_at_once():
+    acl = _trivial_nfs4_acl()
+    uid = os.getuid()
+    gid = os.getgid()
+    aces = [
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
+                  t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, uid),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.IDENTIFIER_GROUP,
+                  t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, gid),
+    ]
+    result = _apply_nfs4_insert(acl, 0, aces)
+    named = [a for a in result.aces if a.who_type == t.NFS4Who.NAMED]
+    ids = {a.who_id for a in named}
+    assert uid in ids and gid in ids
+
+
+# ── -a live tests ─────────────────────────────────────────────────────────────
+
+def test_do_setfacl_fd_insert_nfs4(nfs4_dataset):
+    fd  = _open_file(nfs4_dataset, 'setfacl_insert_nfs4')
+    uid = os.getuid()
+    try:
+        _do(fd, insert_entries=[(0, [f'user:{uid}:r--------------:--------:allow'])])
+        result = t.fgetacl(fd)
+        assert any(a.who_type == t.NFS4Who.NAMED and a.who_id == uid
+                   for a in result.aces)
+    finally:
+        os.close(fd)
+
+
+def test_do_setfacl_fd_insert_error_on_posix(posix_dataset):
+    """-a on a POSIX filesystem raises ValueError."""
+    fd = _open_file(posix_dataset, 'setfacl_insert_posix_error')
+    uid = os.getuid()
+    try:
+        with pytest.raises(ValueError, match='not supported on POSIX'):
+            _do(fd, insert_entries=[(0, [f'user:{uid}:r--------------:--------:allow'])])
+    finally:
+        os.close(fd)
+
+
+def test_do_setfacl_fd_insert_append_to_end(nfs4_dataset):
+    """-a with pos=None appends to the tail of the ACL."""
+    fd = _open_file(nfs4_dataset, 'setfacl_insert_tail_nfs4')
+    uid = os.getuid()
+    try:
+        # Get original ACE count, then append one more.
+        original_count = len(t.fgetacl(fd).aces)
+        _do(fd, insert_entries=[(None, [f'user:{uid}:r--------------:--------:allow'])])
+        result = t.fgetacl(fd)
+        assert any(a.who_type == t.NFS4Who.NAMED and a.who_id == uid
+                   for a in result.aces)
+        assert len(result.aces) == original_count + 1
+    finally:
+        os.close(fd)
+
+
+def test_do_setfacl_fd_insert_after_modify(nfs4_dataset):
+    """-a is applied after -m; both entries appear in final ACL."""
+    fd  = _open_file(nfs4_dataset, 'setfacl_insert_after_modify_nfs4')
+    uid = os.getuid()
+    gid = os.getgid()
+    try:
+        _do(fd,
+            modify_entries=[f'user:{uid}:r--------------:--------:allow'],
+            insert_entries=[(0, [f'group:{gid}:r--------------:--------:allow'])])
+        result = t.fgetacl(fd)
+        named = {a.who_id for a in result.aces if a.who_type == t.NFS4Who.NAMED}
+        assert uid in named and gid in named
+    finally:
+        os.close(fd)
+
+
+# ── --fhandle live tests ──────────────────────────────────────────────────────
+
+def _get_fhandle_str(fd):
+    """Return the fhandle string for an open fd, matching truenas_getfacl output."""
+    try:
+        fh = t.fhandle(path='', dir_fd=fd,
+                       flags=t.FH_AT_EMPTY_PATH
+                             | t.FH_AT_HANDLE_MNT_ID_UNIQUE
+                             | t.FH_AT_HANDLE_CONNECTABLE)
+    except (OSError, NotImplementedError):
+        try:
+            fh = t.fhandle(path='', dir_fd=fd,
+                           flags=t.FH_AT_EMPTY_PATH | t.FH_AT_HANDLE_MNT_ID_UNIQUE)
+        except (OSError, NotImplementedError):
+            fh = t.fhandle(path='', dir_fd=fd, flags=t.FH_AT_EMPTY_PATH)
+    return f'{fh.mount_id}:{bytes(fh).hex()}'
+
+
+def _open_by_fhandle_or_skip(fhandle_str):
+    """Call _open_by_fhandle; skip the test if open_by_handle_at is unavailable."""
+    try:
+        return _open_by_fhandle(fhandle_str)
+    except OSError as e:
+        if e.errno == errno.ENOSYS:
+            pytest.skip('open_by_handle_at not supported on this system')
+        raise
+
+
+def test_setfacl_fhandle_nfs4(nfs4_dataset):
+    """Set ACL via fhandle on an NFSv4 file."""
+    path = os.path.join(nfs4_dataset, 'fh_nfs4_test')
+    open(path, 'w').close()
+    uid = os.getuid()
+
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        fhandle_str = _get_fhandle_str(fd)
+    finally:
+        os.close(fd)
+
+    fd2 = _open_by_fhandle_or_skip(fhandle_str)
+    try:
+        _do(fd2, modify_entries=[f'user:{uid}:r--------------:--------:allow'])
+        result = t.fgetacl(fd2)
+        assert any(a.who_type == t.NFS4Who.NAMED and a.who_id == uid
+                   for a in result.aces)
+    finally:
+        os.close(fd2)
+
+
+def test_setfacl_fhandle_posix(posix_dataset):
+    """Set ACL via fhandle on a POSIX file."""
+    path = os.path.join(posix_dataset, 'fh_posix_test')
+    open(path, 'w').close()
+    uid = os.getuid()
+
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        fhandle_str = _get_fhandle_str(fd)
+    finally:
+        os.close(fd)
+
+    fd2 = _open_by_fhandle_or_skip(fhandle_str)
+    try:
+        _do(fd2, modify_entries=[f'user:{uid}:r--'])
+        result = t.fgetacl(fd2)
+        named = [a for a in result.aces
+                 if a.tag == t.POSIXTag.USER and a.id == uid]
+        assert len(named) == 1
+        assert named[0].perms == t.POSIXPerm.READ
+    finally:
+        os.close(fd2)
+
+
+def test_setfacl_fhandle_invalid_format():
+    """Malformed fhandle string raises ValueError."""
+    with pytest.raises(ValueError, match='invalid fhandle format'):
+        _open_by_fhandle('not_a_valid_fhandle')

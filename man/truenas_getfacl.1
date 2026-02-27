@@ -74,6 +74,15 @@ The
 .B fhandle
 line is present only when the kernel supports
 .BR name_to_handle_at (2).
+The value has the form
+.IB mount_id : hex
+and can be passed directly to
+.BR "truenas_setfacl --fhandle" .
+When the filesystem supports connectable handles
+.RB ( AT_HANDLE_CONNECTABLE ),
+the handle allows path reconstruction after
+.BR open_by_handle_at (2);
+otherwise a non-connectable handle is emitted as a fallback.
 .SS POSIX ACL entries
 .nf
 \fItag\fR:\fIqualifier\fR:\fIperms\fR

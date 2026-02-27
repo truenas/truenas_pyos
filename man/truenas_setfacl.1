@@ -10,8 +10,10 @@ truenas_setfacl \- set ACL entries on files
 [\fB\-d\fR]
 [\fB\-m\fR \fIentries\fR]
 [\fB\-x\fR \fIentries\fR]
+[\fB\-a\fR \fIposition\fR \fIentries\fR]
 [\fB\-f\fR \fIfile\fR]
 [\fB\-n\fR]
+[\fB\-\-fhandle\fR \fImount_id\fR:\fIhex\fR] ...
 .IR path \ ...
 .br
 .B truenas_setfacl
@@ -110,6 +112,40 @@ Applied after
 and
 .BR \-k .
 .TP
+.BI \-a\  position\  entries
+Insert NFSv4 ACL entries at
+.I position
+(0-based, clamped to
+.RI [0,\ len(acl)]).
+Use the keyword
+.B end
+(also accepted:
+.BR tail ,
+.BR $ )
+as
+.I position
+to append entries to the tail of the ACL.
+.I entries
+is a comma-separated list of NFSv4 ACE specifications (see
+.B ACE FORMATS
+below).
+This option may be repeated; each insertion is applied in order after
+.BR \-m .
+An error is raised on POSIX filesystems.
+.RS
+.PP
+.B Note on canonicalization:
+The resulting ACL is always stored in Windows-compatible canonical order:
+explicit DENY entries first, then explicit ALLOW entries, then inherited
+DENY, then inherited ALLOW (the
+.B INHERITED
+flag distinguishes inherited from explicit).
+The sort is stable, so relative order within each group is preserved.
+Because of this canonicalization the final position of inserted entries
+is best-effort \(em an ALLOW inserted before existing DENYs will always
+appear after them in the written ACL.
+.RE
+.TP
 .BI \-f \ file
 Replace the entire ACL by reading ACE specifications from
 .IR file ,
@@ -131,6 +167,20 @@ entry after
 The mask is still created if named entries are added and no mask entry
 exists yet (the kernel requires a mask whenever named USER or GROUP entries
 are present).
+.TP
+.BI \-\-fhandle \ mount_id : hex
+Address the target file by its file handle instead of a path.
+The argument is the
+.IB mount_id : hex
+string emitted in the
+.B "# fhandle:"
+comment line or the
+.B fhandle
+JSON field by
+.BR truenas_getfacl (1).
+This option may be repeated to address multiple files.
+Error messages use the kernel-resolved path from
+.BI /proc/self/fd/ N .
 .TP
 .BI \-\-restore \ file
 Restore ACLs from a backup produced by
