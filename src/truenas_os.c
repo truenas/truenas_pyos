@@ -1446,6 +1446,7 @@ PyObject* module_init(void)
 	PyModule_AddIntConstant(m, "FH_AT_EMPTY_PATH", FH_AT_EMPTY_PATH);
 	PyModule_AddIntConstant(m, "FH_AT_HANDLE_FID", FH_AT_HANDLE_FID);
 	PyModule_AddIntConstant(m, "FH_AT_HANDLE_CONNECTABLE", FH_AT_HANDLE_CONNECTABLE);
+	PyModule_AddIntConstant(m, "FH_AT_HANDLE_MNT_ID_UNIQUE", FH_AT_HANDLE_MNT_ID_UNIQUE);
 
 	return m;
 }

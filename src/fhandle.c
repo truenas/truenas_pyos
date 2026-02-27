@@ -3,11 +3,12 @@
 #include <Python.h>
 #include "common/includes.h"
 #include "fhandle.h"
+#include "statx.h"
 #include <sys/syscall.h>
 #include <unistd.h>
 
 #define SUPPORTED_FLAGS (AT_SYMLINK_FOLLOW | AT_HANDLE_FID | \
-	AT_EMPTY_PATH | AT_HANDLE_CONNECTABLE)
+	AT_EMPTY_PATH | AT_HANDLE_CONNECTABLE | AT_HANDLE_MNT_ID_UNIQUE)
 
 
 static PyObject *py_fhandle_new(PyTypeObject *obj,
@@ -21,7 +22,7 @@ static PyObject *py_fhandle_new(PyTypeObject *obj,
 		return NULL;
 	}
 
-	self->mount_id = -1;
+	self->mount_id = UINT64_MAX;  // sentinel: uninitialized
 	self->fhandle = (struct file_handle *)self->fhbuf;
 	self->fhandle->handle_bytes = MAX_HANDLE_SZ;
 	return (PyObject *)self;
@@ -33,13 +34,17 @@ static int do_name_to_handle_at(py_fhandle_t *self,
 				int flags)
 {
 	int error;
-	int mnt_id;
+	// AT_HANDLE_MNT_ID_UNIQUE signals to the kernel that this buffer is at
+	// least 64 bits wide; the kernel then writes the full 64-bit unique mount
+	// ID rather than the legacy 32-bit one.  Zero-initialise so the high half
+	// is clean when the flag is absent (kernel writes only 32 bits then).
+	uint64_t mnt_id_buf = 0;
 	int async_err = 0;
 
 	do {
 		Py_BEGIN_ALLOW_THREADS
 		error = syscall(SYS_name_to_handle_at, dir_fd, path, self->fhandle,
-				&mnt_id, flags);
+				(int *)&mnt_id_buf, flags);
 		Py_END_ALLOW_THREADS
 	} while (error && errno == EINTR && !(async_err = PyErr_CheckSignals()));
 
@@ -68,13 +73,15 @@ static int do_name_to_handle_at(py_fhandle_t *self,
 		return -1;
 	}
 
-	self->mount_id = mnt_id;
+	self->mount_id = mnt_id_buf;
+	self->unique_mount_id = (flags & AT_HANDLE_MNT_ID_UNIQUE) != 0;
 	return 0;
 }
 
 static int do_fhandle_from_bytes(py_fhandle_t *self,
 				  Py_buffer *handle_buffer,
-				  int mount_id)
+				  uint64_t mount_id,
+				  bool unique_mount_id)
 {
 	size_t header_size;
 	Py_ssize_t min_size;
@@ -119,6 +126,7 @@ static int do_fhandle_from_bytes(py_fhandle_t *self,
 	// Copy the entire structure
 	memcpy(self->fhandle, handle_buffer->buf, handle_buffer->len);
 	self->mount_id = mount_id;
+	self->unique_mount_id = unique_mount_id;
 
 	return 0;
 }
@@ -129,18 +137,25 @@ static int py_fhandle_init(PyObject *obj,
 {
 	int dir_fd = AT_FDCWD;
 	int flags = 0;
-	int mount_id_arg = -1;
+	unsigned long long mount_id_arg = UINT64_MAX;  // sentinel: not provided
+	int unique_mount_id_arg = 0;
 	int rv;
 	py_fhandle_t *fhandle = (py_fhandle_t *)obj;
 	const char *cpath = NULL;
 	Py_buffer handle_buffer = {NULL, NULL};
 
-	const char *kwnames [] = { "path", "dir_fd", "flags", "handle_bytes", "mount_id", NULL };
+	const char *kwnames [] = {
+		"path", "dir_fd", "flags",
+		"handle_bytes", "mount_id", "unique_mount_id",
+		NULL
+	};
 
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs,
-					 "|sii$y*i",
+					 "|sii$y*Ki",
 					 discard_const_p(char *, kwnames),
-					 &cpath, &dir_fd, &flags, &handle_buffer, &mount_id_arg)) {
+					 &cpath, &dir_fd, &flags,
+					 &handle_buffer, &mount_id_arg,
+					 &unique_mount_id_arg)) {
 		return -1;
 	}
 
@@ -156,7 +171,7 @@ static int py_fhandle_init(PyObject *obj,
 			return -1;
 		}
 
-		if (mount_id_arg < 0) {
+		if (mount_id_arg == UINT64_MAX) {
 			PyBuffer_Release(&handle_buffer);
 			PyErr_SetString(
 				PyExc_ValueError,
@@ -165,7 +180,9 @@ static int py_fhandle_init(PyObject *obj,
 			return -1;
 		}
 
-		rv = do_fhandle_from_bytes(fhandle, &handle_buffer, mount_id_arg);
+		rv = do_fhandle_from_bytes(fhandle, &handle_buffer,
+					   (uint64_t)mount_id_arg,
+					   (bool)unique_mount_id_arg);
 		PyBuffer_Release(&handle_buffer);
 		return rv;
 	}
@@ -187,7 +204,7 @@ static int py_fhandle_init(PyObject *obj,
 		return -1;
 	}
 
-	if ((*cpath == '\0') && ((flags != AT_EMPTY_PATH) || (dir_fd == AT_FDCWD))) {
+	if ((*cpath == '\0') && (!(flags & AT_EMPTY_PATH) || (dir_fd == AT_FDCWD))) {
 		PyErr_SetString(
 			PyExc_ValueError,
 			"Retrieving struct file_handle from open file descriptor "
@@ -240,7 +257,7 @@ static PyObject *py_fhandle_open(PyObject *obj,
 		return NULL;
 	}
 
-	if (self->mount_id < 0) {
+	if (self->mount_id == UINT64_MAX) {
 		PyErr_SetString(
 			PyExc_ValueError,
 			"Invalid File Handle"
@@ -248,10 +265,18 @@ static PyObject *py_fhandle_open(PyObject *obj,
 		return NULL;
 	}
 
+	// Use STATX_MNT_ID_UNIQUE when the handle carries a unique mount ID
+	// (obtained via AT_HANDLE_MNT_ID_UNIQUE), otherwise use the legacy
+	// STATX_MNT_ID.  Both store the mount ID in stx_mnt_id; we compare
+	// the low 32 bits (int cast) to self->mount_id in both cases.
+	unsigned int statx_mask = self->unique_mount_id
+		? STATX_MNT_ID_UNIQUE
+		: STATX_MNT_ID;
+
 	int async_err = 0;
 	do {
 		Py_BEGIN_ALLOW_THREADS
-		error = statx(mount_fd, "", AT_EMPTY_PATH, STATX_MNT_ID, &st);
+		error = statx(mount_fd, "", AT_EMPTY_PATH, statx_mask, &st);
 		Py_END_ALLOW_THREADS
 	} while (error && errno == EINTR && !(async_err = PyErr_CheckSignals()));
 
@@ -262,7 +287,7 @@ static PyObject *py_fhandle_open(PyObject *obj,
 		return NULL;
 	}
 
-	if (st.stx_mnt_id != (uint64_t)self->mount_id) {
+	if (st.stx_mnt_id != self->mount_id) {
 		PyErr_SetString(
 			PyExc_ValueError,
 			"Filesystem underlying `mount_fd` parameter does "
@@ -309,7 +334,7 @@ static PyObject *py_fhandle_bytes(PyObject *obj,
 	py_fhandle_t *self = (py_fhandle_t *)obj;
 	size_t total_size;
 
-	if (self->mount_id < 0) {
+	if (self->mount_id == UINT64_MAX) {
 		PyErr_SetString(
 			PyExc_ValueError,
 			"Cannot get bytes from uninitialized file handle"
@@ -352,11 +377,11 @@ static PyMethodDef py_fhandle_methods[] = {
 static PyObject *py_fhandle_mount_id(PyObject *obj, void *closure)
 {
 	py_fhandle_t *self = (py_fhandle_t *)obj;
-	if (self->mount_id < 0) {
+	if (self->mount_id == UINT64_MAX) {
 		Py_RETURN_NONE;
 	}
 
-	return Py_BuildValue("i", self->mount_id);
+	return PyLong_FromUnsignedLongLong(self->mount_id);
 }
 
 static PyGetSetDef py_fhandle_getsetters[] = {
@@ -371,15 +396,16 @@ static PyObject *py_fhandle_repr(PyObject *obj)
 {
         py_fhandle_t *self = (py_fhandle_t *)obj;
 
-        if (self->mount_id == -1) {
+        if (self->mount_id == UINT64_MAX) {
                 return PyUnicode_FromString(
                         "truenas_os.Fhandle(<UNINITIALIZED>)"
                 );
         }
 
         return PyUnicode_FromFormat(
-                "truenas_os.Fhandle(mount_id=%i, may_open=%s)",
-                self->mount_id, self->is_handle_fd ? "False" : "True"
+                "truenas_os.Fhandle(mount_id=%llu, may_open=%s)",
+                (unsigned long long)self->mount_id,
+                self->is_handle_fd ? "False" : "True"
         );
 }
 

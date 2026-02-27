@@ -20,3 +20,7 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Topic :: System :: Systems Administration"
 ]
+
+[project.scripts]
+truenas_getfacl = "_truenas_os_scripts._getfacl:main"
+truenas_setfacl = "_truenas_os_scripts._setfacl:main"
