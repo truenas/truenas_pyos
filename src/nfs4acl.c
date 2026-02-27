@@ -1039,11 +1039,15 @@ nfs4acl_valid(int fd, const char *data, size_t len)
 			has_inheritable = 1;
 	}
 
-	if (fstat(fd, &st) < 0) {
-		PyErr_SetFromErrno(PyExc_OSError);
-		return -1;
+	if (fd == -1) {
+		is_dir = 1;
+	} else {
+		if (fstat(fd, &st) < 0) {
+			PyErr_SetFromErrno(PyExc_OSError);
+			return -1;
+		}
+		is_dir = S_ISDIR(st.st_mode);
 	}
-	is_dir = S_ISDIR(st.st_mode);
 
 	/* Propagation flags are only valid on directories. */
 	if (has_propagate && !is_dir) {

@@ -952,8 +952,10 @@ def validate_acl(fd: int, acl: NFS4ACL | POSIXACL) -> None:
     """Validate an ACL against an open file descriptor without setting it.
 
     Runs the same checks as fsetacl() but does not write the ACL.
-    Raises ValueError if the ACL is invalid for the target, OSError if
-    fstat(fd) fails, TypeError if acl is not NFS4ACL or POSIXACL.
+    Pass fd=-1 to skip all filesystem operations and validate as if the
+    target is a directory (inherit flags and default ACLs are permitted).
+    Raises ValueError if the ACL is invalid, OSError if fstat(fd) fails,
+    TypeError if acl is not NFS4ACL or POSIXACL.
     """
     ...
 
