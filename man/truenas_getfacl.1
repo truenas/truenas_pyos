@@ -1,0 +1,220 @@
+.\" SPDX-License-Identifier: LGPL-3.0-or-later
+.TH TRUENAS_GETFACL 1 "2026-02-27" "TrueNAS OS" "User Commands"
+.SH NAME
+truenas_getfacl \- display ACL entries for files
+.SH SYNOPSIS
+.B truenas_getfacl
+[\fB\-R\fR]
+[\fB\-n\fR]
+[\fB\-q\fR]
+[\fB\-s\fR]
+[\fB\-j\fR]
+.IR path \ ...
+.SH DESCRIPTION
+.B truenas_getfacl
+reads and prints the Access Control List (ACL) of each
+.IR path .
+Both POSIX ACLs (ZFS datasets with
+.BR acltype=posixacl )
+and NFSv4 ACLs (ZFS datasets with
+.BR acltype=nfsv4 )
+are supported.
+.PP
+For POSIX filesystems, if a file's ACL is trivial (i.e.\& equivalent to the
+inode mode bits and no extended entries have been stored),
+.B truenas_getfacl
+synthesises the three base entries
+.RB ( user:: ,
+.BR group:: ,
+.BR other:: )
+from the mode bits so that output always contains the minimal ACL.
+.SH OPTIONS
+.TP
+.BR \-R ", " \-\-recursive
+Process directories recursively.
+Symlinks are never followed and filesystem boundaries are never crossed.
+.TP
+.BR \-n ", " \-\-numeric
+Display UIDs and GIDs as numbers instead of resolving them to names.
+.TP
+.BR \-q ", " \-\-quiet
+Suppress the comment header lines
+.RB ( "# file:" ,
+.BR "# owner:" ,
+.BR "# group:" ,
+.BR "# fhandle:" ).
+Has no effect in JSON mode.
+.TP
+.BR \-s ", " \-\-skip\-base
+Skip files and directories whose ACL is trivial (i.e.\& derived entirely from
+mode bits with no extended entries).
+.TP
+.BR \-j ", " \-\-json
+Output each ACL as a single JSON object on its own line (JSONL).
+The
+.B \-q
+flag is ignored in this mode; all metadata is always included.
+.SH OUTPUT FORMAT
+.SS Text mode (default)
+Each file's output begins with optional comment lines followed by one ACE per
+line.
+A blank line separates successive files.
+.PP
+Comment lines:
+.RS
+.nf
+# file: \fIpath\fR
+# owner: \fIuser\fR
+# group: \fIgroup\fR
+# fhandle: \fIhex\fR
+.fi
+.RE
+.PP
+The
+.B fhandle
+line is present only when the kernel supports
+.BR name_to_handle_at (2).
+.SS POSIX ACL entries
+.nf
+\fItag\fR:\fIqualifier\fR:\fIperms\fR
+default:\fItag\fR:\fIqualifier\fR:\fIperms\fR
+.fi
+.PP
+.I tag
+is one of
+.BR user ,
+.BR group ,
+.BR mask ,
+.BR other .
+.PP
+.I qualifier
+is a user name or group name (or UID/GID with
+.BR \-n ),
+empty for
+.BR user:: ,
+.BR group:: ,
+.BR mask:: ,
+and
+.BR other:: .
+.PP
+.I perms
+is a three-character string using
+.B r
+(read),
+.B w
+(write),
+.B x
+(execute), and
+.B \-
+(absent).
+.PP
+Default ACL entries are prefixed with
+.BR default: .
+.SS NFSv4 ACL entries
+.nf
+\fIwho\fR:\fIperms\fR:\fIflags\fR:\fItype\fR
+.fi
+.PP
+.I who
+is one of
+.BR owner@ ,
+.BR group@ ,
+.BR everyone@ ,
+.BI user: name ,
+or
+.BI group: name .
+.PP
+.I perms
+is a 14-character string (position fixed, absent shown as
+.BR \- ):
+.TS
+l l.
+r	READ_DATA
+w	WRITE_DATA
+a	APPEND_DATA
+R	READ_NAMED_ATTRS
+W	WRITE_NAMED_ATTRS
+x	EXECUTE
+D	DELETE_CHILD
+d	DELETE
+p	READ_ATTRIBUTES
+P	WRITE_ATTRIBUTES
+c	READ_ACL
+C	WRITE_ACL
+o	WRITE_OWNER
+s	SYNCHRONIZE
+.TE
+.PP
+.I flags
+is an 8-character string:
+.TS
+l l.
+f	FILE_INHERIT
+d	DIRECTORY_INHERIT
+n	NO_PROPAGATE_INHERIT
+i	INHERIT_ONLY
+S	SUCCESSFUL_ACCESS
+F	FAILED_ACCESS
+g	IDENTIFIER_GROUP
+I	INHERITED
+.TE
+.PP
+.I type
+is one of
+.BR allow ,
+.BR deny ,
+.BR audit ,
+.BR alarm .
+.SS JSON mode (\-j)
+Each line is a JSON object.  For POSIX ACLs:
+.PP
+.RS
+.nf
+{
+  "path": \fIstring\fR,
+  "uid": \fIint\fR,
+  "gid": \fIint\fR,
+  "owner": \fIstring\fR,
+  "group": \fIstring\fR,
+  "acl_type": "POSIX",
+  "trivial": \fIbool\fR,
+  "aces": [ { "tag": \fIstring\fR, "qualifier": \fIstring|null\fR,
+              "perms": [\fIstring\fR, ...], "default": \fIbool\fR }, ... ],
+  "fhandle": \fIstring\fR    \fI(optional)\fR
+}
+.fi
+.RE
+.PP
+For NFSv4 ACLs:
+.PP
+.RS
+.nf
+{
+  "path": \fIstring\fR,
+  "uid": \fIint\fR,
+  "gid": \fIint\fR,
+  "owner": \fIstring\fR,
+  "group": \fIstring\fR,
+  "acl_type": "NFS4",
+  "acl_flags": [\fIstring\fR, ...],
+  "trivial": \fIbool\fR,
+  "aces": [ { "who": \fIstring\fR, "perms": [\fIstring\fR, ...],
+              "flags": [\fIstring\fR, ...], "type": \fIstring\fR }, ... ],
+  "fhandle": \fIstring\fR    \fI(optional)\fR
+}
+.fi
+.RE
+.SH EXIT STATUS
+.TP
+.B 0
+All paths were processed successfully.
+.TP
+.B 1
+One or more paths could not be processed (error printed to stderr).
+.SH SEE ALSO
+.BR getfacl (1),
+.BR truenas_setfacl (1),
+.BR setfacl (1),
+.BR acl (5)
+.SH AUTHORS
+TrueNAS Engineering <dev@truenas.com>

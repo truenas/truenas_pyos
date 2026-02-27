@@ -1,0 +1,383 @@
+.\" SPDX-License-Identifier: LGPL-3.0-or-later
+.TH TRUENAS_SETFACL 1 "2026-02-27" "TrueNAS OS" "User Commands"
+.SH NAME
+truenas_setfacl \- set ACL entries on files
+.SH SYNOPSIS
+.B truenas_setfacl
+[\fB\-R\fR]
+[\fB\-b\fR]
+[\fB\-k\fR]
+[\fB\-d\fR]
+[\fB\-m\fR \fIentries\fR]
+[\fB\-x\fR \fIentries\fR]
+[\fB\-f\fR \fIfile\fR]
+[\fB\-n\fR]
+.IR path \ ...
+.br
+.B truenas_setfacl
+\fB\-\-restore\fR \fIfile\fR
+.SH DESCRIPTION
+.B truenas_setfacl
+modifies the Access Control List (ACL) of each
+.IR path .
+Both POSIX ACLs (ZFS datasets with
+.BR acltype=posixacl )
+and NFSv4 ACLs (ZFS datasets with
+.BR acltype=nfsv4 )
+are supported; the ACL type is determined by the filesystem of each target
+file and cannot be overridden on the command line.
+.PP
+Operations are applied in the following order for each file:
+.RS
+.IP 1. 4
+Strip
+.RB ( \-b )
+.IP 2.
+Remove default ACL
+.RB ( \-k )
+.IP 3.
+Remove entries
+.RB ( \-x )
+.IP 4.
+Modify/add entries
+.RB ( \-m )
+.IP 5.
+Replace entire ACL from file
+.RB ( \-f )
+.RE
+.SH OPTIONS
+.TP
+.BR \-R ", " \-\-recursive
+Process directories recursively.
+Symlinks are never followed and filesystem boundaries are never crossed.
+.RS
+.PP
+For
+.B POSIX
+filesystems the same ACL operations are applied to every file and directory
+in the tree.
+.PP
+For
+.B NFSv4
+filesystems, depth-1 entries (direct children of the root) receive an ACL
+inherited from the root using
+.BR generate_inherited_acl (is_dir) ;
+depth-2 and deeper entries receive an ACL inherited from the depth-1 ACL.
+.RE
+.TP
+.BR \-b ", " \-\-strip
+Strip the ACL to the minimal set derived from the inode mode bits.
+For POSIX this leaves only
+.BR user:: ,
+.BR group:: ,
+and
+.BR other:: .
+For NFSv4 the ACL is replaced with a trivial owner/group/everyone@ set.
+.TP
+.BR \-k ", " \-\-remove\-default
+Remove the default ACL (POSIX only; silently ignored on NFSv4).
+.TP
+.BR \-d ", " \-\-default
+Apply
+.B \-m
+and
+.B \-x
+to the default ACL instead of the access ACL (POSIX only; silently ignored
+on NFSv4).
+.TP
+.BI \-m \ entries
+Add or replace ACL entries.
+.I entries
+is a comma-separated list of ACE specifications (see
+.B ACE FORMATS
+below).
+This option may be repeated; all lists are concatenated.
+Applied after
+.BR \-b ,
+.BR \-k ,
+and
+.BR \-x .
+.TP
+.BI \-x \ entries
+Remove ACL entries identified by tag and optional qualifier.
+.I entries
+is a comma-separated list of remove specifications (see
+.B ACE FORMATS
+below).
+This option may be repeated.
+Applied after
+.BR \-b
+and
+.BR \-k .
+.TP
+.BI \-f \ file
+Replace the entire ACL by reading ACE specifications from
+.IR file ,
+one entry per line.
+Use
+.B \-
+to read from standard input.
+Comments (lines beginning with
+.BR # )
+and blank lines are ignored.
+Applied last (after
+.BR \-m ).
+.TP
+.BR \-n ", " \-\-no\-mask
+Do not automatically recalculate the POSIX
+.B mask
+entry after
+.BR \-m .
+The mask is still created if named entries are added and no mask entry
+exists yet (the kernel requires a mask whenever named USER or GROUP entries
+are present).
+.TP
+.BI \-\-restore \ file
+Restore ACLs from a backup produced by
+.BR truenas_getfacl (1)
+or
+.BR getfacl (1).
+Use
+.B \-
+to read from standard input.
+Target paths are taken from the
+.B "# file:"
+comment headers in the backup; no
+.I path
+arguments are required or accepted when this option is used.
+.SH ACE FORMATS
+.SS POSIX ACE specification (\-m)
+.nf
+[\fBdefault:\fR]\fItag\fR:\fIqualifier\fR:\fIperms\fR
+.fi
+.PP
+.I tag
+is one of:
+.TP
+.B user
+Owner permissions
+.RB ( user:: )
+when
+.I qualifier
+is empty, or a named-user entry
+.RB ( user:\fIname\fR:\fIperms\fR ).
+.TP
+.B group
+Owning-group permissions
+.RB ( group:: )
+when
+.I qualifier
+is empty, or a named-group entry.
+.TP
+.B mask
+The effective-rights mask.
+An explicit mask entry in
+.B \-m
+suppresses automatic mask recalculation (equivalent to
+.BR \-n ).
+.TP
+.B other
+Permissions for all others.
+.PP
+.I qualifier
+is a user name, group name, UID, or GID.
+It must be empty for
+.BR user:: ,
+.BR group:: ,
+.BR mask:: ,
+and
+.BR other:: .
+.PP
+.I perms
+is any combination of
+.B r
+(read),
+.B w
+(write),
+.B x
+(execute), and
+.B \-
+(absent), in any order.
+.PP
+Prefix the entry with
+.B default:
+to apply it to the default ACL.
+.PP
+Examples:
+.RS
+.nf
+user::rwx
+user:alice:r\-\-
+group::r\-x
+mask::r\-x
+other::\-\-\-
+default:user:alice:r\-\-
+.fi
+.RE
+.SS POSIX remove specification (\-x)
+.nf
+[\fBdefault:\fR]\fItag\fR[:\fIqualifier\fR]
+.fi
+.PP
+Removes the matching entry.
+For
+.BR user:: ,
+.BR group:: ,
+.BR mask:: ,
+and
+.BR other:: ,
+the qualifier is omitted.
+Examples:
+.RS
+.nf
+user:alice
+group:staff
+mask
+default:user:alice
+.fi
+.RE
+.SS NFSv4 ACE specification (\-m)
+.nf
+\fIwho\fR:\fIperms\fR:\fIflags\fR:\fItype\fR
+.fi
+.PP
+.I who
+is one of:
+.RS
+.TP
+.B owner@
+The file owner.
+.TP
+.B group@
+The owning group.
+.TP
+.B everyone@
+All users including owner and group.
+.TP
+.BI user: name
+A specific user (name or UID).
+.TP
+.BI group: name
+A specific group (name or GID).
+.RE
+.PP
+.I perms
+is either a named permission set or a string of individual permission
+characters (use
+.B \-
+for absent):
+.TS
+l l.
+r	READ_DATA
+w	WRITE_DATA
+a	APPEND_DATA
+R	READ_NAMED_ATTRS
+W	WRITE_NAMED_ATTRS
+x	EXECUTE
+D	DELETE_CHILD
+d	DELETE
+p	READ_ATTRIBUTES
+P	WRITE_ATTRIBUTES
+c	READ_ACL
+C	WRITE_ACL
+o	WRITE_OWNER
+s	SYNCHRONIZE
+.TE
+.PP
+Named permission sets (FreeBSD-compatible):
+.TS
+l l.
+full_set	All 14 permissions above
+modify_set	\fBfull_set\fR minus WRITE_ACL and WRITE_OWNER
+read_set	READ_DATA, READ_NAMED_ATTRS, READ_ATTRIBUTES, READ_ACL
+write_set	WRITE_DATA, APPEND_DATA, WRITE_NAMED_ATTRS, WRITE_ATTRIBUTES
+.TE
+.PP
+.I flags
+is a string of flag characters:
+.TS
+l l.
+f	FILE_INHERIT
+d	DIRECTORY_INHERIT
+n	NO_PROPAGATE_INHERIT
+i	INHERIT_ONLY
+S	SUCCESSFUL_ACCESS
+F	FAILED_ACCESS
+g	IDENTIFIER_GROUP
+I	INHERITED
+.TE
+.PP
+.I type
+is one of
+.BR allow ,
+.BR deny ,
+.BR audit ,
+.BR alarm .
+.PP
+Example:
+.RS
+.nf
+owner@:rwxpPs\-\-\-\-\-\-\-\-\-:fd\-\-\-\-\-\-\-:allow
+group@:r\-x\-\-\-\-\-\-\-\-\-\-\-\-\-:fd\-\-\-\-\-\-\-:allow
+everyone@:\-\-\-\-\-\-\-\-\-\-\-\-\-\-:\-\-\-\-\-\-\-\-:allow
+.fi
+.RE
+.SS NFSv4 remove specification (\-x)
+.nf
+\fIwho\fR
+.fi
+.PP
+Removes all ACEs matching the given
+.IR who .
+Use the same
+.I who
+values as for
+.B \-m
+.RB ( owner@ ,
+.BR group@ ,
+.BR everyone@ ,
+.BI user: name ,
+.BI group: name ).
+.SH MASK RECALCULATION
+For POSIX ACLs, after a
+.B \-m
+or
+.B \-x
+operation
+.B truenas_setfacl
+automatically recalculates the
+.B mask
+entry to be the union of the permissions of all
+.BR user: ,
+.BR group: ,
+and
+.B group::
+entries.
+.PP
+This recalculation is suppressed when:
+.RS
+.IP \(bu 2
+.B \-n
+.RB ( \-\-no\-mask )
+is specified, or
+.IP \(bu
+the
+.B \-m
+argument contains an explicit
+.B mask::
+entry.
+.RE
+.SH EXIT STATUS
+.TP
+.B 0
+All paths were processed successfully.
+.TP
+.B 1
+One or more paths could not be processed (error printed to stderr).
+.SH SEE ALSO
+.BR setfacl (1),
+.BR truenas_getfacl (1),
+.BR getfacl (1),
+.BR acl (5)
+.SH AUTHORS
+TrueNAS Engineering <dev@truenas.com>
