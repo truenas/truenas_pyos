@@ -80,6 +80,7 @@ int init_nfs4acl(PyObject *module);
 /*
  * nfs4acl_valid: reject ACLs containing FILE_INHERIT / DIRECTORY_INHERIT /
  * NO_PROPAGATE_INHERIT / INHERIT_ONLY flags when fd is not a directory.
+ * Pass fd == -1 to skip fstat and assume the target is a directory.
  * Returns 0 on success, -1 on failure (Python ValueError set).
  */
 int nfs4acl_valid(int fd, const char *data, size_t len);
@@ -100,6 +101,7 @@ int init_posixacl(PyObject *module);
 /*
  * posixacl_valid: reject a non-NULL default ACL when fd is not a directory.
  * Pass default_data=NULL when there is no default ACL (always valid).
+ * Pass fd == -1 to skip fstat and assume the target is a directory.
  * Returns 0 on success, -1 on failure (Python ValueError set).
  */
 int posixacl_valid(int fd,

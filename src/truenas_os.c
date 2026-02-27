@@ -1032,6 +1032,86 @@ py_fsetacl(PyObject *obj, PyObject *args)
 	return NULL;
 }
 
+PyDoc_STRVAR(py_validate_acl__doc__,
+"validate_acl(fd, acl)\n"
+"--\n\n"
+"Validate an ACL against an open file descriptor without setting it.\n\n"
+"Runs the same checks as fsetacl() but does not write the ACL.\n"
+"For NFS4ACL, checks that inherit flags are only used on directories and\n"
+"that directories have at least one inheritable ACE.  For POSIXACL, checks\n"
+"that a default ACL is only applied to a directory.\n\n"
+"Pass fd=-1 to skip all filesystem operations and validate as if the target\n"
+"is a directory (inherit flags and default ACLs are permitted).\n\n"
+"Parameters\n"
+"----------\n"
+"fd : int\n"
+"    Open file descriptor, or -1 to assume the target is a directory without\n"
+"    performing any blocking filesystem operations\n"
+"acl : NFS4ACL or POSIXACL\n"
+"    ACL to validate\n\n"
+"Returns\n"
+"-------\n"
+"None\n\n"
+"Raises\n"
+"------\n"
+"ValueError\n"
+"    If the ACL contains entries invalid for the target type\n"
+"OSError\n"
+"    If fstat(fd) fails\n"
+"TypeError\n"
+"    If acl is not NFS4ACL or POSIXACL\n"
+);
+
+static PyObject *
+py_validate_acl(PyObject *obj, PyObject *args)
+{
+	int fd;
+	PyObject *acl;
+	PyObject *data = NULL;
+	PyObject *access_data = NULL;
+	PyObject *default_data = NULL;
+	char *access_ptr = NULL;
+	char *def_ptr = NULL;
+	Py_ssize_t access_len;
+	Py_ssize_t def_len;
+	int ret;
+
+	if (!PyArg_ParseTuple(args, "iO:validate_acl", &fd, &acl))
+		return NULL;
+
+	if (PyObject_TypeCheck(acl, &NFS4ACL_Type)) {
+		data = NFS4ACL_get_xattr_bytes(acl);
+		if (data == NULL)
+			return NULL;
+		ret = nfs4acl_valid(fd,
+		    PyBytes_AS_STRING(data),
+		    (size_t)PyBytes_GET_SIZE(data));
+		Py_DECREF(data);
+		if (ret < 0)
+			return NULL;
+		Py_RETURN_NONE;
+	}
+
+	if (PyObject_TypeCheck(acl, &POSIXACL_Type)) {
+		POSIXACL_get_xattr_bytes(acl, &access_data, &default_data);
+		PyBytes_AsStringAndSize(access_data, &access_ptr, &access_len);
+		def_len = 0;
+		if (default_data != Py_None)
+			PyBytes_AsStringAndSize(default_data, &def_ptr, &def_len);
+		ret = posixacl_valid(fd,
+		    access_ptr, (size_t)access_len,
+		    def_ptr, (size_t)def_len);
+		Py_DECREF(access_data);
+		Py_DECREF(default_data);
+		if (ret < 0)
+			return NULL;
+		Py_RETURN_NONE;
+	}
+
+	PyErr_SetString(PyExc_TypeError, "validate_acl: acl must be NFS4ACL or POSIXACL");
+	return NULL;
+}
+
 PyDoc_STRVAR(py_fsetacl_nfs4__doc__,
 "fsetacl_nfs4(fd, data)\n"
 "--\n\n"
@@ -1274,6 +1354,12 @@ static PyMethodDef truenas_os_methods[] = {
 		.ml_meth  = (PyCFunction)py_fsetacl,
 		.ml_flags = METH_VARARGS,
 		.ml_doc   = py_fsetacl__doc__
+	},
+	{
+		.ml_name  = "validate_acl",
+		.ml_meth  = (PyCFunction)py_validate_acl,
+		.ml_flags = METH_VARARGS,
+		.ml_doc   = py_validate_acl__doc__
 	},
 	{
 		.ml_name  = "fsetacl_nfs4",

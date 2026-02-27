@@ -880,14 +880,16 @@ posixacl_valid(int fd,
 	if (default_data == NULL)
 		return 0;
 
-	if (fstat(fd, &st) < 0) {
-		PyErr_SetFromErrno(PyExc_OSError);
-		return -1;
-	}
-	if (!S_ISDIR(st.st_mode)) {
-		PyErr_SetString(PyExc_ValueError,
-		    "default ACL is only valid on directories");
-		return -1;
+	if (fd != -1) {
+		if (fstat(fd, &st) < 0) {
+			PyErr_SetFromErrno(PyExc_OSError);
+			return -1;
+		}
+		if (!S_ISDIR(st.st_mode)) {
+			PyErr_SetString(PyExc_ValueError,
+			    "default ACL is only valid on directories");
+			return -1;
+		}
 	}
 
 	return validate_posix_blob(default_data, default_len, "default");
