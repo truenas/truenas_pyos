@@ -523,6 +523,184 @@ def test_nfs4acl_trivial_empty_bytes():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# NFS4ACL.generate_inherited_acl — pure unit tests (no filesystem required)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Flag abbreviations used throughout this section:
+#   FI  = FILE_INHERIT
+#   DI  = DIRECTORY_INHERIT
+#   IO  = INHERIT_ONLY
+#   NP  = NO_PROPAGATE_INHERIT
+#   INH = INHERITED
+
+_FI  = t.NFS4Flag.FILE_INHERIT
+_DI  = t.NFS4Flag.DIRECTORY_INHERIT
+_IO  = t.NFS4Flag.INHERIT_ONLY
+_NP  = t.NFS4Flag.NO_PROPAGATE_INHERIT
+_INH = t.NFS4Flag.INHERITED
+_PROP_FLAGS = _FI | _DI | _IO | _NP
+
+
+def _make_ace(flags):
+    """Return a single-ACE NFS4ACL with ALLOW / OWNER@ / full-perms."""
+    return t.NFS4ACL.from_aces([
+        t.NFS4Ace(t.NFS4AceType.ALLOW, flags, _NFS4_FULL, t.NFS4Who.OWNER)
+    ])
+
+
+def _flags_of(acl, idx=0):
+    return acl.aces[idx].ace_flags
+
+
+# ── file child (is_dir=False) ────────────────────────────────────────────────
+
+def test_nfs4_inherit_file_child_clears_all_inherit_flags():
+    """File child: all propagation flags must be cleared, INHERITED set."""
+    src = _make_ace(_FI | _DI | _IO | _NP)
+    child = src.generate_inherited_acl(is_dir=False)
+    f = _flags_of(child)
+    assert _INH in f
+    assert _PROP_FLAGS & f == t.NFS4Flag(0)
+
+
+def test_nfs4_inherit_file_child_file_inherit_only():
+    """File child from a FILE_INHERIT-only ACE: flags cleared, INHERITED set."""
+    src = _make_ace(_FI)
+    child = src.generate_inherited_acl(is_dir=False)
+    f = _flags_of(child)
+    assert _INH in f
+    assert _PROP_FLAGS & f == t.NFS4Flag(0)
+
+
+def test_nfs4_inherit_file_child_inherit_only_cleared():
+    """INHERIT_ONLY on a FILE_INHERIT ACE must be cleared on the file child."""
+    src = _make_ace(_FI | _IO)
+    child = src.generate_inherited_acl(is_dir=False)
+    f = _flags_of(child)
+    assert _INH in f
+    assert _IO not in f
+
+
+# ── directory child, no NO_PROPAGATE_INHERIT ─────────────────────────────────
+
+def test_nfs4_inherit_dir_child_fi_and_di_clears_inherit_only():
+    """FILE_INHERIT + DIRECTORY_INHERIT without NO_PROPAGATE: INHERIT_ONLY cleared."""
+    src = _make_ace(_FI | _DI)
+    child = src.generate_inherited_acl(is_dir=True)
+    f = _flags_of(child)
+    assert _INH in f
+    assert _FI  in f
+    assert _DI  in f
+    assert _IO  not in f
+    assert _NP  not in f
+
+
+def test_nfs4_inherit_dir_child_di_only_clears_inherit_only():
+    """DIRECTORY_INHERIT only: INHERIT_ONLY cleared so ACE applies to this dir."""
+    src = _make_ace(_DI)
+    child = src.generate_inherited_acl(is_dir=True)
+    f = _flags_of(child)
+    assert _INH in f
+    assert _DI  in f
+    assert _IO  not in f
+
+
+def test_nfs4_inherit_dir_child_fi_only_inherit_only_stays_set():
+    """FILE_INHERIT without DIRECTORY_INHERIT, INHERIT_ONLY already set:
+    INHERIT_ONLY must remain set so the ACE does not affect the directory
+    itself but still propagates to files below."""
+    src = _make_ace(_FI | _IO)
+    child = src.generate_inherited_acl(is_dir=True)
+    f = _flags_of(child)
+    assert _INH in f
+    assert _FI  in f
+    assert _DI  not in f
+    assert _IO  in f   # must stay set — the bug that was fixed
+    assert _NP  not in f
+
+
+def test_nfs4_inherit_dir_child_fi_only_inherit_only_gets_set():
+    """FILE_INHERIT without DIRECTORY_INHERIT, INHERIT_ONLY NOT set:
+    INHERIT_ONLY must be set on the directory child so the ACE does not
+    grant permissions to the directory itself."""
+    src = _make_ace(_FI)
+    child = src.generate_inherited_acl(is_dir=True)
+    f = _flags_of(child)
+    assert _INH in f
+    assert _FI  in f
+    assert _DI  not in f
+    assert _IO  in f   # must be set even though source had it clear
+
+
+def test_nfs4_inherit_dir_child_fi_di_with_inherit_only_set():
+    """FILE_INHERIT + DIRECTORY_INHERIT with INHERIT_ONLY set (ACE was
+    propagation-only on parent): INHERIT_ONLY cleared on dir child."""
+    src = _make_ace(_FI | _DI | _IO)
+    child = src.generate_inherited_acl(is_dir=True)
+    f = _flags_of(child)
+    assert _INH in f
+    assert _FI  in f
+    assert _DI  in f
+    assert _IO  not in f
+
+
+# ── directory child, NO_PROPAGATE_INHERIT set ────────────────────────────────
+
+def test_nfs4_inherit_dir_child_no_propagate_inherit_only_set():
+    """NO_PROPAGATE + INHERIT_ONLY (was propagation-only on parent):
+    INHERIT_ONLY cleared so ACE becomes active on this dir;
+    FILE_INHERIT, DIRECTORY_INHERIT, and NO_PROPAGATE_INHERIT retained."""
+    src = _make_ace(_FI | _DI | _IO | _NP)
+    child = src.generate_inherited_acl(is_dir=True)
+    f = _flags_of(child)
+    assert _INH in f
+    assert _FI  in f
+    assert _DI  in f
+    assert _NP  in f
+    assert _IO  not in f   # must be cleared — second bug that was fixed
+
+
+def test_nfs4_inherit_dir_child_no_propagate_inherit_only_set_di_only():
+    """NO_PROPAGATE + INHERIT_ONLY + DIRECTORY_INHERIT without FILE_INHERIT:
+    all inherit flags stripped — DIRECTORY_INHERIT alone has nothing to
+    propagate; retaining it would cause the ACE to bleed into grandchild
+    directories, violating NO_PROPAGATE semantics."""
+    src = _make_ace(_DI | _IO | _NP)
+    child = src.generate_inherited_acl(is_dir=True)
+    f = _flags_of(child)
+    assert _INH in f
+    assert _PROP_FLAGS & f == t.NFS4Flag(0)
+
+
+def test_nfs4_inherit_dir_child_no_propagate_inherit_only_clear():
+    """NO_PROPAGATE without INHERIT_ONLY (ACE was already active on parent):
+    all inherit flags stripped — ACE applies to child but won't propagate."""
+    src = _make_ace(_FI | _DI | _NP)
+    child = src.generate_inherited_acl(is_dir=True)
+    f = _flags_of(child)
+    assert _INH in f
+    assert _PROP_FLAGS & f == t.NFS4Flag(0)
+
+
+# ── error cases ──────────────────────────────────────────────────────────────
+
+def test_nfs4_inherit_no_inheritable_aces_raises():
+    """An ACL with no inheritable ACEs must raise ValueError."""
+    src = _make_ace(t.NFS4Flag(0))   # no FILE_INHERIT or DIRECTORY_INHERIT
+    with pytest.raises(ValueError):
+        src.generate_inherited_acl(is_dir=False)
+    with pytest.raises(ValueError):
+        src.generate_inherited_acl(is_dir=True)
+
+
+def test_nfs4_inherit_dir_child_no_dir_inherit_not_inherited_by_dir():
+    """ACE with only DIRECTORY_INHERIT is not inherited by a file child."""
+    src = _make_ace(_DI)
+    with pytest.raises(ValueError):
+        src.generate_inherited_acl(is_dir=False)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # POSIXAce construction
 # ═══════════════════════════════════════════════════════════════════════════
 
