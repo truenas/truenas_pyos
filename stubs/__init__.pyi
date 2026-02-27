@@ -948,6 +948,15 @@ def fgetacl(fd: int) -> NFS4ACL | POSIXACL:
     """
     ...
 
+def validate_acl(fd: int, acl: NFS4ACL | POSIXACL) -> None:
+    """Validate an ACL against an open file descriptor without setting it.
+
+    Runs the same checks as fsetacl() but does not write the ACL.
+    Raises ValueError if the ACL is invalid for the target, OSError if
+    fstat(fd) fails, TypeError if acl is not NFS4ACL or POSIXACL.
+    """
+    ...
+
 def fsetacl(fd: int, acl: NFS4ACL | POSIXACL) -> None:
     """Set the ACL on an open file descriptor.
 
