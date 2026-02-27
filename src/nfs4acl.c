@@ -759,10 +759,25 @@ PyDoc_STRVAR(NFS4ACL_generate_inherited_acl_doc,
 "Apply NFS4 ACE inheritance rules to produce the ACL for a new child\n"
 "object.  For a file child (is_dir=False) only ACEs with FILE_INHERIT\n"
 "are included; for a directory child (is_dir=True) ACEs with\n"
-"FILE_INHERIT or DIRECTORY_INHERIT are included.  In both cases all\n"
-"inherit flags are cleared and INHERITED is set; for a directory child\n"
-"without NO_PROPAGATE_INHERIT, FILE_INHERIT and DIRECTORY_INHERIT are\n"
-"kept so the ACE propagates to grandchildren.\n"
+"FILE_INHERIT or DIRECTORY_INHERIT are included.\n"
+"\n"
+"For a directory child without NO_PROPAGATE_INHERIT:\n"
+"  If DIRECTORY_INHERIT is set, INHERIT_ONLY is cleared so the ACE\n"
+"  applies to the directory; FILE_INHERIT and DIRECTORY_INHERIT are\n"
+"  kept for further propagation.  If only FILE_INHERIT is set,\n"
+"  INHERIT_ONLY is set (or kept) so the ACE does not apply to the\n"
+"  directory itself but still propagates to files below.\n"
+"\n"
+"For a directory child with NO_PROPAGATE_INHERIT:\n"
+"  If INHERIT_ONLY was set and FILE_INHERIT is also set, INHERIT_ONLY is\n"
+"  cleared so the ACE becomes active; FILE_INHERIT, DIRECTORY_INHERIT, and\n"
+"  NO_PROPAGATE_INHERIT are retained so file grandchildren still receive\n"
+"  the ACE.  If INHERIT_ONLY was set but FILE_INHERIT is absent, all\n"
+"  inherit flags are stripped — DIRECTORY_INHERIT alone has nothing to\n"
+"  propagate and would otherwise bleed into grandchild directories.\n"
+"  If INHERIT_ONLY was not set, all inherit flags are stripped.\n"
+"\n"
+"For a file child all inherit flags are cleared and INHERITED is set.\n"
 "\n"
 "Raises ValueError if no ACEs would be inherited.");
 
@@ -791,11 +806,19 @@ ace_is_inheritable(uint32_t ace_flags, int is_dir)
  *
  * For a directory child (is_dir=True):
  *   Include each ACE with FILE_INHERIT or DIRECTORY_INHERIT set.
- *   If NO_PROPAGATE_INHERIT is set:
- *     clear all inherit bits, set INHERITED (no further propagation).
- *   Else:
- *     clear INHERIT_ONLY (ACE now applies to this directory), keep
- *     FILE_INHERIT / DIRECTORY_INHERIT for further propagation, set INHERITED.
+ *   Without NO_PROPAGATE_INHERIT:
+ *     If DIRECTORY_INHERIT: clear INHERIT_ONLY (ACE applies to this dir),
+ *     keep FILE/DIR_INHERIT for further propagation, set INHERITED.
+ *     If only FILE_INHERIT: keep (or set) INHERIT_ONLY so the ACE does not
+ *     apply to this dir but propagates to files below, set INHERITED.
+ *   With NO_PROPAGATE_INHERIT:
+ *     If INHERIT_ONLY was set and FILE_INHERIT is also set: clear
+ *     INHERIT_ONLY (ACE becomes active), keep FILE/DIR_INHERIT and
+ *     NO_PROPAGATE so file grandchildren still receive the ACE.
+ *     If INHERIT_ONLY was set but FILE_INHERIT is absent: strip all inherit
+ *     bits — DIR_INHERIT alone has nothing to propagate and would otherwise
+ *     bleed into grandchild directories.
+ *     If INHERIT_ONLY was not set: strip all inherit bits, set INHERITED.
  *
  * Raises ValueError if no ACEs would be inherited.
  */
@@ -880,16 +903,51 @@ NFS4ACL_generate_inherited_acl(NFS4ACL_t *self, PyObject *args, PyObject *kwargs
 
 		if (is_dir && !(ace_flags & NFS4_ACE_NO_PROPAGATE_INHERIT_ACE)) {
 			/*
-			 * Directory child, propagation not suppressed:
-			 * keep FILE/DIR_INHERIT for further propagation,
-			 * clear INHERIT_ONLY so the ACE applies to this dir.
+			 * Directory child, propagation not suppressed.
+			 * If DIRECTORY_INHERIT is set: ACE applies to this dir;
+			 * clear INHERIT_ONLY.
+			 * If only FILE_INHERIT (no DIRECTORY_INHERIT): ACE must
+			 * not apply to this dir itself; keep (or set) INHERIT_ONLY
+			 * so it propagates to files below but does not affect the
+			 * directory's own permissions.
 			 */
-			new_flags = (ace_flags & ~NFS4_ACE_INHERIT_ONLY_ACE)
-			          | NFS4_ACE_INHERITED_ACE;
+			if (ace_flags & NFS4_ACE_DIRECTORY_INHERIT_ACE) {
+				new_flags = (ace_flags & ~NFS4_ACE_INHERIT_ONLY_ACE)
+				          | NFS4_ACE_INHERITED_ACE;
+			} else {
+				new_flags = (ace_flags | NFS4_ACE_INHERIT_ONLY_ACE)
+				          | NFS4_ACE_INHERITED_ACE;
+			}
+		} else if (is_dir) {
+			/*
+			 * Directory child with NO_PROPAGATE_INHERIT.
+			 * If INHERIT_ONLY was set: ACE was propagation-only on
+			 * the parent; make it active on this directory by
+			 * clearing INHERIT_ONLY.  Retain FILE/DIR_INHERIT and
+			 * NO_PROPAGATE only when FILE_INHERIT is also present so
+			 * that file grandchildren still receive the ACE; without
+			 * FILE_INHERIT there is nothing to propagate and all
+			 * inherit flags are stripped to prevent DIR_INHERIT from
+			 * bleeding into grandchild directories.
+			 * If INHERIT_ONLY was not set: ACE was already active on
+			 * the parent; strip all inherit flags so grandchildren do
+			 * not receive it.
+			 */
+			if (ace_flags & NFS4_ACE_INHERIT_ONLY_ACE) {
+				if (ace_flags & NFS4_ACE_FILE_INHERIT_ACE) {
+					new_flags = (ace_flags & ~NFS4_ACE_INHERIT_ONLY_ACE)
+					          | NFS4_ACE_INHERITED_ACE;
+				} else {
+					new_flags = (ace_flags & ~NFS4_ACE_INHERIT_MASK)
+					          | NFS4_ACE_INHERITED_ACE;
+				}
+			} else {
+				new_flags = (ace_flags & ~NFS4_ACE_INHERIT_MASK)
+				          | NFS4_ACE_INHERITED_ACE;
+			}
 		} else {
 			/*
-			 * File child, or directory with NO_PROPAGATE:
-			 * strip all inheritance flags.
+			 * File child: strip all inheritance flags.
 			 */
 			new_flags = (ace_flags & ~NFS4_ACE_INHERIT_MASK)
 			          | NFS4_ACE_INHERITED_ACE;
