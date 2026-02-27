@@ -34,7 +34,6 @@ _NFS4_FLAG_CHARS = (
     (t.NFS4Flag.INHERIT_ONLY,         'i'),
     (t.NFS4Flag.SUCCESSFUL_ACCESS,    'S'),
     (t.NFS4Flag.FAILED_ACCESS,        'F'),
-    (t.NFS4Flag.IDENTIFIER_GROUP,     'g'),
     (t.NFS4Flag.INHERITED,            'I'),
 )
 
@@ -86,15 +85,12 @@ def _get_fhandle_hex(fd):
         # avoiding /proc/self/mountinfo parsing when restoring via --fhandle.
         try:
             fh = t.fhandle(path='', dir_fd=fd,
-                           flags=t.FH_AT_EMPTY_PATH
-                                 | t.FH_AT_HANDLE_MNT_ID_UNIQUE
-                                 | t.FH_AT_HANDLE_CONNECTABLE)
+                           flags=t.FH_AT_EMPTY_PATH | t.FH_AT_HANDLE_MNT_ID_UNIQUE | t.FH_AT_HANDLE_CONNECTABLE)
         except (OSError, NotImplementedError):
             # FH_AT_HANDLE_CONNECTABLE not supported on this fs/kernel.
             try:
                 fh = t.fhandle(path='', dir_fd=fd,
-                               flags=t.FH_AT_EMPTY_PATH
-                                     | t.FH_AT_HANDLE_MNT_ID_UNIQUE)
+                               flags=t.FH_AT_EMPTY_PATH | t.FH_AT_HANDLE_MNT_ID_UNIQUE)
             except (OSError, NotImplementedError):
                 # Fallback for kernels < 6.5 (e.g. GitHub Actions runners):
                 # use legacy mount ID without unique flag.
@@ -143,9 +139,12 @@ def _trivial_posix_from_mode(mode):
     """Return a minimal 3-entry POSIXACL synthesised from inode mode bits."""
     def _p(bits):
         p = t.POSIXPerm(0)
-        if bits & 4: p |= t.POSIXPerm.READ
-        if bits & 2: p |= t.POSIXPerm.WRITE
-        if bits & 1: p |= t.POSIXPerm.EXECUTE
+        if bits & 4:
+            p |= t.POSIXPerm.READ
+        if bits & 2:
+            p |= t.POSIXPerm.WRITE
+        if bits & 1:
+            p |= t.POSIXPerm.EXECUTE
         return p
     return t.POSIXACL.from_aces([
         t.POSIXAce(t.POSIXTag.USER_OBJ,  _p((mode >> 6) & 7)),
@@ -367,7 +366,6 @@ def main():
             for item in it:
                 full_path = os.path.join(item.parent, item.name)
                 if item.islnk:
-                    os.close(item.fd)
                     continue
                 try:
                     _process_fd(full_path, item.fd,
@@ -379,8 +377,6 @@ def main():
                     print(f'truenas_getfacl: {full_path}: {e}',
                           file=sys.stderr)
                     rc = 1
-                finally:
-                    os.close(item.fd)
 
     sys.exit(rc)
 

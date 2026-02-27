@@ -43,11 +43,13 @@ _NFS4_FLAG_CHARS = (
 _NFS4_PERM_FROM_CHAR = {c: bit for bit, c in _NFS4_PERM_CHARS}
 _NFS4_FLAG_FROM_CHAR = {c: bit for bit, c in _NFS4_FLAG_CHARS}
 
+
 def _nfs4_perm_union(*perms):
     result = t.NFS4Perm(0)
     for p in perms:
         result |= p
     return result
+
 
 _NFS4_FULL_SET = _nfs4_perm_union(*[bit for bit, _ in _NFS4_PERM_CHARS])
 
@@ -429,7 +431,7 @@ def _recalc_posix_mask(all_aces):
                         if a.tag == t.POSIXTag.GROUP_OBJ),
                        len(result))
             result.insert(idx + 1, t.POSIXAce(t.POSIXTag.MASK, mask_perm,
-                                               default=is_default))
+                                              default=is_default))
         return result
 
     access_aces = [a for a in all_aces if not a.default]
@@ -459,7 +461,7 @@ def _ensure_posix_mask(all_aces):
         idx = next((i for i, a in enumerate(result)
                     if a.tag == t.POSIXTag.GROUP_OBJ), len(result))
         result.insert(idx + 1, t.POSIXAce(t.POSIXTag.MASK, group_perm,
-                                           default=is_default))
+                                          default=is_default))
         return result
 
     access_aces = [a for a in all_aces if not a.default]
@@ -569,11 +571,11 @@ def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
                 )
             remove_entries = [e if e.startswith('default:') else 'default:' + e
                               for e in remove_entries]
-            modify_entries  = [e if e.startswith('default:') else 'default:' + e
-                               for e in modify_entries]
+            modify_entries = [e if e.startswith('default:') else 'default:' + e
+                              for e in modify_entries]
         else:
             remove_entries = []
-            modify_entries  = []
+            modify_entries = []
 
     if remove_entries:
         if not is_posix:
@@ -796,8 +798,30 @@ def main():
                     metavar='mount_id:hex',
                     help='Target file by fhandle (format returned by '
                          'truenas_getfacl); may be repeated')
+    ap.add_argument('-e', '--edit', action='store_true',
+                    help='Launch an interactive curses ACL editor. Requires '
+                         'exactly one path argument and an interactive '
+                         'terminal. Incompatible with -R, --restore, '
+                         '--fhandle, and all other modification options.')
     ap.add_argument('path', nargs='*')
     args = ap.parse_args()
+
+    if args.edit:
+        if len(args.path) != 1:
+            ap.error('-e/--edit requires exactly one path argument')
+        if args.restore:
+            ap.error('-e/--edit is incompatible with --restore')
+        if args.fhandles:
+            ap.error('-e/--edit is incompatible with --fhandle')
+        if args.recursive:
+            ap.error('-e/--edit is incompatible with -R '
+                     '(recursion is handled inside the editor)')
+        if any([args.strip, args.remove_default, args.modify, args.remove,
+                args.insert, args.acl_file, args.default_only, args.no_mask]):
+            ap.error('-e/--edit cannot be combined with other modification '
+                     'options')
+        from ._interactive import interactive_edit
+        sys.exit(interactive_edit(args.path[0]))
 
     if not args.restore and not args.path and not args.fhandles:
         ap.error('path arguments are required when not using --restore')
