@@ -64,9 +64,7 @@ _NFS4_PERM_SETS = {
 
 _NFS4_TYPE_FROM_STR = {
     'allow': t.NFS4AceType.ALLOW,
-    'deny':  t.NFS4AceType.DENY,
-    'audit': t.NFS4AceType.AUDIT,
-    'alarm': t.NFS4AceType.ALARM,
+    'deny': t.NFS4AceType.DENY,
 }
 
 _POSIX_PERM_CHARS = (

@@ -39,9 +39,7 @@ _NFS4_FLAG_CHARS = (
 
 _NFS4_TYPE_STR = {
     t.NFS4AceType.ALLOW: 'allow',
-    t.NFS4AceType.DENY:  'deny',
-    t.NFS4AceType.AUDIT: 'audit',
-    t.NFS4AceType.ALARM: 'alarm',
+    t.NFS4AceType.DENY: 'deny',
 }
 
 _POSIX_TAG_PREFIX = {
