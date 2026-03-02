@@ -603,7 +603,11 @@ class IterInstance(NamedTuple):
     """Instance returned by filesystem iterator.
 
     Represents a file or directory encountered during iteration.
-    The file descriptor must be closed by the caller.
+
+    The file descriptor must NOT be closed by the caller.
+
+    The iterator manages the file descriptor lifecycle — it is closed automatically
+    at the start of the next iteration or when the iterator's context manager exits.
     """
     parent: str  # Parent directory path
     name: str  # Entry name
