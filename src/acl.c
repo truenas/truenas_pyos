@@ -257,6 +257,10 @@ do_fremoveacl(int fd)
 	         !(async_err = PyErr_CheckSignals()));
 
 	if (ret == -1 && errno != ENODATA) {
+		if (errno == EOPNOTSUPP) {
+			/* acltype == DISABLED */
+			return 0;
+		}
 		if (!async_err)
 			PyErr_SetFromErrno(PyExc_OSError);
 		return -1;
