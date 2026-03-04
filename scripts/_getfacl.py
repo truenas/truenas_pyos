@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 import argparse
+import errno
 import grp
 import json
 import os
@@ -168,7 +169,7 @@ def _format_nfs4_text(path, acl, uid, gid, fh_hex, numeric, quiet):
     return '\n'.join(lines)
 
 
-def _format_posix_text(path, acl, uid, gid, fh_hex, numeric, quiet):
+def _format_posix_text(path, acl, uid, gid, fh_hex, numeric, quiet, synthesized=False):
     lines = []
     if not quiet:
         lines.append(f'# file: {path}')
@@ -176,6 +177,8 @@ def _format_posix_text(path, acl, uid, gid, fh_hex, numeric, quiet):
         lines.append(f'# group: {_name_of_gid(gid, numeric)}')
         if fh_hex is not None:
             lines.append(f'# fhandle: {fh_hex}')
+        if synthesized:
+            lines.append('# acltype: DISABLED (synthesized from mode bits)')
     for ace in acl.aces:
         tag = _POSIX_TAG_PREFIX[ace.tag]
         qual = _posix_qualifier(ace, numeric)
@@ -225,7 +228,7 @@ def _format_nfs4_json(path, acl, uid, gid, fh_hex, numeric):
     return d
 
 
-def _format_posix_json(path, acl, uid, gid, fh_hex, numeric):
+def _format_posix_json(path, acl, uid, gid, fh_hex, numeric, synthesized=False):
     d = {
         'path': path,
         'uid': uid,
@@ -233,6 +236,7 @@ def _format_posix_json(path, acl, uid, gid, fh_hex, numeric):
         'owner': _name_of_uid(uid, numeric),
         'group': _name_of_gid(gid, numeric),
         'acl_type': 'POSIX',
+        'acl_disabled': synthesized,
         'trivial': acl.trivial,
         'aces': ([_posix_ace_to_dict(ace, numeric) for ace in acl.aces] +
                  [_posix_ace_to_dict(ace, numeric) for ace in acl.default_aces]),
@@ -271,7 +275,8 @@ def _get_mount_info(path):
     return mountpoint, fs_name, rel_path
 
 
-def _output_acl(path, fd, acl, uid, gid, numeric, quiet, use_json, skip_base):
+def _output_acl(path, fd, acl, uid, gid, numeric, quiet, use_json, skip_base,
+                synthesized=False):
     if skip_base and acl.trivial:
         return
     fh_hex = _get_fhandle_hex(fd)
@@ -286,36 +291,54 @@ def _output_acl(path, fd, acl, uid, gid, numeric, quiet, use_json, skip_base):
     else:
         if use_json:
             print(json.dumps(_format_posix_json(path, acl, uid, gid,
-                                                fh_hex, numeric)))
+                                                fh_hex, numeric, synthesized)))
         else:
             print(_format_posix_text(path, acl, uid, gid, fh_hex, numeric,
-                                     quiet))
+                                     quiet, synthesized))
             print()
 
 
 def _process_fd(path, fd, uid, gid, numeric, quiet, use_json, skip_base):
-    acl = t.fgetacl(fd)
-    if isinstance(acl, t.POSIXACL) and not acl.aces:
+    synthesized = False
+    try:
+        acl = t.fgetacl(fd)
+    except OSError as e:
+        if e.errno != errno.EOPNOTSUPP:
+            raise
         st = os.fstat(fd)
-        acl = t.POSIXACL.from_aces(
-            list(_trivial_posix_from_mode(st.st_mode).aces) +
-            list(acl.default_aces)
-        )
-    _output_acl(path, fd, acl, uid, gid, numeric, quiet, use_json, skip_base)
+        acl = _trivial_posix_from_mode(st.st_mode)
+        synthesized = True
+    else:
+        if isinstance(acl, t.POSIXACL) and not acl.aces:
+            st = os.fstat(fd)
+            acl = t.POSIXACL.from_aces(
+                list(_trivial_posix_from_mode(st.st_mode).aces) +
+                list(acl.default_aces)
+            )
+    _output_acl(path, fd, acl, uid, gid, numeric, quiet, use_json, skip_base,
+                synthesized)
 
 
 def _process_path(path, numeric, quiet, use_json, skip_base):
     fd = t.openat2(path, flags=os.O_RDONLY, resolve=t.RESOLVE_NO_SYMLINKS)
     try:
-        acl = t.fgetacl(fd)
         st = os.fstat(fd)
-        if isinstance(acl, t.POSIXACL) and not acl.aces:
-            acl = t.POSIXACL.from_aces(
-                list(_trivial_posix_from_mode(st.st_mode).aces) +
-                list(acl.default_aces)
-            )
+        synthesized = False
+        try:
+            acl = t.fgetacl(fd)
+        except OSError as e:
+            if e.errno != errno.EOPNOTSUPP:
+                raise
+            acl = _trivial_posix_from_mode(st.st_mode)
+            synthesized = True
+        else:
+            if isinstance(acl, t.POSIXACL) and not acl.aces:
+                acl = t.POSIXACL.from_aces(
+                    list(_trivial_posix_from_mode(st.st_mode).aces) +
+                    list(acl.default_aces)
+                )
         _output_acl(path, fd, acl, st.st_uid, st.st_gid, numeric, quiet,
-                    use_json, skip_base)
+                    use_json, skip_base, synthesized)
     finally:
         os.close(fd)
 
