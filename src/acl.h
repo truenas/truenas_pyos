@@ -27,8 +27,9 @@ typedef struct {
 		struct {
 			char   *access_data;
 			size_t  access_len;
-			char   *default_data;  /* NULL = no default ACL */
+			char   *default_data;       /* NULL = no default ACL */
 			size_t  default_len;
+			int     access_synthesized; /* 1 = synthesised from mode bits */
 		} posix;
 	} data;
 } acl_xattr_t;
@@ -90,7 +91,9 @@ int nfs4acl_valid(int fd, const char *data, size_t len);
 extern PyTypeObject POSIXAce_Type;
 extern PyTypeObject POSIXACL_Type;
 
-PyObject *POSIXACL_from_xattr_bytes(PyObject *access_data, PyObject *default_data);
+/* access_synthesized=1 when the access blob was synthesised from mode bits. */
+PyObject *POSIXACL_from_xattr_bytes(PyObject *access_data, PyObject *default_data,
+                                     int access_synthesized);
 
 void POSIXACL_get_xattr_bytes(PyObject *acl,
                                PyObject **access_out,
