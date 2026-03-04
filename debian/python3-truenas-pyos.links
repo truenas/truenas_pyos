@@ -1,0 +1,2 @@
+usr/bin/truenas_getfacl usr/bin/nfs4xdr_getfacl
+usr/bin/truenas_setfacl usr/bin/nfs4xdr_setfacl
