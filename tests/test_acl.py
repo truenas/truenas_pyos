@@ -853,9 +853,11 @@ def test_posixacl_default_data_must_be_bytes_or_none():
         t.POSIXACL(_POSIX_HDR.pack(2), "not bytes")
 
 
-def test_posixacl_trivial_empty_access_no_default():
-    # b"" + None is the ENODATA sentinel returned by fgetacl.
-    assert t.POSIXACL(b"").trivial is True
+def test_posixacl_trivial_direct_construction_is_false():
+    # Directly constructing POSIXACL(b"") does not set synthesized=True,
+    # so trivial must be False regardless of access_data emptiness.
+    # trivial=True is only possible via fgetacl when no access xattr is present.
+    assert t.POSIXACL(b"").trivial is False
 
 
 def test_posixacl_trivial_nonempty_access_is_false():
@@ -1117,6 +1119,121 @@ def test_posix_inherited_acl_matches_kernel(posix_dataset):
             os.umask(old_umask)
     finally:
         os.close(parent_fd)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# fgetacl: ENODATA synthesis — access ACL absent, synthesised from mode bits
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_posix_fgetacl_fresh_file_has_nonempty_aces(posix_dataset):
+    """A freshly created file has no system.posix_acl_access xattr.
+    fgetacl must synthesise the trivial access ACL from mode bits so that
+    aces is never an empty list."""
+    path = os.path.join(posix_dataset, 'synth_fresh')
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        assert 'system.posix_acl_access' not in os.listxattr(fd)
+        acl = t.fgetacl(fd)
+        assert isinstance(acl, t.POSIXACL)
+        assert len(acl.aces) == 3
+        tags = {a.tag for a in acl.aces}
+        assert t.POSIXTag.USER_OBJ  in tags
+        assert t.POSIXTag.GROUP_OBJ in tags
+        assert t.POSIXTag.OTHER     in tags
+    finally:
+        os.close(fd)
+        os.unlink(path)
+
+
+@pytest.mark.parametrize('name,mode,user_p,group_p,other_p', [
+    ('synth_777', 0o777,
+     t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
+     t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
+     t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE),
+    ('synth_750', 0o750,
+     t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
+     t.POSIXPerm.READ | t.POSIXPerm.EXECUTE,
+     t.POSIXPerm(0)),
+    ('synth_640', 0o640,
+     t.POSIXPerm.READ | t.POSIXPerm.WRITE,
+     t.POSIXPerm.READ,
+     t.POSIXPerm(0)),
+    ('synth_400', 0o400,
+     t.POSIXPerm.READ,
+     t.POSIXPerm(0),
+     t.POSIXPerm(0)),
+])
+def test_posix_fgetacl_synthesised_access_reflects_mode(
+        posix_dataset, name, mode, user_p, group_p, other_p):
+    """Synthesised access aces must faithfully reflect the inode mode bits."""
+    path = os.path.join(posix_dataset, name)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        os.fchmod(fd, mode)                        # set exact mode, bypass umask
+        assert 'system.posix_acl_access' not in os.listxattr(fd)
+        tags = {a.tag: a for a in t.fgetacl(fd).aces}
+        assert tags[t.POSIXTag.USER_OBJ].perms  == user_p
+        assert tags[t.POSIXTag.GROUP_OBJ].perms == group_p
+        assert tags[t.POSIXTag.OTHER].perms     == other_p
+    finally:
+        os.close(fd)
+        os.unlink(path)
+
+
+def test_posix_fgetacl_synthesised_aces_have_default_false(posix_dataset):
+    """Synthesised access aces must have default=False."""
+    path = os.path.join(posix_dataset, 'synth_not_default')
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o755)
+    try:
+        assert 'system.posix_acl_access' not in os.listxattr(fd)
+        assert all(not a.default for a in t.fgetacl(fd).aces)
+    finally:
+        os.close(fd)
+        os.unlink(path)
+
+
+def test_posix_fgetacl_default_xattr_only_preserves_default_aces(posix_dataset):
+    """A directory with system.posix_acl_default but no access xattr must
+    return both the synthesised access aces (from mode) and the real
+    default_aces read from the default xattr."""
+    default_aces = [
+        t.POSIXAce(tag=t.POSIXTag.USER_OBJ,
+                   perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
+                   default=True),
+        t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ,
+                   perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
+        t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0), default=True),
+    ]
+    path = os.path.join(posix_dataset, 'default_only_dir')
+    os.makedirs(path, exist_ok=True)
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        t.fsetacl(fd, t.POSIXACL.from_aces(list(_MINIMAL_POSIX_ACES) + default_aces))
+        # Strip the access xattr, leaving only the default xattr.
+        os.removexattr(fd, 'system.posix_acl_access')
+        assert 'system.posix_acl_access' not in os.listxattr(fd)
+        assert 'system.posix_acl_default'     in os.listxattr(fd)
+
+        acl = t.fgetacl(fd)
+
+        # Access ACL: synthesised from mode bits, always 3 entries, default=False.
+        assert len(acl.aces) == 3
+        assert all(not a.default for a in acl.aces)
+        assert {a.tag for a in acl.aces} == {
+            t.POSIXTag.USER_OBJ, t.POSIXTag.GROUP_OBJ, t.POSIXTag.OTHER}
+
+        # Default ACL: intact, all entries marked default=True.
+        assert len(acl.default_aces) == 3
+        assert all(a.default for a in acl.default_aces)
+        d = {a.tag: a for a in acl.default_aces}
+        assert d[t.POSIXTag.USER_OBJ].perms  == (
+            t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE)
+        assert d[t.POSIXTag.GROUP_OBJ].perms == (
+            t.POSIXPerm.READ | t.POSIXPerm.EXECUTE)
+        assert d[t.POSIXTag.OTHER].perms     == t.POSIXPerm(0)
+    finally:
+        os.close(fd)
+        os.rmdir(path)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

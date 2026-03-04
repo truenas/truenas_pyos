@@ -919,6 +919,7 @@ py_fgetacl(PyObject *obj, PyObject *args)
 		result = NFS4ACL_from_xattr_bytes(data);
 		Py_DECREF(data);
 	} else {
+		int synthesized = acl.data.posix.access_synthesized;
 		PyObject *access = PyBytes_FromStringAndSize(
 		    acl.data.posix.access_data ? acl.data.posix.access_data : "",
 		    (Py_ssize_t)acl.data.posix.access_len);
@@ -932,7 +933,7 @@ py_fgetacl(PyObject *obj, PyObject *args)
 			Py_XDECREF(dflt);
 			return NULL;
 		}
-		result = POSIXACL_from_xattr_bytes(access, dflt);
+		result = POSIXACL_from_xattr_bytes(access, dflt, synthesized);
 		Py_DECREF(access);
 		Py_DECREF(dflt);
 	}

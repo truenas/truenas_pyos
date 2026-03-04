@@ -535,11 +535,27 @@ def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
         )
 
     if strip:
-        st = os.fstat(fd)
         if not is_posix:
+            st = os.fstat(fd)
             acl = _make_trivial_nfs4(st.st_mode)
         else:
-            acl = _make_trivial_posix(st.st_mode)
+            # Use the actual USER_OBJ/GROUP_OBJ/OTHER perms from the existing
+            # ACL aces rather than st_mode, because when a MASK entry is
+            # present the group bits in st_mode reflect the MASK value, not
+            # the GROUP_OBJ perm (e.g. after 'setfacl -m user:uid:rwx' the
+            # mode group bits become rwx but GROUP_OBJ may still be r--).
+            base = {a.tag: a.perms for a in acl.aces
+                    if a.tag in (t.POSIXTag.USER_OBJ,
+                                 t.POSIXTag.GROUP_OBJ,
+                                 t.POSIXTag.OTHER)}
+            if len(base) == 3:
+                acl = t.POSIXACL.from_aces([
+                    t.POSIXAce(t.POSIXTag.USER_OBJ,  base[t.POSIXTag.USER_OBJ]),
+                    t.POSIXAce(t.POSIXTag.GROUP_OBJ, base[t.POSIXTag.GROUP_OBJ]),
+                    t.POSIXAce(t.POSIXTag.OTHER,      base[t.POSIXTag.OTHER]),
+                ])
+            else:
+                acl = _make_trivial_posix(os.fstat(fd).st_mode)
 
     if remove_default and is_posix:
         if not acl.aces:

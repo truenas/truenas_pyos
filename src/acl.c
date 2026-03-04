@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
 #include <Python.h>
+#include <endian.h>
+#include <sys/stat.h>
 #include <sys/xattr.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 #include "acl.h"
 
 #define NFS4_ACL_XATTR      "system.nfs4_acl_xdr"
@@ -56,6 +59,58 @@ acl_xattr_free(acl_xattr_t *acl)
 		PyMem_RawFree(acl->data.posix.access_data);
 		PyMem_RawFree(acl->data.posix.default_data);
 	}
+}
+
+/*
+ * synthesize_posix_access_from_mode -- build a minimal 3-entry POSIX ACL
+ * blob from inode mode bits, matching getfacl(1) behaviour when the
+ * system.posix_acl_access xattr is absent (ENODATA).
+ *
+ * Format: 4-byte LE version header (= 2) followed by three 8-byte ACEs:
+ *   [tag u16 LE | perm u16 LE | id u32 LE]
+ * Tags: USER_OBJ=0x0001, GROUP_OBJ=0x0004, OTHER=0x0020.
+ * ID:   0xFFFFFFFF (POSIX_SPECIAL_ID) for all three.
+ *
+ * Returns a PyMem_RawMalloc'd buffer (caller frees), or NULL with OOM set.
+ */
+#define POSIX_TRIVIAL_ACL_SIZE (4 + 3 * 8)   /* header + 3 × 8-byte ACE */
+
+static char *
+synthesize_posix_access_from_mode(mode_t mode, size_t *out_len)
+{
+	uint8_t *buf;
+	uint32_t hdr;
+	size_t i;
+
+	/* { tag, perm } for USER_OBJ / GROUP_OBJ / OTHER */
+	static const uint16_t tags[3] = { 0x0001, 0x0004, 0x0020 };
+	unsigned perms[3];
+	uint16_t v16;
+	uint32_t v32;
+
+	buf = (uint8_t *)PyMem_RawMalloc(POSIX_TRIVIAL_ACL_SIZE);
+	if (buf == NULL) {
+		PyErr_NoMemory();
+		return NULL;
+	}
+
+	/* Header: version = 2 (little-endian) */
+	hdr = htole32(2);
+	memcpy(buf, &hdr, 4);
+
+	perms[0] = (mode >> 6) & 7;   /* user  bits */
+	perms[1] = (mode >> 3) & 7;   /* group bits */
+	perms[2] =  mode       & 7;   /* other bits */
+
+	for (i = 0; i < 3; i++) {
+		uint8_t *p = buf + 4 + i * 8;
+		v16 = htole16(tags[i]);   memcpy(p + 0, &v16, 2);
+		v16 = htole16(perms[i]);  memcpy(p + 2, &v16, 2);
+		v32 = htole32(0xFFFFFFFFU); memcpy(p + 4, &v32, 4);
+	}
+
+	*out_len = POSIX_TRIVIAL_ACL_SIZE;
+	return (char *)buf;
 }
 
 /*
@@ -127,9 +182,34 @@ do_fgetacl(int fd, acl_xattr_t *out)
 		                                             &out->data.posix.access_len);
 		if (out->data.posix.access_data == NULL)
 			return -1;
+		out->data.posix.access_synthesized = 0;
 	} else {
-		out->data.posix.access_data = NULL;
-		out->data.posix.access_len = 0;
+		/*
+		 * ENODATA: system.posix_acl_access is absent.  The kernel
+		 * implicitly derives the access ACL from the inode mode bits;
+		 * synthesise a matching trivial 3-entry blob so that callers
+		 * always see a non-empty access ACL, matching getfacl(1).
+		 */
+		struct stat st;
+		int fstat_err;
+
+		do {
+			Py_BEGIN_ALLOW_THREADS
+			fstat_err = fstat(fd, &st);
+			Py_END_ALLOW_THREADS
+		} while (fstat_err == -1 && errno == EINTR);
+
+		if (fstat_err == -1) {
+			PyErr_SetFromErrno(PyExc_OSError);
+			return -1;
+		}
+
+		out->data.posix.access_data =
+		    synthesize_posix_access_from_mode(st.st_mode,
+		                                      &out->data.posix.access_len);
+		if (out->data.posix.access_data == NULL)
+			return -1;
+		out->data.posix.access_synthesized = 1;
 	}
 
 	/* Probe for default ACL. */

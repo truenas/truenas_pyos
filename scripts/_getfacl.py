@@ -308,13 +308,6 @@ def _process_fd(path, fd, uid, gid, numeric, quiet, use_json, skip_base):
         st = os.fstat(fd)
         acl = _trivial_posix_from_mode(st.st_mode)
         synthesized = True
-    else:
-        if isinstance(acl, t.POSIXACL) and not acl.aces:
-            st = os.fstat(fd)
-            acl = t.POSIXACL.from_aces(
-                list(_trivial_posix_from_mode(st.st_mode).aces) +
-                list(acl.default_aces)
-            )
     _output_acl(path, fd, acl, uid, gid, numeric, quiet, use_json, skip_base,
                 synthesized)
 
@@ -331,12 +324,6 @@ def _process_path(path, numeric, quiet, use_json, skip_base):
                 raise
             acl = _trivial_posix_from_mode(st.st_mode)
             synthesized = True
-        else:
-            if isinstance(acl, t.POSIXACL) and not acl.aces:
-                acl = t.POSIXACL.from_aces(
-                    list(_trivial_posix_from_mode(st.st_mode).aces) +
-                    list(acl.default_aces)
-                )
         _output_acl(path, fd, acl, st.st_uid, st.st_gid, numeric, quiet,
                     use_json, skip_base, synthesized)
     finally:

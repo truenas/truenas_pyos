@@ -261,6 +261,7 @@ typedef struct {
 	PyObject_HEAD
 	PyObject *access_data;  /* bytes: raw system.posix_acl_access  */
 	PyObject *default_data; /* bytes or None: system.posix_acl_default */
+	int       synthesized;  /* 1 if access_data was synthesised from mode bits */
 } POSIXACL_t;
 
 static void
@@ -279,6 +280,7 @@ POSIXACL_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
 		return NULL;
 	self->access_data = PyBytes_FromStringAndSize("", 0);
 	self->default_data = Py_NewRef(Py_None);
+	self->synthesized = 0;
 	if (self->access_data == NULL) {
 		Py_DECREF(self);
 		return NULL;
@@ -621,15 +623,15 @@ POSIXACL_repr(POSIXACL_t *self)
 }
 
 PyDoc_STRVAR(POSIXACL_trivial_doc,
-"bool: True if no access ACL xattr was present (ENODATA) "
-"and no default ACL.");
+"bool: True if the access ACL was synthesised from mode bits (no xattr) "
+"and no default ACL is present.");
 
 /* POSIXACL.trivial property */
 static PyObject *
 POSIXACL_get_trivial(POSIXACL_t *self, void *closure)
 {
 	return PyBool_FromLong(
-	    PyBytes_GET_SIZE(self->access_data) == 0 &&
+	    self->synthesized &&
 	    self->default_data == Py_None);
 }
 
@@ -736,10 +738,17 @@ PyTypeObject POSIXACL_Type = {
 /* ── public helpers used by truenas_os.c ─────────────────────────────────── */
 
 PyObject *
-POSIXACL_from_xattr_bytes(PyObject *access_data, PyObject *default_data)
+POSIXACL_from_xattr_bytes(PyObject *access_data, PyObject *default_data,
+                           int access_synthesized)
 {
-	return PyObject_CallFunction((PyObject *)&POSIXACL_Type, "OO",
-	                             access_data, default_data);
+	POSIXACL_t *obj;
+
+	obj = (POSIXACL_t *)PyObject_CallFunction((PyObject *)&POSIXACL_Type,
+	                                           "OO", access_data, default_data);
+	if (obj == NULL)
+		return NULL;
+	obj->synthesized = access_synthesized;
+	return (PyObject *)obj;
 }
 
 void
