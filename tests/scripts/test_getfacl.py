@@ -73,24 +73,26 @@ def test_nfs4_perm_str_read_execute():
 # ── _nfs4_flag_str ────────────────────────────────────────────────────────────
 
 def test_nfs4_flag_str_all_set():
+    # IDENTIFIER_GROUP (g) is intentionally excluded from text output;
+    # it is implicit in the 'group:' who prefix, matching FreeBSD getfacl.
     all_flags = (
-        t.NFS4Flag.FILE_INHERIT         | t.NFS4Flag.DIRECTORY_INHERIT    |
-        t.NFS4Flag.NO_PROPAGATE_INHERIT | t.NFS4Flag.INHERIT_ONLY         |
-        t.NFS4Flag.SUCCESSFUL_ACCESS    | t.NFS4Flag.FAILED_ACCESS        |
-        t.NFS4Flag.IDENTIFIER_GROUP     | t.NFS4Flag.INHERITED
+        t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT |
+        t.NFS4Flag.NO_PROPAGATE_INHERIT | t.NFS4Flag.INHERIT_ONLY |
+        t.NFS4Flag.SUCCESSFUL_ACCESS | t.NFS4Flag.FAILED_ACCESS |
+        t.NFS4Flag.IDENTIFIER_GROUP | t.NFS4Flag.INHERITED
     )
-    assert _nfs4_flag_str(all_flags) == 'fdniSFgI'
+    assert _nfs4_flag_str(all_flags) == 'fdniSFI'
 
 
 def test_nfs4_flag_str_none_set():
-    assert _nfs4_flag_str(t.NFS4Flag(0)) == '--------'
+    assert _nfs4_flag_str(t.NFS4Flag(0)) == '-------'
 
 
 def test_nfs4_flag_str_inherit_subset():
     s = _nfs4_flag_str(t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT)
     assert s[0] == 'f'
     assert s[1] == 'd'
-    assert s.count('-') == 6
+    assert s.count('-') == 5
 
 
 # ── _nfs4_who_str ─────────────────────────────────────────────────────────────
