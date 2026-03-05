@@ -62,9 +62,9 @@ _FORM_BITS_COLS = 7
 _FORM_BITS_STRIDE = 4
 
 _FORM_INHERIT_INDENT = 2
-_FORM_INHERIT_COLS = 2
+_FORM_INHERIT_COLS = 1
 _FORM_INHERIT_STRIDE = 14
-_FORM_INHERIT_NAME_W = 9
+_FORM_INHERIT_NAME_W = 12
 
 # NFS4 who-type radio grid (5 options, 2 columns)
 _FORM_WHO_COLS = 2
@@ -129,12 +129,18 @@ _FORM_PERM_SETS = [
     ('write_set', _NFS4_PERM_SETS['write_set']),
 ]
 
-# Inherit flags shown in the form
+# Inherit flags shown in the form (directories: all propagation flags + inherited)
 _FORM_INHERIT_FLAGS = [
-    ('file', t.NFS4Flag.FILE_INHERIT),
-    ('dir', t.NFS4Flag.DIRECTORY_INHERIT),
-    ('no_prop', t.NFS4Flag.NO_PROPAGATE_INHERIT),
-    ('inh_only', t.NFS4Flag.INHERIT_ONLY),
+    ('file_inherit', t.NFS4Flag.FILE_INHERIT),
+    ('dir_inherit', t.NFS4Flag.DIRECTORY_INHERIT),
+    ('no_propagate', t.NFS4Flag.NO_PROPAGATE_INHERIT),
+    ('inherit_only', t.NFS4Flag.INHERIT_ONLY),
+    ('inherited', t.NFS4Flag.INHERITED),
+]
+
+# Inherit flags shown for files (no propagation flags — they have no effect on files)
+_FORM_FILE_INHERIT_FLAGS = [
+    ('inherited', t.NFS4Flag.INHERITED),
 ]
 
 # Individual permission bits in canonical order
@@ -157,6 +163,7 @@ class _FormState:
     who_type: _NFS4WhoChoice = _NFS4WhoChoice.OWNER
     who_id: str = ''
     who_id_caret: int = 0
+    who_id_scroll: int = 0
     who_numeric: bool = False
     who_in_id: bool = False
     allow: bool = True
@@ -414,25 +421,35 @@ class AclEditor:
             self._draw()
             return None
 
+        _who_needs_id = self._frm.who_type in (_NFS4WhoChoice.USER, _NFS4WhoChoice.GROUP_NAMED)
+
         if ch in _ENTER_KEYS:
             if self._frm.region == _FormRegion.WHO and self._frm.who_in_id:
                 self._form_key_who(ch)
+            elif self._frm.region == _FormRegion.WHO and _who_needs_id and not self._frm.who_in_id:
+                self._frm.who_in_id = True
             else:
                 self._form_finish()
             self._draw()
             return None
 
         if ch == curses.KEY_BTAB:
-            self._frm.region = _FormRegion((int(self._frm.region) - 1) % len(_FormRegion))
-            self._frm.cursor = 0
-            self._frm.who_in_id = False
+            if self._frm.region == _FormRegion.WHO and self._frm.who_in_id:
+                self._frm.who_in_id = False
+            else:
+                self._frm.region = _FormRegion((int(self._frm.region) - 1) % len(_FormRegion))
+                self._frm.cursor = 0
+                self._frm.who_in_id = False
             self._draw()
             return None
 
         if ch == ord('\t'):
-            self._frm.region = _FormRegion((int(self._frm.region) + 1) % len(_FormRegion))
-            self._frm.cursor = 0
-            self._frm.who_in_id = False
+            if self._frm.region == _FormRegion.WHO and _who_needs_id and not self._frm.who_in_id:
+                self._frm.who_in_id = True
+            else:
+                self._frm.region = _FormRegion((int(self._frm.region) + 1) % len(_FormRegion))
+                self._frm.cursor = 0
+                self._frm.who_in_id = False
             self._draw()
             return None
 
@@ -611,9 +628,13 @@ class AclEditor:
         else:
             self._frm.cursor = new_cur
 
+    def _inh_flags_list(self):
+        return _FORM_INHERIT_FLAGS if self._ctx.is_dir else _FORM_FILE_INHERIT_FLAGS
+
     def _form_key_inherit(self, ch):
+        inh_flags_list = self._inh_flags_list()
         if ch == ord(' '):
-            _, flag = _FORM_INHERIT_FLAGS[self._frm.cursor]
+            _, flag = inh_flags_list[self._frm.cursor]
             if self._frm.inh_flags & flag:
                 self._frm.inh_flags = t.NFS4Flag(int(self._frm.inh_flags) & ~int(flag))
             else:
@@ -621,7 +642,7 @@ class AclEditor:
             return
 
         new_cur, went_prev, went_next = _grid_nav(
-            self._frm.cursor, ch, _FORM_INHERIT_COLS, len(_FORM_INHERIT_FLAGS))
+            self._frm.cursor, ch, _FORM_INHERIT_COLS, len(inh_flags_list))
         if went_prev:
             self._frm.region = _FormRegion.BITS
             self._frm.cursor = _FORM_BITS_COLS
@@ -1249,7 +1270,7 @@ class AclEditor:
                     who_type, who_id = _NFS4WhoChoice.USER, s[5:]
                 case s:
                     who_type, who_id = _NFS4WhoChoice.GROUP_NAMED, s[6:]
-            editable = ~(int(t.NFS4Flag.IDENTIFIER_GROUP) | int(t.NFS4Flag.INHERITED))
+            editable = ~int(t.NFS4Flag.IDENTIFIER_GROUP)
             self._frm = _FormState(
                 who_type=who_type,
                 who_id=who_id,
@@ -1288,9 +1309,7 @@ class AclEditor:
             return
 
         perm_str = _nfs4_perm_str(self._frm.mask)
-        inh_only_mask = (t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT |
-                         t.NFS4Flag.NO_PROPAGATE_INHERIT | t.NFS4Flag.INHERIT_ONLY)
-        flag_val = t.NFS4Flag(int(self._frm.inh_flags) & int(inh_only_mask))
+        flag_val = self._frm.inh_flags
         flag_str = ''.join(
             c if flag_val & bit else '-'
             for bit, c in _NFS4_FLAG_CHARS
@@ -1401,14 +1420,22 @@ class AclEditor:
         if self._frm.who_type in (_NFS4WhoChoice.USER, _NFS4WhoChoice.GROUP_NAMED):
             id_focused = who_focused and self._frm.who_in_id
             box_w = max(8, right_w - 26)
-            id_disp = self._frm.who_id[:box_w]
+            # Adjust scroll to keep caret visible
+            caret = self._frm.who_id_caret
+            scroll = self._frm.who_id_scroll
+            if caret < scroll:
+                scroll = caret
+            elif caret >= scroll + box_w:
+                scroll = caret - box_w + 1
+            self._frm.who_id_scroll = scroll
+            id_disp = self._frm.who_id[scroll:scroll + box_w]
             id_box = id_disp.ljust(box_w)
             mode_str = '(id)' if self._frm.who_numeric else '(name)'
             put(row, f' Identifier: [{id_box}] {mode_str}')
             if id_focused:
-                caret = min(self._frm.who_id_caret, box_w - 1)
-                char = id_box[caret] if caret < len(id_box) else ' '
-                put_at(row, 14 + caret, char, sel_attr)
+                vis_caret = caret - scroll
+                char = id_box[vis_caret] if vis_caret < len(id_box) else ' '
+                put_at(row, 14 + vis_caret, char, sel_attr)
             row += 1
 
         row += 1
@@ -1473,16 +1500,13 @@ class AclEditor:
         row += 1
 
         inh_focused = (self._frm.region == _FormRegion.INHERIT)
-        for fi, (fname, flag) in enumerate(_FORM_INHERIT_FLAGS):
-            col_in_row = fi % _FORM_INHERIT_COLS
-            display_row = row + (fi // _FORM_INHERIT_COLS)
+        for fi, (fname, flag) in enumerate(self._inh_flags_list()):
             checked = bool(self._frm.inh_flags & flag)
             box = '[x]' if checked else '[ ]'
             focused = inh_focused and self._frm.cursor == fi
             attr = sel_attr if focused else 0
-            label = f'{box} {fname:<{_FORM_INHERIT_NAME_W}}'
-            col_offset = _FORM_INHERIT_INDENT + col_in_row * _FORM_INHERIT_STRIDE
-            put_at(display_row, col_offset, label, attr)
+            label = f'{box} {fname}'
+            put_at(row + fi, _FORM_INHERIT_INDENT, label, attr)
 
     # ── POSIX structured editor drawing ──────────────────────────────────────
 
