@@ -56,7 +56,7 @@ def test_nfs4_perm_str_all_set():
         t.NFS4Perm.READ_ACL          | t.NFS4Perm.WRITE_ACL         |
         t.NFS4Perm.WRITE_OWNER       | t.NFS4Perm.SYNCHRONIZE
     )
-    assert _nfs4_perm_str(all_perms) == 'rwaRWxDdpPcCos'
+    assert _nfs4_perm_str(all_perms) == 'rwpRWxDdaAcCos'
 
 
 def test_nfs4_perm_str_none_set():
