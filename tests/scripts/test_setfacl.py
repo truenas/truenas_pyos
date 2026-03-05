@@ -23,6 +23,7 @@ from _truenas_os_scripts._setfacl import (
     _parse_nfs4_who_spec,
     _parse_posix_ace,
     _parse_posix_remove_spec,
+    _parse_acl_flag,
     _mode_to_nfs4_perm,
     _mode_to_posix_perm,
     _make_trivial_nfs4,
@@ -1008,3 +1009,73 @@ def test_setfacl_fhandle_invalid_format():
     """Malformed fhandle string raises ValueError."""
     with pytest.raises(ValueError, match='invalid fhandle format'):
         _open_by_fhandle('not_a_valid_fhandle')
+
+
+# ── _parse_acl_flag ───────────────────────────────────────────────────────────
+
+def test_parse_acl_flag_none_returns_zero():
+    assert int(_parse_acl_flag('none')) == 0
+
+
+def test_parse_acl_flag_auto_inherit():
+    assert _parse_acl_flag('auto-inherit') == t.NFS4ACLFlag.AUTO_INHERIT
+
+
+def test_parse_acl_flag_protected():
+    assert _parse_acl_flag('protected') == t.NFS4ACLFlag.PROTECTED
+
+
+def test_parse_acl_flag_defaulted():
+    assert _parse_acl_flag('defaulted') == t.NFS4ACLFlag.DEFAULTED
+
+
+def test_parse_acl_flag_invalid_raises():
+    with pytest.raises(ValueError, match='invalid ACL flag'):
+        _parse_acl_flag('bogus')
+
+
+# ── acl_flags live tests ──────────────────────────────────────────────────────
+
+def test_do_setfacl_fd_set_acl_flags_protected_nfs4(nfs4_dataset):
+    """Setting acl_flags=PROTECTED is reflected in the stored ACL."""
+    fd = _open_file(nfs4_dataset, 'setfacl_acl_flags_protected')
+    try:
+        _do(fd, acl_flags=t.NFS4ACLFlag.PROTECTED)
+        result = t.fgetacl(fd)
+        assert result.acl_flags & t.NFS4ACLFlag.PROTECTED
+    finally:
+        os.close(fd)
+
+
+def test_do_setfacl_fd_set_acl_flags_auto_inherit_nfs4(nfs4_dataset):
+    """Setting acl_flags=AUTO_INHERIT is reflected in the stored ACL."""
+    fd = _open_file(nfs4_dataset, 'setfacl_acl_flags_auto_inherit')
+    try:
+        _do(fd, acl_flags=t.NFS4ACLFlag.AUTO_INHERIT)
+        result = t.fgetacl(fd)
+        assert result.acl_flags & t.NFS4ACLFlag.AUTO_INHERIT
+    finally:
+        os.close(fd)
+
+
+def test_do_setfacl_fd_clear_acl_flags_nfs4(nfs4_dataset):
+    """Setting acl_flags=NFS4ACLFlag(0) clears previously set flags."""
+    fd = _open_file(nfs4_dataset, 'setfacl_acl_flags_clear')
+    try:
+        _do(fd, acl_flags=t.NFS4ACLFlag.PROTECTED)
+        assert t.fgetacl(fd).acl_flags & t.NFS4ACLFlag.PROTECTED
+
+        _do(fd, acl_flags=t.NFS4ACLFlag(0))
+        assert not (t.fgetacl(fd).acl_flags & t.NFS4ACLFlag.PROTECTED)
+    finally:
+        os.close(fd)
+
+
+def test_do_setfacl_fd_set_acl_flags_posix_raises(posix_dataset):
+    """acl_flags raises ValueError on a POSIX ACL type."""
+    fd = _open_file(posix_dataset, 'setfacl_acl_flags_posix_error')
+    try:
+        with pytest.raises(ValueError, match='POSIX ACL type'):
+            _do(fd, acl_flags=t.NFS4ACLFlag.PROTECTED)
+    finally:
+        os.close(fd)

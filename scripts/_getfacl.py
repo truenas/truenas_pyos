@@ -160,6 +160,9 @@ def _format_nfs4_text(path, acl, uid, gid, fh_hex, numeric, quiet):
         lines.append(f'# group: {_name_of_gid(gid, numeric)}')
         if fh_hex is not None:
             lines.append(f'# fhandle: {fh_hex}')
+        flag_names = [f.name.lower().replace('_', '-')
+                      for f in t.NFS4ACLFlag if acl.acl_flags & f]
+        lines.append(f'# ACL flags: {",".join(flag_names) or "none"}')
     for ace in acl.aces:
         who = _nfs4_who_str(ace, numeric)
         perms = _nfs4_perm_str(ace.access_mask)
