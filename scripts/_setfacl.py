@@ -67,6 +67,13 @@ _NFS4_TYPE_FROM_STR = {
     'deny': t.NFS4AceType.DENY,
 }
 
+_NFS4_ACL_FLAG_FROM_STR = {
+    'none':         t.NFS4ACLFlag(0),
+    'auto-inherit': t.NFS4ACLFlag.AUTO_INHERIT,
+    'protected':    t.NFS4ACLFlag.PROTECTED,
+    'defaulted':    t.NFS4ACLFlag.DEFAULTED,
+}
+
 _POSIX_PERM_CHARS = (
     (t.POSIXPerm.READ,    'r'),
     (t.POSIXPerm.WRITE,   'w'),
@@ -219,6 +226,13 @@ def _parse_nfs4_flags(s):
             raise ValueError(f'invalid NFS4 flag char: {ch!r}')
         flags |= _NFS4_FLAG_FROM_CHAR[ch]
     return flags
+
+
+def _parse_acl_flag(s):
+    if s not in _NFS4_ACL_FLAG_FROM_STR:
+        valid = ', '.join(_NFS4_ACL_FLAG_FROM_STR)
+        raise ValueError(f'invalid ACL flag: {s!r}; expected one of: {valid}')
+    return _NFS4_ACL_FLAG_FROM_STR[s]
 
 
 def _parse_nfs4_ace(s):
@@ -501,7 +515,8 @@ def _remove_posix_default(acl):
 
 
 def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
-                   acl_file_entries, no_mask, default_only, insert_entries=()):
+                   acl_file_entries, no_mask, default_only, insert_entries=(),
+                   acl_flags=None):
     """Apply operations to fd.  Returns the resulting ACL."""
     acl = t.fgetacl(fd)
     is_posix = isinstance(acl, t.POSIXACL)
@@ -643,6 +658,12 @@ def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
         else:
             aces = [_parse_posix_ace(e) for e in acl_file_entries]
             acl = t.POSIXACL.from_aces(aces)
+
+    if acl_flags is not None:
+        if is_posix:
+            raise ValueError('--acl-flags is not supported for POSIX ACL type')
+        acl = t.NFS4ACL.from_aces(list(acl.aces), acl_flags)
+        changed = True
 
     if changed:
         t.fsetacl(fd, acl)
@@ -817,6 +838,11 @@ def main():
                          'exactly one path argument and an interactive '
                          'terminal. Incompatible with -R, --restore, '
                          '--fhandle, and all other modification options.')
+    ap.add_argument('-p', '--acl-flags', dest='acl_flags', default=None,
+                    metavar='flag',
+                    help='Set NFS4 ACL-level flag '
+                         '(none, auto-inherit, protected, defaulted); '
+                         'error if ACL type is POSIX')
     ap.add_argument('path', nargs='*')
     args = ap.parse_args()
 
@@ -882,6 +908,13 @@ def main():
                 )
         insert_entries.append((pos, _split_entries(entries_str)))
 
+    acl_flags = None
+    if args.acl_flags is not None:
+        try:
+            acl_flags = _parse_acl_flag(args.acl_flags)
+        except ValueError as e:
+            ap.error(str(e))
+
     acl_file_entries = None
     if args.acl_file:
         if args.acl_file == '-':
@@ -900,7 +933,8 @@ def main():
             root_acl = _do_setfacl_fd(fd, args.strip, args.remove_default,
                                       remove_entries, modify_entries,
                                       acl_file_entries, args.no_mask,
-                                      args.default_only, insert_entries)
+                                      args.default_only, insert_entries,
+                                      acl_flags=acl_flags)
         except (OSError, ValueError) as e:
             print(f'truenas_setfacl: {path}: {e}', file=sys.stderr)
             rc = 1
@@ -956,7 +990,8 @@ def main():
             root_acl = _do_setfacl_fd(fd, args.strip, args.remove_default,
                                       remove_entries, modify_entries,
                                       acl_file_entries, args.no_mask,
-                                      args.default_only, insert_entries)
+                                      args.default_only, insert_entries,
+                                      acl_flags=acl_flags)
         except (OSError, ValueError) as e:
             print(f'truenas_setfacl: {resolved}: {e}', file=sys.stderr)
             rc = 1
