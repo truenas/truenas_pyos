@@ -330,3 +330,46 @@ def test_format_posix_json_aces_include_defaults():
     # _POSIX_ACL has 3 access + 2 default = 5 total
     assert len(d['aces']) == 5
     assert sum(1 for a in d['aces'] if a.get('default')) == 2
+
+
+# ── _format_nfs4_text: # ACL flags line ──────────────────────────────────────
+
+def test_format_nfs4_text_acl_flags_none_when_zero():
+    """No flags set → '# ACL flags: none' in non-quiet output."""
+    out = _format_nfs4_text('/x', _NFS4_ACL, 0, 0, None,
+                            numeric=True, quiet=False)
+    assert '# ACL flags: none' in out
+
+
+def test_format_nfs4_text_acl_flags_protected():
+    """PROTECTED flag → '# ACL flags: protected' in non-quiet output."""
+    acl = t.NFS4ACL.from_aces(list(_NFS4_ACL.aces), t.NFS4ACLFlag.PROTECTED)
+    out = _format_nfs4_text('/x', acl, 0, 0, None, numeric=True, quiet=False)
+    assert '# ACL flags: protected' in out
+
+
+def test_format_nfs4_text_acl_flags_auto_inherit():
+    """AUTO_INHERIT flag → '# ACL flags: auto-inherit' in non-quiet output."""
+    acl = t.NFS4ACL.from_aces(list(_NFS4_ACL.aces), t.NFS4ACLFlag.AUTO_INHERIT)
+    out = _format_nfs4_text('/x', acl, 0, 0, None, numeric=True, quiet=False)
+    assert '# ACL flags: auto-inherit' in out
+
+
+def test_format_nfs4_text_acl_flags_suppressed_when_quiet():
+    """quiet=True suppresses all header lines including # ACL flags."""
+    out = _format_nfs4_text('/x', _NFS4_ACL, 0, 0, None,
+                            numeric=True, quiet=True)
+    assert '# ACL flags' not in out
+
+
+def test_format_nfs4_json_acl_flags_empty_when_zero():
+    """No flags set → acl_flags list is empty in JSON output."""
+    d = _format_nfs4_json('/x', _NFS4_ACL, 0, 0, None, numeric=True)
+    assert d['acl_flags'] == []
+
+
+def test_format_nfs4_json_acl_flags_protected():
+    """PROTECTED flag → acl_flags contains 'PROTECTED' in JSON output."""
+    acl = t.NFS4ACL.from_aces(list(_NFS4_ACL.aces), t.NFS4ACLFlag.PROTECTED)
+    d = _format_nfs4_json('/x', acl, 0, 0, None, numeric=True)
+    assert 'PROTECTED' in d['acl_flags']
