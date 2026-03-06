@@ -12,6 +12,16 @@
 #define __NR_statmount 457
 #define __NR_listmount 458
 
+/* Not in uapi headers - stable ABI value from include/linux/fs.h */
+#ifndef SB_RDONLY
+#define SB_RDONLY 1
+#endif
+
+/* Not in uapi headers - stable ABI value from include/linux/fs.h */
+#ifndef SB_RDONLY
+#define SB_RDONLY 1
+#endif
+
 // StatmountResult structured sequence type
 static PyStructSequence_Field statmount_result_fields[] = {
 	{"mnt_id", "Unique ID of the mount (since Linux 3.15)"},
@@ -405,9 +415,19 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 		PyStructSequence_SET_ITEM(result, 12, Py_NewRef(Py_None));
 	}
 
-	// mnt_opts
+	// mnt_opts - when SB_RDONLY is available, prepend "ro"/"rw" matching
+	// mountinfo behavior: proc_namespace.c unconditionally emits ro/rw from
+	// sb_rdonly(sb) before calling show_options(), but statmount only calls
+	// show_options(), so the superblock read-only state is otherwise invisible.
 	if (sm->mask & STATMOUNT_MNT_OPTS) {
-		tmp = sm->mnt_opts ? PyUnicode_FromString(sm->str + sm->mnt_opts) : Py_NewRef(Py_None);
+		const char *opts = sm->mnt_opts ? (sm->str + sm->mnt_opts) : NULL;
+		if (sm->mask & STATMOUNT_SB_BASIC) {
+			const char *rw = (sm->sb_flags & SB_RDONLY) ? "ro" : "rw";
+			tmp = opts ? PyUnicode_FromFormat("%s,%s", rw, opts)
+			           : PyUnicode_FromString(rw);
+		} else {
+			tmp = opts ? PyUnicode_FromString(opts) : Py_NewRef(Py_None);
+		}
 		if (tmp == NULL) {
 			Py_DECREF(result);
 			result = NULL;
@@ -736,6 +756,9 @@ int init_mount_types(PyObject *module)
 		| STATMOUNT_SUPPORTED_MASK
 #endif
 	);
+
+	// Add SB_* superblock flags
+	PyModule_AddIntConstant(module, "SB_RDONLY", SB_RDONLY);
 
 	// Add MOUNT_ATTR_* constants
 	PyModule_AddIntConstant(module, "MOUNT_ATTR_RDONLY", MOUNT_ATTR_RDONLY);
