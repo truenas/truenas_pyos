@@ -70,7 +70,7 @@ def test_split_entries_strips_whitespace():
 # ── _parse_nfs4_perms ─────────────────────────────────────────────────────────
 
 def test_parse_nfs4_perms_all_chars():
-    mask = _parse_nfs4_perms('rwaRWxDdpPcCos')
+    mask = _parse_nfs4_perms('rwpRWxDdaAcCos')
     assert mask & t.NFS4Perm.READ_DATA
     assert mask & t.NFS4Perm.WRITE_DATA
     assert mask & t.NFS4Perm.SYNCHRONIZE
@@ -665,7 +665,7 @@ def test_parse_restore_file_nfs4_entries():
         '# file: /mnt/tank/dir\n'
         '# owner: root\n'
         '# group: wheel\n'
-        'owner@:rwaRWxDdpPcCos:--------:allow\n'
+        'owner@:rwpRWxDdaAcCos:--------:allow\n'
         'group@:r-x----------:--------:allow\n'
         'everyone@:r-x--------:--------:allow\n'
     )
@@ -793,7 +793,7 @@ def test_do_setfacl_fd_add_then_remove_named_user_nfs4(nfs4_dataset):
     fd  = _open_file(nfs4_dataset, 'setfacl_remove_nfs4')
     uid = os.getuid()
     try:
-        _do(fd, modify_entries=[f'user:{uid}:rwaRWxDdpPcCos:--------:allow'])
+        _do(fd, modify_entries=[f'user:{uid}:rwpRWxDdaAcCos:--------:allow'])
         assert any(a.who_type == t.NFS4Who.NAMED and a.who_id == uid
                    for a in t.fgetacl(fd).aces)
         _do(fd, remove_entries=[f'user:{uid}'])
