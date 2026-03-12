@@ -1,18 +1,64 @@
 # truenas_pyos
 
-Python bindings for modern Linux filesystem and mount syscalls.
+Python bindings for modern Linux filesystem and mount syscalls, plus pure-Python
+utilities built on top of them.
 
-This module provides Python access to Linux-specific system calls that are not available in the standard library, with a focus on mount management, extended file operations, and file handle support.
+## Packages
 
-## Features
+### `truenas_os` (C extension)
 
-- **Mount Management**: List, query, and iterate over filesystem mounts
-- **Filesystem Context API**: Modern mount API using fsopen/fsconfig/fsmount
-- **Extended File Operations**: Advanced file opening with path resolution control
-- **File Handles**: Create and use filesystem-independent file handles
-- **Extended Stat**: Get detailed file metadata including creation time and mount IDs
-- **Filesystem Iteration**: Secure recursive iteration over filesystem contents
-- **ACL Support**: Read and write NFS4 and POSIX1E access control lists via file descriptor
+Direct Python access to Linux syscalls not available in the standard library:
+`statmount(2)`, `listmount(2)`, `openat2(2)`, `statx(2)`, `renameat2(2)`,
+`mount_setattr(2)`, `move_mount(2)`, `fsmount(2)`/`fsopen(2)`/`fsconfig(2)`,
+`name_to_handle_at(2)`/`open_by_handle_at(2)`, and NFS4/POSIX1E ACL xattr I/O.
+
+### `truenas_os_pyutils` (pure Python)
+
+Higher-level utilities built on the C extension: symlink-safe file I/O
+(`safe_open`, `atomic_write`, `atomic_replace`) and mount enumeration/unmounting
+(`statmount`, `iter_mountinfo`, `umount`). See
+[`src/truenas_os_pyutils/README.md`](src/truenas_os_pyutils/README.md).
+
+## CLI Tools
+
+### `truenas_getfacl`
+
+Display ACL entries for files (NFS4 and POSIX1E).
+
+```
+truenas_getfacl [-R] [-n] [-q] [-s] [-j] path [path ...]
+
+  -R  Recursive; does not follow symlinks or cross device boundaries
+  -n  Display numeric UIDs/GIDs
+  -q  Omit comment headers (text mode only)
+  -s  Skip files with trivial (mode-derived) ACLs
+  -j  Output as JSONL (one object per line)
+```
+
+### `truenas_setfacl`
+
+Set ACL entries on files (NFS4 and POSIX1E).
+
+```
+truenas_setfacl [-R] [-b] [-k] [-d] [-m entries] [-x entries]
+                [-f file] [-a position entries] [-n]
+                [--restore file] [--fhandle mount_id:hex] [-e]
+                [-p flag] [path ...]
+
+  -R               Recursive; does not follow symlinks or cross device boundaries
+  -b               Strip ACL to minimal mode-derived entries
+  -k               Remove default ACL (POSIX only)
+  -d               Apply -m/-x to the default ACL (POSIX only)
+  -m entries       Add/replace entries (comma-separated)
+  -x entries       Remove entries by who/tag (comma-separated)
+  -f file          Replace entire ACL from file (- for stdin)
+  -a pos entries   Insert NFS4 entries at position (0-based or "end")
+  -n               Do not recalculate POSIX mask after -m
+  --restore file   Restore ACLs from a truenas_getfacl backup (- for stdin)
+  --fhandle id:hex Target file by fhandle (format from truenas_getfacl)
+  -e               Interactive curses ACL editor (single path, tty only)
+  -p flag          Set NFS4 ACL-level flag (none, auto-inherit, protected, defaulted)
+```
 
 ## Installation
 
@@ -20,20 +66,15 @@ This module provides Python access to Linux-specific system calls that are not a
 python3 -m pip install .
 ```
 
-Or for development:
-
-```bash
-python3 -m pip install -e .
-```
-
 ## Requirements
 
 - Python 3.13+
-- Linux kernel 6.18+ (for full feature support)
-- GCC compiler
+- Linux kernel 6.8+ (`statmount(2)`, `listmount(2)`, `openat2(2)`)
+- Linux kernel 6.18+ for `STATMOUNT_SB_SOURCE` (mount source field, ZFS snapshot detection)
+- GCC
 - libbsd-dev
 
-## API Reference
+## `truenas_os` API Reference
 
 ### Mount Operations
 
@@ -894,17 +935,9 @@ LGPL-3.0-or-later
 
 ## Contributing
 
-Contributions are welcome! Please ensure:
 - All tests pass: `python3 -m pytest tests/`
-- Code follows existing patterns
-- New features include tests
-- SPDX license identifiers are present
-- **Type stubs are kept up-to-date**: When modifying the C extension API (adding/removing functions, changing signatures, or modifying return types), update `truenas_os.pyi` accordingly to maintain accurate type information
-
-## Authors
-
-- Andrew Walker (original author)
-- TrueNAS contributors
+- SPDX license identifiers present on new files
+- Type stubs (`stubs/__init__.pyi`) kept in sync when the C extension API changes
 
 ## See Also
 
