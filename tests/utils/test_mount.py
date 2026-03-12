@@ -4,8 +4,8 @@ import os
 import pytest
 
 import truenas_os
-from truenas_os_utils.io import SymlinkInPathError
-from truenas_os_utils.mount import (
+from truenas_os_pyutils.io import SymlinkInPathError
+from truenas_os_pyutils.mount import (
     StatmountResultDict,
     iter_mountinfo,
     statmount,

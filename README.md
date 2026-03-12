@@ -12,12 +12,12 @@ Direct Python access to Linux syscalls not available in the standard library:
 `mount_setattr(2)`, `move_mount(2)`, `fsmount(2)`/`fsopen(2)`/`fsconfig(2)`,
 `name_to_handle_at(2)`/`open_by_handle_at(2)`, and NFS4/POSIX1E ACL xattr I/O.
 
-### `truenas_os_utils` (pure Python)
+### `truenas_os_pyutils` (pure Python)
 
 Higher-level utilities built on the C extension: symlink-safe file I/O
 (`safe_open`, `atomic_write`, `atomic_replace`) and mount enumeration/unmounting
 (`statmount`, `iter_mountinfo`, `umount`). See
-[`src/truenas_os_utils/README.md`](src/truenas_os_utils/README.md).
+[`src/truenas_os_pyutils/README.md`](src/truenas_os_pyutils/README.md).
 
 ## CLI Tools
 

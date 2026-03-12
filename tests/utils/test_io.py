@@ -4,7 +4,7 @@ import stat
 
 import pytest
 
-from truenas_os_utils.io import (
+from truenas_os_pyutils.io import (
     SymlinkInPathError,
     atomic_replace,
     atomic_write,

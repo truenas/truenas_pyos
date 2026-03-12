@@ -27,11 +27,11 @@ truenas_os_ext = Extension(
 
 setup(
     ext_modules=[truenas_os_ext],
-    packages=['truenas_os', '_truenas_os_scripts', 'truenas_os_utils'],
+    packages=['truenas_os', '_truenas_os_scripts', 'truenas_os_pyutils'],
     package_dir={
         'truenas_os': 'stubs',
         '_truenas_os_scripts': 'scripts',
-        'truenas_os_utils': 'src/truenas_os_utils',
+        'truenas_os_pyutils': 'src/truenas_os_pyutils',
     },
     package_data={
         'truenas_os': ['*.pyi', 'py.typed'],
