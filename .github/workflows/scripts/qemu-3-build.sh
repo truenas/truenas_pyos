@@ -71,6 +71,7 @@ sudo apt-get install -y \
   python3-setuptools \
   python3-sphinx \
   python3-pytest \
+  python3-mypy \
   pybuild-plugin-pyproject \
   linux-headers-amd64 \
   dkms \
