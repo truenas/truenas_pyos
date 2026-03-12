@@ -1,4 +1,4 @@
-# truenas_os_utils
+# truenas_os_pyutils
 
 Pure-Python utilities that build on the `truenas_os` C extension. Requires
 Linux kernel 6.8 or later for `statmount(2)`/`listmount(2)`/`openat2(2)`
