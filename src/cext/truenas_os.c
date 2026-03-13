@@ -20,7 +20,7 @@
 #define MODULE_DOC "TrueNAS OS module"
 
 PyDoc_STRVAR(py_openmnt__doc__,
-"open_mount_by_id()\n"
+"open_mount_by_id(mount_id, flags=O_DIRECTORY)\n"
 "--\n\n"
 "Open the mountpoint for a mounted filesystem by its given mount_id.\n"
 "This is useful for cases where a file handle must be converted into a \n"
@@ -181,7 +181,7 @@ static PyObject *py_iter_mount(PyObject *obj,
 }
 
 PyDoc_STRVAR(py_statx__doc__,
-"statx(dirfd, path, flags=0, mask=STATX_BASIC_STATS|STATX_BTIME)\n"
+"statx(path, dir_fd=AT_FDCWD, flags=0, mask=STATX_BASIC_STATS|STATX_BTIME)\n"
 "--\n\n"
 "Get extended file attributes.\n\n"
 "The statx() system call returns detailed information about a file,\n"

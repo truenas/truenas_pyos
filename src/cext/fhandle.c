@@ -227,15 +227,19 @@ static int py_fhandle_init(PyObject *obj,
 }
 
 PyDoc_STRVAR(py_fhandle_open__doc__,
-"open()\n"
+"open($self, mount_fd, flags=0, /)\n"
 "--\n\n"
 "Open a regular file descriptor from the underlying file handle\n"
 "Parameters\n"
 "----------\n"
-"None\n\n"
+"mount_fd : int\n"
+"    File descriptor for the filesystem the handle belongs to\n"
+"flags : int, optional\n"
+"    Open flags (default: 0)\n\n"
 "Returns\n"
 "-------\n"
-"None\n"
+"int\n"
+"    Open file descriptor\n"
 );
 
 static PyObject *py_fhandle_open(PyObject *obj,
@@ -315,7 +319,7 @@ static PyObject *py_fhandle_open(PyObject *obj,
 }
 
 PyDoc_STRVAR(py_fhandle_bytes__doc__,
-"__bytes__()\n"
+"__bytes__($self, /)\n"
 "--\n\n"
 "Return the serialized file handle structure.\n"
 "Includes handle_bytes, handle_type, and the handle data.\n"
