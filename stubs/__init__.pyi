@@ -4,90 +4,161 @@ This module provides Python bindings to Linux kernel system calls for
 advanced filesystem and mount operations, plus ACL support.
 """
 
-from typing import Any, Callable, Iterable, Iterator, NamedTuple
+from typing import Any, Callable, ClassVar, Iterable, Iterator, Literal, NamedTuple, final, type_check_only
 from enum import IntEnum, IntFlag
 
 # StatxResult type - PyStructSequence from statx(2)
-class StatxResult(NamedTuple):
+@final
+class StatxResult(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
     """Extended file attributes from statx(2) system call.
 
-    This is a named tuple-like structure containing file metadata.
+    A struct-sequence containing file metadata.
     Fields not requested or unavailable may be 0 or unset.
     """
-    stx_mask: int
-    stx_blksize: int
-    stx_attributes: int
-    stx_nlink: int
-    stx_uid: int
-    stx_gid: int
-    stx_mode: int
-    stx_ino: int
-    stx_size: int
-    stx_blocks: int
-    stx_attributes_mask: int
-    stx_atime: float  # Seconds since epoch with fractional part
-    stx_atime_ns: int  # Nanoseconds since epoch
-    stx_btime: float  # Birth/creation time
-    stx_btime_ns: int
-    stx_ctime: float  # Status change time
-    stx_ctime_ns: int
-    stx_mtime: float  # Modification time
-    stx_mtime_ns: int
-    stx_rdev_major: int
-    stx_rdev_minor: int
-    stx_rdev: int
-    stx_dev_major: int
-    stx_dev_minor: int
-    stx_dev: int
-    stx_mnt_id: int
-    stx_dio_mem_align: int
-    stx_dio_offset_align: int
-    stx_subvol: int
-    stx_atomic_write_unit_min: int
-    stx_atomic_write_unit_max: int
-    stx_atomic_write_segments_max: int
-    # Optional fields (kernel version dependent):
-    # stx_dio_read_offset_align: int
-    # stx_atomic_write_unit_max_opt: int
+    n_fields: ClassVar[int]
+    n_sequence_fields: ClassVar[int]
+    n_unnamed_fields: ClassVar[int]
+    __match_args__: ClassVar[tuple[str, ...]]
+    def __replace__(self, /, **changes: Any) -> StatxResult: ...
+    @property
+    def stx_mask(self) -> int: ...
+    @property
+    def stx_blksize(self) -> int: ...
+    @property
+    def stx_attributes(self) -> int: ...
+    @property
+    def stx_nlink(self) -> int: ...
+    @property
+    def stx_uid(self) -> int: ...
+    @property
+    def stx_gid(self) -> int: ...
+    @property
+    def stx_mode(self) -> int: ...
+    @property
+    def stx_ino(self) -> int: ...
+    @property
+    def stx_size(self) -> int: ...
+    @property
+    def stx_blocks(self) -> int: ...
+    @property
+    def stx_attributes_mask(self) -> int: ...
+    @property
+    def stx_atime(self) -> float: ...  # Seconds since epoch with fractional part
+    @property
+    def stx_atime_ns(self) -> int: ...  # Nanoseconds since epoch
+    @property
+    def stx_btime(self) -> float: ...  # Birth/creation time
+    @property
+    def stx_btime_ns(self) -> int: ...
+    @property
+    def stx_ctime(self) -> float: ...  # Status change time
+    @property
+    def stx_ctime_ns(self) -> int: ...
+    @property
+    def stx_mtime(self) -> float: ...  # Modification time
+    @property
+    def stx_mtime_ns(self) -> int: ...
+    @property
+    def stx_rdev_major(self) -> int: ...
+    @property
+    def stx_rdev_minor(self) -> int: ...
+    @property
+    def stx_rdev(self) -> int: ...
+    @property
+    def stx_dev_major(self) -> int: ...
+    @property
+    def stx_dev_minor(self) -> int: ...
+    @property
+    def stx_dev(self) -> int: ...
+    @property
+    def stx_mnt_id(self) -> int: ...
+    @property
+    def stx_dio_mem_align(self) -> int: ...
+    @property
+    def stx_dio_offset_align(self) -> int: ...
+    @property
+    def stx_subvol(self) -> int: ...
+    @property
+    def stx_atomic_write_unit_min(self) -> int: ...
+    @property
+    def stx_atomic_write_unit_max(self) -> int: ...
+    @property
+    def stx_atomic_write_segments_max(self) -> int: ...
 
 # StatmountResult type - PyStructSequence from statmount(2)
-class StatmountResult(NamedTuple):
+@final
+class StatmountResult(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
     """Mount point information from statmount(2) system call.
 
-    This is a named tuple-like structure containing mount metadata.
+    A struct-sequence containing mount metadata.
     Fields not requested will be None.
+
+    Note: optional fields (fs_subtype, sb_source, opt_array, opt_sec_array,
+    supported_mask, mnt_uidmap, mnt_gidmap) are only present when the kernel
+    supports the corresponding STATMOUNT_* constant.  They are absent from
+    this build.
     """
-    mnt_id: int | None
-    mnt_parent_id: int | None
-    mnt_id_old: int | None
-    mnt_parent_id_old: int | None
-    mnt_root: str | None
-    mnt_point: str | None
-    mnt_attr: int | None
-    mnt_propagation: int | None
-    mnt_peer_group: int | None
-    mnt_master: int | None
-    propagate_from: int | None
-    fs_type: str | None
-    mnt_ns_id: int | None
-    mnt_opts: str | None
-    sb_dev_major: int | None
-    sb_dev_minor: int | None
-    sb_magic: int | None
-    sb_flags: int | None
-    fs_subtype: str | None  # Optional field
-    sb_source: str | None  # Optional field
-    opt_array: list[str] | None  # Optional field
-    opt_sec_array: list[str] | None  # Optional field
-    supported_mask: int | None  # Optional field
-    mnt_uidmap: str | None  # Optional field
-    mnt_gidmap: str | None  # Optional field
-    mask: int
+    n_fields: ClassVar[int]
+    n_sequence_fields: ClassVar[int]
+    n_unnamed_fields: ClassVar[int]
+    __match_args__: ClassVar[tuple[str, ...]]
+    def __replace__(self, /, **changes: Any) -> StatmountResult: ...
+    @property
+    def mnt_id(self) -> int | None: ...
+    @property
+    def mnt_parent_id(self) -> int | None: ...
+    @property
+    def mnt_id_old(self) -> int | None: ...
+    @property
+    def mnt_parent_id_old(self) -> int | None: ...
+    @property
+    def mnt_root(self) -> str | None: ...
+    @property
+    def mnt_point(self) -> str | None: ...
+    @property
+    def mnt_attr(self) -> int | None: ...
+    @property
+    def mnt_propagation(self) -> int | None: ...
+    @property
+    def mnt_peer_group(self) -> int | None: ...
+    @property
+    def mnt_master(self) -> int | None: ...
+    @property
+    def propagate_from(self) -> int | None: ...
+    @property
+    def fs_type(self) -> str | None: ...
+    @property
+    def mnt_ns_id(self) -> int | None: ...
+    @property
+    def mnt_opts(self) -> str | None: ...
+    @property
+    def sb_dev_major(self) -> int | None: ...
+    @property
+    def sb_dev_minor(self) -> int | None: ...
+    @property
+    def sb_magic(self) -> int | None: ...
+    @property
+    def sb_flags(self) -> int | None: ...
+    @property
+    def fs_subtype(self) -> str | None: ...  # Present on kernels with STATMOUNT_FS_SUBTYPE
+    @property
+    def sb_source(self) -> str | None: ...   # Present on kernels with STATMOUNT_SB_SOURCE
+    @property
+    def opt_array(self) -> list[str] | None: ...     # Present on kernels with STATMOUNT_OPT_ARRAY
+    @property
+    def opt_sec_array(self) -> list[str] | None: ... # Present on kernels with STATMOUNT_OPT_SEC_ARRAY
+    @property
+    def supported_mask(self) -> int | None: ...  # Present on kernels with STATMOUNT_SUPPORTED_MASK
+    @property
+    def mnt_uidmap(self) -> str | None: ...  # Present on kernels with STATMOUNT_MNT_UIDMAP
+    @property
+    def mnt_gidmap(self) -> str | None: ...  # Present on kernels with STATMOUNT_MNT_GIDMAP
+    @property
+    def mask(self) -> int: ...
 
 # statx function
 def statx(
     path: str | bytes,
-    *,
     dir_fd: int = ...,  # Default: AT_FDCWD
     flags: int = 0,
     mask: int = ...,  # Default: STATX_BASIC_STATS | STATX_BTIME
@@ -115,7 +186,6 @@ def statx(
 # statmount function
 def statmount(
     mnt_id: int,
-    *,
     mask: int = ...,  # Default: STATMOUNT_MNT_BASIC | STATMOUNT_SB_BASIC
 ) -> StatmountResult:
     """Get detailed information about a mount.
@@ -181,9 +251,8 @@ def iter_mount(
 # openat2 function
 def openat2(
     path: str | bytes,
+    flags: int,
     dir_fd: int = ...,  # Default: AT_FDCWD
-    *,
-    flags: int = 0,
     mode: int = 0,
     resolve: int = 0,
 ) -> int:
@@ -211,9 +280,8 @@ def openat2(
 
 # open_mount_by_id function
 def open_mount_by_id(
-    mnt_id: int,
-    *,
-    flags: int = 0,
+    mount_id: int,
+    flags: int = ...,  # Default: O_DIRECTORY
 ) -> int:
     """Open a mount by its mount ID.
 
@@ -228,6 +296,31 @@ def open_mount_by_id(
     -------
     int
         File descriptor
+    """
+    ...
+
+# open_tree function
+def open_tree(
+    *,
+    path: str,
+    dir_fd: int = ...,  # Default: AT_FDCWD
+    flags: int = 0,
+) -> int:
+    """Open a mount or directory tree.
+
+    Parameters
+    ----------
+    path : str
+        Path to the mount or directory (can be relative to dir_fd)
+    dir_fd : int, optional
+        Directory file descriptor (default: AT_FDCWD)
+    flags : int, optional
+        Flags (OPEN_TREE_* and AT_* constants)
+
+    Returns
+    -------
+    int
+        File descriptor representing the mount tree
     """
     ...
 
@@ -428,7 +521,7 @@ def renameat2(
     *,
     src_dir_fd: int = ...,  # Default: AT_FDCWD
     dst_dir_fd: int = ...,  # Default: AT_FDCWD
-    flags: int = 0,
+    flags: int,
 ) -> None:
     """Rename a file with additional flags.
 
@@ -483,7 +576,7 @@ STATX_DIOALIGN: int
 STATX_MNT_ID_UNIQUE: int
 STATX_SUBVOL: int
 STATX_WRITE_ATOMIC: int
-STATX_DIO_READ_ALIGN: int  # May not be available on all kernels
+STATX_DIO_READ_ALIGN: int  # Kernel 6.x+
 STATX__RESERVED: int
 STATX_ALL: int
 
@@ -573,6 +666,11 @@ FH_AT_SYMLINK_FOLLOW: int
 FH_AT_EMPTY_PATH: int
 FH_AT_HANDLE_FID: int
 FH_AT_HANDLE_CONNECTABLE: int
+FH_AT_HANDLE_MNT_ID_UNIQUE: int
+
+# OPEN_TREE constants (for open_tree)
+OPEN_TREE_CLONE: int    # 0x1 — Create a detached clone of the mount tree
+OPEN_TREE_CLOEXEC: int  # 0x80000 — Set close-on-exec on the returned fd
 
 # FSOPEN constants (for fsopen)
 FSOPEN_CLOEXEC: int  # Close-on-exec flag
@@ -596,13 +694,47 @@ MNT_DETACH: int  # Lazy unmount - detach now, clean up when not busy
 MNT_EXPIRE: int  # Mark mount point as expired
 UMOUNT_NOFOLLOW: int  # Don't dereference target if symbolic link
 
+# MS_* mount(2) flags
+MS_RDONLY: int       # 0x00000001 — Mount read-only
+MS_NOSUID: int       # 0x00000002 — Ignore suid and sgid bits
+MS_NODEV: int        # 0x00000004 — Disallow access to device special files
+MS_NOEXEC: int       # 0x00000008 — Disallow program execution
+MS_SYNCHRONOUS: int  # 0x00000010 — Writes are synced at once
+MS_REMOUNT: int      # 0x00000020 — Alter flags of a mounted filesystem
+MS_DIRSYNC: int      # 0x00000080 — Directory modifications are synchronous
+MS_NOSYMFOLLOW: int  # 0x00000100 — Do not follow symlinks
+MS_NOATIME: int      # 0x00000400 — Do not update access times
+MS_NODIRATIME: int   # 0x00000800 — Do not update directory access times
+MS_BIND: int         # 0x00001000 — Bind mount
+MS_MOVE: int         # 0x00002000 — Move a subtree
+MS_REC: int          # 0x00004000 — Recursive bind mount
+MS_PRIVATE: int      # 0x00040000 — Change to private
+MS_SLAVE: int        # 0x00080000 — Change to slave
+MS_SHARED: int       # 0x00100000 — Change to shared
+MS_RELATIME: int     # 0x00200000 — Update atime relative to mtime/ctime
+MS_STRICTATIME: int  # 0x01000000 — Always perform atime updates
+MS_LAZYTIME: int     # 0x02000000 — Update times lazily on disk
+MS_UNBINDABLE: int   # 0x00020000 — Change to unbindable
+
 # fhandle type
 class fhandle:
     """File handle object for name_to_handle_at and open_by_handle_at operations."""
-    def __init__(self) -> None: ...
+    def __init__(
+        self,
+        /,
+        handle_bytes: bytes | None = None,
+        mount_id: int | None = None,
+        unique_mount_id: bool = False,
+    ) -> None: ...
+    @property
+    def mount_id(self) -> int | None: ...
+    def open(self, mount_fd: int, flags: int = 0, /) -> int: ...
+    def __bytes__(self) -> bytes: ...
+    def __repr__(self) -> str: ...
 
 # Filesystem iterator types
-class IterInstance(NamedTuple):
+@final
+class IterInstance(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
     """Instance returned by filesystem iterator.
 
     Represents a file or directory encountered during iteration.
@@ -612,23 +744,50 @@ class IterInstance(NamedTuple):
     The iterator manages the file descriptor lifecycle — it is closed automatically
     at the start of the next iteration or when the iterator's context manager exits.
     """
-    parent: str  # Parent directory path
-    name: str  # Entry name
-    fd: int  # Open file descriptor
-    statxinfo: StatxResult  # Extended file attributes
-    isdir: bool  # True if directory, False otherwise
-    islnk: bool  # True if symlink, False otherwise
-    isreg: bool  # True if regular file, False otherwise
+    n_fields: ClassVar[int]
+    n_sequence_fields: ClassVar[int]
+    n_unnamed_fields: ClassVar[int]
+    __match_args__: ClassVar[tuple[
+        Literal['parent'], Literal['name'], Literal['fd'],
+        Literal['statxinfo'], Literal['isdir'], Literal['islnk'], Literal['isreg'],
+    ]]
+    def __replace__(self, /, **changes: Any) -> IterInstance: ...
+    @property
+    def parent(self) -> str: ...  # Parent directory path
+    @property
+    def name(self) -> str: ...  # Entry name
+    @property
+    def fd(self) -> int: ...  # Open file descriptor
+    @property
+    def statxinfo(self) -> StatxResult: ...  # Extended file attributes
+    @property
+    def isdir(self) -> bool: ...  # True if directory, False otherwise
+    @property
+    def islnk(self) -> bool: ...  # True if symlink, False otherwise
+    @property
+    def isreg(self) -> bool: ...  # True if regular file, False otherwise
 
-class FilesystemIterState(NamedTuple):
+@final
+class FilesystemIterState(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
     """State for filesystem iteration.
 
     Tracks iteration progress and configuration.
     """
-    cnt: int  # Count of items yielded
-    cnt_bytes: int  # Total bytes of files yielded
-    current_directory: str  # Current directory path
+    n_fields: ClassVar[int]
+    n_sequence_fields: ClassVar[int]
+    n_unnamed_fields: ClassVar[int]
+    __match_args__: ClassVar[tuple[
+        Literal['cnt'], Literal['cnt_bytes'], Literal['current_directory'],
+    ]]
+    def __replace__(self, /, **changes: Any) -> FilesystemIterState: ...
+    @property
+    def cnt(self) -> int: ...  # Count of items yielded
+    @property
+    def cnt_bytes(self) -> int: ...  # Total bytes of files yielded
+    @property
+    def current_directory(self) -> str: ...  # Current directory path
 
+@type_check_only
 class FilesystemIterator:
     """Iterator for traversing filesystem contents in C.
 
@@ -726,9 +885,8 @@ class IteratorRestoreError(Exception):
 def iter_filesystem_contents(
     mountpoint: str,
     filesystem_name: str,
-    /,
-    *,
     relative_path: str | None = None,
+    /,
     btime_cutoff: int = 0,
     cnt: int = 0,
     cnt_bytes: int = 0,
@@ -786,66 +944,69 @@ def iter_filesystem_contents(
 # ── NFS4 enums ────────────────────────────────────────────────────────────────
 
 class NFS4AceType(IntEnum):
-    ALLOW: int
-    DENY: int
-    AUDIT: int
-    ALARM: int
+    ALLOW = 0x0
+    DENY = 0x1
+    AUDIT = 0x2
+    ALARM = 0x3
 
 class NFS4Who(IntEnum):
     """Maps to the (iflag, who) pair in the XDR encoding."""
-    NAMED: int     # iflag=0, who=uid/gid
-    OWNER: int     # iflag=1, ACE4_SPECIAL_OWNER
-    GROUP: int     # iflag=1, ACE4_SPECIAL_GROUP
-    EVERYONE: int  # iflag=1, ACE4_SPECIAL_EVERYONE
+    NAMED = 0     # iflag=0, who=uid/gid
+    OWNER = 1     # iflag=1, ACE4_SPECIAL_OWNER
+    GROUP = 2     # iflag=1, ACE4_SPECIAL_GROUP
+    EVERYONE = 3  # iflag=1, ACE4_SPECIAL_EVERYONE
 
 class NFS4Perm(IntFlag):
-    READ_DATA: int
-    WRITE_DATA: int
-    APPEND_DATA: int
-    READ_NAMED_ATTRS: int
-    WRITE_NAMED_ATTRS: int
-    EXECUTE: int
-    DELETE_CHILD: int
-    READ_ATTRIBUTES: int
-    WRITE_ATTRIBUTES: int
-    DELETE: int
-    READ_ACL: int
-    WRITE_ACL: int
-    WRITE_OWNER: int
-    SYNCHRONIZE: int
+    READ_DATA = 0x000001
+    WRITE_DATA = 0x000002
+    APPEND_DATA = 0x000004
+    READ_NAMED_ATTRS = 0x000008
+    WRITE_NAMED_ATTRS = 0x000010
+    EXECUTE = 0x000020
+    DELETE_CHILD = 0x000040
+    READ_ATTRIBUTES = 0x000080
+    WRITE_ATTRIBUTES = 0x000100
+    DELETE = 0x010000
+    READ_ACL = 0x020000
+    WRITE_ACL = 0x040000
+    WRITE_OWNER = 0x080000
+    SYNCHRONIZE = 0x100000
 
 class NFS4Flag(IntFlag):
-    FILE_INHERIT: int
-    DIRECTORY_INHERIT: int
-    NO_PROPAGATE_INHERIT: int
-    INHERIT_ONLY: int
-    SUCCESSFUL_ACCESS: int
-    FAILED_ACCESS: int
-    IDENTIFIER_GROUP: int
-    INHERITED: int
+    FILE_INHERIT = 0x01
+    DIRECTORY_INHERIT = 0x02
+    NO_PROPAGATE_INHERIT = 0x04
+    INHERIT_ONLY = 0x08
+    SUCCESSFUL_ACCESS = 0x10
+    FAILED_ACCESS = 0x20
+    IDENTIFIER_GROUP = 0x40
+    INHERITED = 0x80
 
 class NFS4ACLFlag(IntFlag):
-    AUTO_INHERIT: int
-    PROTECTED: int
-    DEFAULTED: int
+    AUTO_INHERIT = 0x000001
+    PROTECTED = 0x000002
+    DEFAULTED = 0x000004
+    ACL_IS_TRIVIAL = 0x010000
+    ACL_IS_DIR = 0x020000
 
 # ── POSIX enums ───────────────────────────────────────────────────────────────
 
 class POSIXTag(IntEnum):
-    USER_OBJ: int
-    USER: int
-    GROUP_OBJ: int
-    GROUP: int
-    MASK: int
-    OTHER: int
+    USER_OBJ = 0x01
+    USER = 0x02
+    GROUP_OBJ = 0x04
+    GROUP = 0x08
+    MASK = 0x10
+    OTHER = 0x20
 
 class POSIXPerm(IntFlag):
-    EXECUTE: int
-    WRITE: int
-    READ: int
+    EXECUTE = 0x1
+    WRITE = 0x2
+    READ = 0x4
 
 # ── ACE types ─────────────────────────────────────────────────────────────────
 
+@final
 class NFS4Ace:
     """NFS4 Access Control Entry.
 
@@ -873,6 +1034,7 @@ class NFS4Ace:
     def who_id(self) -> int: ...
     def __repr__(self) -> str: ...
 
+@final
 class POSIXAce:
     """POSIX ACL entry.
 
@@ -899,6 +1061,7 @@ class POSIXAce:
 
 # ── ACL types ─────────────────────────────────────────────────────────────────
 
+@final
 class NFS4ACL:
     """NFS4 ACL wrapper (system.nfs4_acl_xdr).
 
@@ -922,6 +1085,7 @@ class NFS4ACL:
     def __len__(self) -> int: ...
     def __repr__(self) -> str: ...
 
+@final
 class POSIXACL:
     """POSIX1E ACL wrapper.
 
