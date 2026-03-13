@@ -98,6 +98,40 @@ echo "Now running full test suite..."
 sudo sh -c "ulimit -c unlimited && cd /home/debian/truenas_pyos && python3 -m pytest tests/ -v --tb=short" 2>&1 | tee /home/debian/test-output.txt
 TEST_EXIT_CODE=${PIPESTATUS[0]}
 
+echo ""
+echo "=========================================="
+echo "Running stub checks"
+echo "=========================================="
+
+cd /home/debian/truenas_pyos
+
+# Check stubs are internally self-consistent
+echo "Running mypy on stubs..."
+python3 -m mypy stubs/
+MYPY_EXIT=$?
+
+# Check truenas_os_pyutils Python module
+echo "Running mypy on truenas_os_pyutils..."
+python3 -m mypy src/truenas_os_pyutils/
+PYUTILS_MYPY_EXIT=$?
+
+# Check stubs match the installed runtime module.
+# truenas_os is a flat C extension (.so) — no submodule pre-registration needed.
+echo "Running stubtest..."
+python3 -c "
+from mypy.stubtest import main
+import sys
+sys.argv = ['stubtest', 'truenas_os', '--allowlist', 'tests/.stubtest_allowlist.txt']
+sys.exit(main())
+"
+STUBTEST_EXIT=$?
+
+if [ $MYPY_EXIT -ne 0 ] || [ $PYUTILS_MYPY_EXIT -ne 0 ] || [ $STUBTEST_EXIT -ne 0 ]; then
+    echo "ERROR: Stub checks failed"
+    exit 1
+fi
+echo "Stub checks passed"
+
 # Check if there was a core dump
 echo ""
 echo "=========================================="

@@ -16,8 +16,10 @@ class SymlinkInPathError(OSError):
 
 
 @contextmanager
-def safe_open(path, mode='r', buffering=-1, encoding=None, errors=None, newline=None, *,
-              dir_fd=truenas_os.AT_FDCWD):
+def safe_open(path: str | bytes, mode: str = 'r', buffering: int = -1,
+              encoding: str | None = None, errors: str | None = None,
+              newline: str | None = None, *,
+              dir_fd: int = truenas_os.AT_FDCWD) -> typing.Generator[typing.IO[typing.Any], None, None]:
     """Drop-in for open() that uses openat2(RESOLVE_NO_SYMLINKS) as the opener,
     preventing symlink-based TOCTOU attacks.
 
@@ -45,7 +47,7 @@ def safe_open(path, mode='r', buffering=-1, encoding=None, errors=None, newline=
         - When dir_fd is supplied, path may be relative; openat2 resolves it
           against the given directory fd.
     """
-    def _opener(p, flags):
+    def _opener(p: str, flags: int) -> int:
         try:
             return truenas_os.openat2(
                 p, flags,
