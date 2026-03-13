@@ -263,8 +263,9 @@ def statmount(
         finally:
             os.close(opened_fd)
     else:
+        assert fd is not None
         mnt_id = truenas_os.statx(
-            '', dir_fd=fd, flags=truenas_os.AT_EMPTY_PATH, mask=truenas_os.STATX_MNT_ID_UNIQUE  # type: ignore[arg-type]
+            '', dir_fd=fd, flags=truenas_os.AT_EMPTY_PATH, mask=truenas_os.STATX_MNT_ID_UNIQUE
         ).stx_mnt_id
 
     sm = truenas_os.statmount(mnt_id, mask=truenas_os.STATMOUNT_ALL)
