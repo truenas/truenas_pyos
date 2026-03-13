@@ -121,7 +121,7 @@ echo "Running stubtest..."
 python3 -c "
 from mypy.stubtest import main
 import sys
-sys.argv = ['stubtest', 'truenas_os']
+sys.argv = ['stubtest', 'truenas_os', '--allowlist', 'tests/.stubtest_allowlist.txt']
 sys.exit(main())
 "
 STUBTEST_EXIT=$?

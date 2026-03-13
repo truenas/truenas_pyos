@@ -1,0 +1,27 @@
+# Allowlist for stubtest errors that stem from C code __text_signature__ bugs.
+# These should be fixed in the C layer; tracked separately.
+
+# fhandle is a C extension type that is a "disjoint base" (cannot be combined
+# in multiple inheritance with other types). @disjoint_base requires
+# typing_extensions >= 4.13 which is not available on this build.
+truenas_os\.fhandle
+
+
+# The following are conditionally compiled based on kernel support.
+# They are present on Linux 6.18 (TrueNAS target) but absent on older kernels
+# used in CI (6.12). Stubs are correct for the target kernel.
+truenas_os\.STATMOUNT_FS_SUBTYPE
+truenas_os\.STATMOUNT_SB_SOURCE
+truenas_os\.STATMOUNT_OPT_ARRAY
+truenas_os\.STATMOUNT_OPT_SEC_ARRAY
+truenas_os\.STATMOUNT_SUPPORTED_MASK
+truenas_os\.STATMOUNT_MNT_UIDMAP
+truenas_os\.STATMOUNT_MNT_GIDMAP
+truenas_os\.STATX_DIO_READ_ALIGN
+truenas_os\.StatmountResult\.fs_subtype
+truenas_os\.StatmountResult\.sb_source
+truenas_os\.StatmountResult\.opt_array
+truenas_os\.StatmountResult\.opt_sec_array
+truenas_os\.StatmountResult\.supported_mask
+truenas_os\.StatmountResult\.mnt_uidmap
+truenas_os\.StatmountResult\.mnt_gidmap
