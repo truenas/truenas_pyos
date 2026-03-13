@@ -1,12 +1,3 @@
-# Allowlist for stubtest errors that stem from C code __text_signature__ bugs.
-# These should be fixed in the C layer; tracked separately.
-
-# fhandle is a C extension type that is a "disjoint base" (cannot be combined
-# in multiple inheritance with other types). @disjoint_base requires
-# typing_extensions >= 4.13 which is not available on this build.
-truenas_os\.fhandle
-
-
 # The following are conditionally compiled based on kernel support.
 # They are present on Linux 6.18 (TrueNAS target) but absent on older kernels
 # used in CI (6.12). Stubs are correct for the target kernel.
