@@ -1565,9 +1565,25 @@ def test_iter_fd_cleanup_with_context_manager(temp_mount_tree):
 _NOBODY = 65534  # unprivileged UID
 
 
+@pytest.fixture
+def world_tmp_path(tmp_path):
+    """tmp_path with all ancestors world-executable so nobody can traverse it."""
+    dirs_to_restore = []
+    p = tmp_path
+    while str(p) != "/tmp":
+        orig_mode = p.stat().st_mode & 0o777
+        dirs_to_restore.append((p, orig_mode))
+        p.chmod(0o755)
+        p = p.parent
+    yield tmp_path
+    for d, mode in reversed(dirs_to_restore):
+        d.chmod(mode)
+
+
 @pytest.mark.skipif(os.geteuid() != 0, reason="requires root to use seteuid")
-def test_eacces_readonly_file_yielded_via_fallback(tmp_path):
+def test_eacces_readonly_file_yielded_via_fallback(world_tmp_path):
     """EACCES on write-mode open falls back to O_RDONLY; file is still yielded."""
+    tmp_path = world_tmp_path
     tmp_path.chmod(0o755)
     (tmp_path / "normal.txt").write_bytes(b"a" * 64)
     ro = tmp_path / "readonly.txt"
@@ -1590,8 +1606,9 @@ def test_eacces_readonly_file_yielded_via_fallback(tmp_path):
 
 
 @pytest.mark.skipif(os.geteuid() != 0, reason="requires root to use seteuid")
-def test_eacces_inaccessible_file_silently_skipped(tmp_path):
+def test_eacces_inaccessible_file_silently_skipped(world_tmp_path):
     """File with mode 0o000 is skipped silently; iteration continues normally."""
+    tmp_path = world_tmp_path
     tmp_path.chmod(0o755)
     (tmp_path / "visible.txt").write_bytes(b"a" * 64)
     noaccess = tmp_path / "noaccess.txt"
@@ -1614,8 +1631,9 @@ def test_eacces_inaccessible_file_silently_skipped(tmp_path):
 
 
 @pytest.mark.skipif(os.geteuid() != 0, reason="requires root to use seteuid")
-def test_eacces_inaccessible_directory_raises(tmp_path):
+def test_eacces_inaccessible_directory_raises(world_tmp_path):
     """EACCES on a directory is NOT silently ignored; iteration raises OSError."""
+    tmp_path = world_tmp_path
     tmp_path.chmod(0o755)
     nodir = tmp_path / "nodir"
     nodir.mkdir()
