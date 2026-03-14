@@ -318,13 +318,29 @@ process_next_entry(FilesystemIteratorObject *self,
 	if (fd < 0) {
 		/* ELOOP: intermediate component replaced with symlink (shouldn't be possible)
 		 * EXDEV: entry is on a different filesystem (crossed mount boundary)
-		 * In both cases, prune this branch and continue iteration.
+		 * ENOENT: file was deleted between readdir and open (TOCTOU race)
+		 * In all cases, prune this branch and continue iteration.
 		 */
-		if (errno == ELOOP || errno == EXDEV) {
+		if (errno == ELOOP || errno == EXDEV || errno == ENOENT) {
 			return FSITER_CONTINUE;
 		}
-		SET_ERROR_ERRNO(err, "openat2(%s)", entry->d_name);
-		return FSITER_ERROR;
+		/*
+		 * EPERM/EACCES: per-file access denial (e.g. immutable flag, ACL).
+		 * Fall back to O_RDONLY so the caller receives a valid fd and can
+		 * handle the entry as a non-fatal failure. statx and
+		 * name_to_handle_at both work on a read-only fd.
+		 * If O_RDONLY also fails, skip the entry silently.
+		 * EROFS means the filesystem went read-only — that is fatal.
+		 */
+		if (!is_dir && (errno == EPERM || errno == EACCES)) {
+			fd = openat2_impl(dirfd(cur_dir->dirp), entry->d_name,
+					  O_RDONLY | O_NOFOLLOW, RESOLVE_FLAGS_ITER);
+			if (fd < 0)
+				return FSITER_CONTINUE;
+		} else {
+			SET_ERROR_ERRNO(err, "openat2(%s)", entry->d_name);
+			return FSITER_ERROR;
+		}
 	}
 
 	/* Call statx on fd */
