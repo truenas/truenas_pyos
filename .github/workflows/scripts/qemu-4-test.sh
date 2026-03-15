@@ -117,7 +117,7 @@ PYUTILS_MYPY_EXIT=$?
 
 # Check typing tests resolve overloads and type assignments correctly
 echo "Running mypy on typing tests..."
-python3 -m mypy tests/typing/
+python3 -m mypy tests/type_checks/
 TYPING_MYPY_EXIT=$?
 
 # Check stubs match the installed runtime module.
