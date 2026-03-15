@@ -115,6 +115,11 @@ echo "Running mypy on truenas_os_pyutils..."
 python3 -m mypy src/truenas_os_pyutils/
 PYUTILS_MYPY_EXIT=$?
 
+# Check typing tests resolve overloads and type assignments correctly
+echo "Running mypy on typing tests..."
+python3 -m mypy tests/typing/
+TYPING_MYPY_EXIT=$?
+
 # Check stubs match the installed runtime module.
 # truenas_os is a flat C extension (.so) — no submodule pre-registration needed.
 echo "Running stubtest..."
@@ -126,7 +131,7 @@ sys.exit(main())
 "
 STUBTEST_EXIT=$?
 
-if [ $MYPY_EXIT -ne 0 ] || [ $PYUTILS_MYPY_EXIT -ne 0 ] || [ $STUBTEST_EXIT -ne 0 ]; then
+if [ $MYPY_EXIT -ne 0 ] || [ $PYUTILS_MYPY_EXIT -ne 0 ] || [ $TYPING_MYPY_EXIT -ne 0 ] || [ $STUBTEST_EXIT -ne 0 ]; then
     echo "ERROR: Stub checks failed"
     exit 1
 fi
