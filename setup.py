@@ -35,6 +35,7 @@ setup(
     },
     package_data={
         'truenas_os': ['*.pyi', 'py.typed'],
+        'truenas_os_pyutils': ['py.typed'],
     },
     entry_points={
         'console_scripts': [
