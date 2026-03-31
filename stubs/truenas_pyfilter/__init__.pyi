@@ -1,13 +1,15 @@
 """Type stubs for truenas_pyfilter module."""
 
-from typing import Any, Iterable
+from typing import Any, Iterable, final
 
 
+@final
 class CompiledFilters:
     """Pre-compiled filter tree produced by compile_filters()."""
     def __repr__(self) -> str: ...
 
 
+@final
 class CompiledOptions:
     """Pre-compiled options produced by compile_options()."""
     def __repr__(self) -> str: ...
