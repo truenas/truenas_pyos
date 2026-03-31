@@ -106,9 +106,13 @@ echo "=========================================="
 cd /home/debian/truenas_pyos
 
 # Check stubs are internally self-consistent
-echo "Running mypy on stubs..."
-python3 -m mypy stubs/
+echo "Running mypy on truenas_os stubs..."
+python3 -m mypy stubs/truenas_os/
 MYPY_EXIT=$?
+
+echo "Running mypy on truenas_pyfilter stubs..."
+python3 -m mypy stubs/truenas_pyfilter/
+FILTERLIST_MYPY_EXIT=$?
 
 # Check truenas_os_pyutils Python module
 echo "Running mypy on truenas_os_pyutils..."
@@ -122,7 +126,7 @@ TYPING_MYPY_EXIT=$?
 
 # Check stubs match the installed runtime module.
 # truenas_os is a flat C extension (.so) — no submodule pre-registration needed.
-echo "Running stubtest..."
+echo "Running stubtest for truenas_os..."
 python3 -c "
 from mypy.stubtest import main
 import sys
@@ -131,7 +135,16 @@ sys.exit(main())
 "
 STUBTEST_EXIT=$?
 
-if [ $MYPY_EXIT -ne 0 ] || [ $PYUTILS_MYPY_EXIT -ne 0 ] || [ $TYPING_MYPY_EXIT -ne 0 ] || [ $STUBTEST_EXIT -ne 0 ]; then
+echo "Running stubtest for truenas_pyfilter..."
+python3 -c "
+from mypy.stubtest import main
+import sys
+sys.argv = ['stubtest', 'truenas_pyfilter']
+sys.exit(main())
+"
+FILTERLIST_STUBTEST_EXIT=$?
+
+if [ $MYPY_EXIT -ne 0 ] || [ $FILTERLIST_MYPY_EXIT -ne 0 ] || [ $PYUTILS_MYPY_EXIT -ne 0 ] || [ $TYPING_MYPY_EXIT -ne 0 ] || [ $STUBTEST_EXIT -ne 0 ] || [ $FILTERLIST_STUBTEST_EXIT -ne 0 ]; then
     echo "ERROR: Stub checks failed"
     exit 1
 fi

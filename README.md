@@ -19,6 +19,20 @@ Higher-level utilities built on the C extension: symlink-safe file I/O
 (`statmount`, `iter_mountinfo`, `umount`). See
 [`src/truenas_os_pyutils/README.md`](src/truenas_os_pyutils/README.md).
 
+### `truenas_pyfilter` (C extension)
+
+High-performance compiled filter-list engine. Pre-compiles filter trees and
+query options once so the inner iteration loop runs entirely in C with no
+Python frame overhead.
+
+```python
+import truenas_pyfilter
+
+filters = truenas_pyfilter.compile_filters([["name", "^", "z"]])
+options = truenas_pyfilter.compile_options(order_by=["name"], limit=10)
+results = truenas_pyfilter.tnfilter(records, filters=filters, options=options)
+```
+
 ## CLI Tools
 
 ### `truenas_getfacl`
@@ -879,6 +893,125 @@ An individual POSIX ACL entry.
 
 ---
 
+## `truenas_pyfilter` API Reference
+
+### `compile_filters(filters)`
+
+Pre-compile a query-filters list into a `CompiledFilters` object.
+
+```python
+filters = truenas_pyfilter.compile_filters([
+    ["uid", "=", 1000],
+])
+```
+
+**Parameters:**
+- `filters` (list): Filter list. Each leaf is `[field, op, value]`. Compound
+  nodes use `["OR", [branch, ...]]`. Operators: `=`, `!=`, `>`, `>=`, `<`,
+  `<=`, `~` (regex), `in`, `nin`, `rin`, `rnin`, `^` (startswith),
+  `!^`, `$` (endswith), `!$`. Prefix any operator with `C` for
+  case-insensitive matching (e.g. `C=`, `C^`).
+
+**Returns:** `CompiledFilters` — opaque compiled tree, pass directly to
+`tnfilter()`. `repr()` shows the original filters list.
+
+---
+
+### `compile_options(**kwargs)`
+
+Pre-parse query options into a `CompiledOptions` object.
+
+```python
+options = truenas_pyfilter.compile_options(
+    order_by=["name"],
+    select=["id", "name"],
+    limit=100,
+    offset=0,
+)
+```
+
+**Parameters:**
+- `get` (bool): Return first match only; enables short-circuit when
+  `order_by` is empty. Default: `False`.
+- `count` (bool): Return the count of matched items instead of the items.
+  Default: `False`.
+- `select` (list[str | list] | None): Fields to project from each result
+  entry. Each element is a dotted field path or `[src_path, dest_name]`
+  for renaming. Default: `None` (return full items). When `select` is
+  specified the output list always contains `dict` items, regardless of
+  the input item type.
+- `order_by` (list[str] | None): Ordering directives. Prefix with `-` for
+  descending. Append `:nulls_first` or `:nulls_last` to control `None`
+  placement. Non-empty disables short-circuit even when `get=True`.
+  Default: `None`.
+- `offset` (int): Skip the first N matched items. Default: `0`.
+- `limit` (int): Cap results at N items (`0` = no limit). Default: `0`.
+
+**Returns:** `CompiledOptions` — opaque options object, pass directly to
+`tnfilter()`. `repr()` shows the kwargs as passed.
+
+---
+
+### `match(item, *, filters)`
+
+Test whether a single item matches all compiled filters.
+
+```python
+filters = truenas_pyfilter.compile_filters([["uid", "=", 1000]])
+
+truenas_pyfilter.match({"uid": 1000, "name": "alice"}, filters=filters)  # True
+truenas_pyfilter.match({"uid": 1001, "name": "bob"},   filters=filters)  # False
+```
+
+**Parameters:**
+- `item` (Any): The item to test. Dicts use the fast path; other objects fall
+  back to `getattr`.
+- `filters` (CompiledFilters): Pre-compiled filter tree from
+  `compile_filters()`. **Keyword-only.**
+
+**Returns:** `bool` — `True` if the item matches all filters, `False` otherwise.
+
+---
+
+### `tnfilter(data, *, filters, options)`
+
+Filter an iterable using pre-compiled filters and options.
+
+```python
+import truenas_pyfilter
+
+records = [
+    {"id": 1, "name": "alice", "uid": 1000},
+    {"id": 2, "name": "bob",   "uid": 1001},
+    {"id": 3, "name": "carol", "uid": 1000},
+]
+
+filters = truenas_pyfilter.compile_filters([["uid", "=", 1000]])
+options = truenas_pyfilter.compile_options(order_by=["name"])
+results = truenas_pyfilter.tnfilter(records, filters=filters, options=options)
+# [{"id": 1, "name": "alice", "uid": 1000},
+#  {"id": 3, "name": "carol", "uid": 1000}]
+```
+
+**Parameters:**
+- `data` (Iterable): Items to filter. Dicts use a fast path; other objects
+  fall back to `getattr`.
+- `filters` (CompiledFilters): Pre-compiled filter tree from
+  `compile_filters()`. **Keyword-only.**
+- `options` (CompiledOptions): Pre-compiled options from
+  `compile_options()`. **Keyword-only.**
+
+**Returns:** `list` — items that matched all filters, with options applied.
+
+#### Field paths
+
+Dotted notation traverses nested dicts: `"a.b.c"`. Escape a literal dot
+with a backslash: `"a\\.b"`. Use integer strings for list indexing:
+`"items.0.name"`. Use `*` as a wildcard to match any key or list element:
+`"tags.*.value"`.
+
+---
+
 ## Complete Example
 
 ```python
@@ -937,7 +1070,9 @@ LGPL-3.0-or-later
 
 - All tests pass: `python3 -m pytest tests/`
 - SPDX license identifiers present on new files
-- Type stubs (`stubs/__init__.pyi`) kept in sync when the C extension API changes
+- Type stubs kept in sync when a C extension API changes:
+  - `truenas_os`: `stubs/truenas_os/__init__.pyi`
+  - `truenas_pyfilter`: `stubs/truenas_pyfilter/__init__.pyi`
 
 ## See Also
 
