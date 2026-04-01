@@ -143,6 +143,8 @@ int compile_select_specs(PyObject *select_val,
                          compiled_select_spec_t **out_specs, Py_ssize_t *out_n);
 int compile_order_specs(PyObject *order_by_val,
                         compiled_order_spec_t **out_specs, Py_ssize_t *out_n);
+PyObject *apply_select_item(PyObject *item,
+                            compiled_select_spec_t *specs, Py_ssize_t nspecs);
 PyObject *apply_select(PyObject *list,
                        compiled_select_spec_t *specs, Py_ssize_t nspecs);
 PyObject *apply_order(PyObject *list,

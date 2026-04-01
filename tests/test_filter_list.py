@@ -1350,12 +1350,12 @@ def test_nt_count():
 
 def test_nt_match_true():
     cf = compile_filters([["active", "=", True], ["score", ">", 5.0]])
-    assert match(_NT_USERS[0], filters=cf) is True
+    assert match(_NT_USERS[0], filters=cf) is _NT_USERS[0]
 
 
 def test_nt_match_false():
     cf = compile_filters([["active", "=", True]])
-    assert match(_NT_USERS[1], filters=cf) is False
+    assert match(_NT_USERS[1], filters=cf) is None
 
 
 def test_nt_nested_namedtuple():
@@ -1491,12 +1491,12 @@ def test_dc_count():
 
 def test_dc_match_true():
     cf = compile_filters([["active", "=", True], ["score", ">", 5.0]])
-    assert match(_DC_USERS[0], filters=cf) is True
+    assert match(_DC_USERS[0], filters=cf) is _DC_USERS[0]
 
 
 def test_dc_match_false():
     cf = compile_filters([["active", "=", True]])
-    assert match(_DC_USERS[1], filters=cf) is False
+    assert match(_DC_USERS[1], filters=cf) is None
 
 
 def test_dc_nested_dataclass():
@@ -1519,3 +1519,60 @@ def test_dc_mixed_with_dicts():
     result = fl(data, [["name", "^", "a"]])
     assert len(result) == 1
     assert result[0]["name"] == "alice"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# match() return-value semantics (options / select support)
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_match_no_match_returns_none():
+    cf = compile_filters([["id", "=", 99]])
+    assert match(BASIC[0], filters=cf) is None
+
+
+def test_match_no_options_returns_original():
+    cf = compile_filters([["id", "=", 1]])
+    item = BASIC[0]
+    assert match(item, filters=cf) is item
+
+
+def test_match_options_none_returns_original():
+    cf = compile_filters([["id", "=", 1]])
+    item = BASIC[0]
+    assert match(item, filters=cf, options=None) is item
+
+
+def test_match_options_without_select_returns_original():
+    cf = compile_filters([["id", "=", 1]])
+    co = compile_options(order_by=["name"])
+    item = BASIC[0]
+    assert match(item, filters=cf, options=co) is item
+
+
+def test_match_select_returns_projected_dict():
+    cf = compile_filters([["id", "=", 1]])
+    co = compile_options(select=["id", "name"])
+    result = match(BASIC[0], filters=cf, options=co)
+    assert result == {"id": 1, "name": "alice"}
+    assert result is not BASIC[0]
+
+
+def test_match_select_no_match_returns_none():
+    cf = compile_filters([["id", "=", 99]])
+    co = compile_options(select=["id", "name"])
+    assert match(BASIC[0], filters=cf, options=co) is None
+
+
+def test_match_select_rename():
+    cf = compile_filters([["id", "=", 1]])
+    co = compile_options(select=[["name", "username"]])
+    result = match(BASIC[0], filters=cf, options=co)
+    assert result == {"username": "alice"}
+
+
+def test_match_select_nested_path():
+    item = {"id": 1, "user": {"name": "alice", "role": "admin"}}
+    cf = compile_filters([["id", "=", 1]])
+    co = compile_options(select=["user.name"])
+    result = match(item, filters=cf, options=co)
+    assert result == {"user": {"name": "alice"}}

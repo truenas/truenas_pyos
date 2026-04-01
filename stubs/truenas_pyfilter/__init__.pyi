@@ -42,8 +42,14 @@ def match(
     item: Any,
     *,
     filters: CompiledFilters,
-) -> bool:
-    """Test whether a single item matches all compiled filters."""
+    options: CompiledOptions | None = None,
+) -> Any | None:
+    """Test whether a single item matches all compiled filters.
+
+    Returns None if the item does not match. If it matches and options
+    contains a select spec, returns a new projected dict. Otherwise
+    returns the original item unchanged.
+    """
     ...
 
 
