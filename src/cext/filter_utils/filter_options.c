@@ -28,14 +28,20 @@
  * =========================================================================== */
 
 static int
-opt_split_keys(PyObject *path_obj, PyObject ***out_keys, Py_ssize_t *out_nkeys)
+opt_split_keys(PyObject *path_obj,
+               PyObject ***out_keys, Py_ssize_t **out_indices,
+               Py_ssize_t *out_nkeys)
 {
     PyObject *dot_str = NULL;
     PyObject *bslash_str = NULL;
     PyObject *pieces = NULL;
     PyObject *seg = NULL, *tmp = NULL;
     PyObject **keys = NULL;
+    Py_ssize_t *indices = NULL;
     Py_ssize_t npieces, nkeys, i;
+    const char *seg_c;
+    char *endp;
+    long idx;
     int tm;
 
     dot_str = PyUnicode_FromString(".");
@@ -62,12 +68,19 @@ opt_split_keys(PyObject *path_obj, PyObject ***out_keys, Py_ssize_t *out_nkeys)
         Py_DECREF(pieces);
         return -1;
     }
+    indices = PyMem_RawMalloc((size_t)npieces * sizeof(Py_ssize_t));
+    if (!indices) {
+        PyErr_NoMemory();
+        PyMem_RawFree(keys);
+        Py_DECREF(bslash_str);
+        Py_DECREF(pieces);
+        return -1;
+    }
 
     nkeys = 0;
     i = 0;
     while (i < npieces) {
-        seg = PyList_GET_ITEM(pieces, i++);
-        Py_INCREF(seg);
+        seg = Py_NewRef(PyList_GET_ITEM(pieces, i++));
 
         while (i < npieces) {
             tm = PyUnicode_Tailmatch(seg, bslash_str, 0, PY_SSIZE_T_MAX, 1);
@@ -83,12 +96,28 @@ opt_split_keys(PyObject *path_obj, PyObject ***out_keys, Py_ssize_t *out_nkeys)
             Py_DECREF(tmp);
             if (!seg) goto error;
         }
+
+        /* Pre-parse numeric index: ASCII digits only, non-negative, no overflow. */
+        seg_c = PyUnicode_AsUTF8(seg);
+        if (!seg_c) {
+            Py_DECREF(seg);
+            goto error;
+        }
+        errno = 0;
+        idx = strtol(seg_c, &endp, 10);
+        if (*endp == '\0' && seg_c[0] != '\0' && idx >= 0 &&
+            errno == 0 && idx <= (long)PY_SSIZE_T_MAX)
+            indices[nkeys] = (Py_ssize_t)idx;
+        else
+            indices[nkeys] = -1;
+
         keys[nkeys++] = seg; /* steal ref */
     }
 
     Py_DECREF(bslash_str);
     Py_DECREF(pieces);
     *out_keys = keys;
+    *out_indices = indices;
     *out_nkeys = nkeys;
     return 0;
 
@@ -96,6 +125,7 @@ error:
     for (i = 0; i < nkeys; i++)
         Py_DECREF(keys[i]);
     PyMem_RawFree(keys);
+    PyMem_RawFree(indices);
     Py_DECREF(bslash_str);
     Py_DECREF(pieces);
     return -1;
@@ -115,6 +145,7 @@ free_select_specs(compiled_select_spec_t *specs, Py_ssize_t n)
         for (j = 0; j < specs[i].nkeys; j++)
             Py_DECREF(specs[i].keys[j]);
         PyMem_RawFree(specs[i].keys);
+        PyMem_RawFree(specs[i].key_indices);
         Py_XDECREF(specs[i].rename);
     }
     PyMem_RawFree(specs);
@@ -130,6 +161,7 @@ free_order_specs(compiled_order_spec_t *specs, Py_ssize_t n)
         for (j = 0; j < specs[i].nkeys; j++)
             Py_DECREF(specs[i].keys[j]);
         PyMem_RawFree(specs[i].keys);
+        PyMem_RawFree(specs[i].key_indices);
         Py_XDECREF(specs[i].top_key);
     }
     PyMem_RawFree(specs);
@@ -187,7 +219,7 @@ compile_select_specs(PyObject *select_val,
             goto error;
         }
 
-        if (opt_split_keys(target, &specs[si].keys, &specs[si].nkeys) < 0) {
+        if (opt_split_keys(target, &specs[si].keys, &specs[si].key_indices, &specs[si].nkeys) < 0) {
             if (owned) {
                 Py_DECREF(target);
                 Py_XDECREF(rename);
@@ -279,7 +311,7 @@ compile_order_specs(PyObject *order_by_val,
         if (!field_obj)
             goto error;
 
-        if (opt_split_keys(field_obj, &specs[di].keys, &specs[di].nkeys) < 0) {
+        if (opt_split_keys(field_obj, &specs[di].keys, &specs[di].key_indices, &specs[di].nkeys) < 0) {
             Py_DECREF(field_obj);
             goto error;
         }
@@ -306,18 +338,20 @@ error:
  * Traverse nested dicts/lists following a pre-split key array.
  * Used for order_by sort-key extraction.
  *
- * Returns the leaf value on success (borrowed ref, or Py_None when absent).
+ * Returns a new owned reference to the leaf value on success, or a new
+ * owned reference to Py_None when the path is absent (*found set to 0).
  * Returns NULL only when an exception has been set.
- * *found is set to 0 when a key is absent.
+ *
+ * cur is kept as an owned reference throughout the loop so that mixed
+ * paths (e.g. getattr then dict-lookup) do not leak the intermediate
+ * owned ref when ownership changes mid-path.
  */
 static PyObject *
-opt_traverse_keys(PyObject *item, PyObject **keys, Py_ssize_t nkeys, int *found)
+opt_traverse_keys(PyObject *item, PyObject **keys, Py_ssize_t *key_indices,
+                  Py_ssize_t nkeys, int *found)
 {
-    PyObject *cur = item;
+    PyObject *cur = Py_NewRef(item); /* always an owned reference */
     PyObject *val = NULL;
-    const char *key_c = NULL;
-    char *endp = NULL;
-    long idx;
     Py_ssize_t n, i;
 
     *found = 1;
@@ -325,32 +359,32 @@ opt_traverse_keys(PyObject *item, PyObject **keys, Py_ssize_t nkeys, int *found)
     for (i = 0; i < nkeys; i++) {
         if (PyDict_CheckExact(cur)) {
             val = PyDict_GetItemWithError(cur, keys[i]);
+            Py_DECREF(cur);
             if (!val) {
                 if (PyErr_Occurred())
                     return NULL;
                 *found = 0;
-                return Py_None;
+                Py_RETURN_NONE;
             }
-            cur = val;
+            cur = Py_NewRef(val);
         } else if (PyList_Check(cur) || PyTuple_Check(cur)) {
-            key_c = PyUnicode_AsUTF8(keys[i]);
-            if (!key_c)
-                return NULL;
-            idx = strtol(key_c, &endp, 10);
-            if (*endp == '\0' && key_c[0] != '\0' && idx >= 0) {
-                /* Numeric index: plain sequence access */
+            if (key_indices[i] >= 0) {
+                /* Numeric index: pre-parsed at compile time */
                 n = PySequence_Fast_GET_SIZE(cur);
-                cur = (idx < n) ? PySequence_Fast_GET_ITEM(cur, (Py_ssize_t)idx)
-                                : Py_None;
+                val = (key_indices[i] < n)
+                      ? PySequence_Fast_GET_ITEM(cur, key_indices[i])
+                      : Py_None;
+                Py_SETREF(cur, Py_NewRef(val));
             } else {
                 /* Non-numeric key: try getattr for NamedTuple support */
                 val = PyObject_GetAttr(cur, keys[i]);
+                Py_DECREF(cur);
                 if (!val) {
                     if (!PyErr_ExceptionMatches(PyExc_AttributeError))
                         return NULL;
                     PyErr_Clear();
                     *found = 0;
-                    return Py_None;
+                    Py_RETURN_NONE;
                 }
                 cur = val;
             }
@@ -358,12 +392,13 @@ opt_traverse_keys(PyObject *item, PyObject **keys, Py_ssize_t nkeys, int *found)
             /* Non-dict, non-sequence: try getattr for dataclasses and
              * other custom objects.  Missing attribute → absent. */
             val = PyObject_GetAttr(cur, keys[i]);
+            Py_DECREF(cur);
             if (!val) {
                 if (!PyErr_ExceptionMatches(PyExc_AttributeError))
                     return NULL;
                 PyErr_Clear();
                 *found = 0;
-                return Py_None;
+                Py_RETURN_NONE;
             }
             cur = val;
         }
@@ -378,11 +413,18 @@ opt_traverse_keys(PyObject *item, PyObject **keys, Py_ssize_t nkeys, int *found)
  *
  * List/tuple mid-path raises ValueError.
  * Non-dict non-list returns *found=0 (path absent).
+ *
+ * Returns a new owned reference to the leaf value on success, or a new
+ * owned reference to Py_None when the path is absent (*found set to 0).
+ * Returns NULL only when an exception has been set.
+ *
+ * cur is kept as an owned reference throughout the loop so that mixed
+ * paths (e.g. getattr then dict-lookup) do not leak intermediate owned refs.
  */
 static PyObject *
 opt_select_traverse(PyObject *item, PyObject **keys, Py_ssize_t nkeys, int *found)
 {
-    PyObject *cur = item;
+    PyObject *cur = Py_NewRef(item); /* always an owned reference */
     PyObject *val = NULL;
     Py_ssize_t i;
 
@@ -394,15 +436,17 @@ opt_select_traverse(PyObject *item, PyObject **keys, Py_ssize_t nkeys, int *foun
              * Try getattr to support NamedTuple and other tuple subclasses.
              * Plain lists never have named attributes — keep the ValueError.
              */
+            int was_tuple = PyTuple_Check(cur);
             val = PyObject_GetAttr(cur, keys[i]);
+            Py_DECREF(cur);
             if (!val) {
                 if (!PyErr_ExceptionMatches(PyExc_AttributeError))
                     return NULL;
                 PyErr_Clear();
-                if (PyTuple_Check(cur)) {
+                if (was_tuple) {
                     /* NamedTuple missing field: treat as absent */
                     *found = 0;
-                    return Py_None;
+                    Py_RETURN_NONE;
                 }
                 PyErr_SetString(PyExc_ValueError,
                                 "filter_list: selecting by list index is not supported");
@@ -415,24 +459,26 @@ opt_select_traverse(PyObject *item, PyObject **keys, Py_ssize_t nkeys, int *foun
             /* Non-dict, non-sequence: try getattr for dataclasses and
              * other custom objects.  Missing attribute → absent. */
             val = PyObject_GetAttr(cur, keys[i]);
+            Py_DECREF(cur);
             if (!val) {
                 if (!PyErr_ExceptionMatches(PyExc_AttributeError))
                     return NULL;
                 PyErr_Clear();
                 *found = 0;
-                return Py_None;
+                Py_RETURN_NONE;
             }
             cur = val;
             continue;
         }
         val = PyDict_GetItemWithError(cur, keys[i]);
+        Py_DECREF(cur);
         if (!val) {
             if (PyErr_Occurred())
                 return NULL;
             *found = 0;
-            return Py_None;
+            Py_RETURN_NONE;
         }
-        cur = val;
+        cur = Py_NewRef(val);
     }
 
     return cur;
@@ -457,38 +503,52 @@ opt_select_apply_spec(PyObject *item, PyObject *entry,
     PyObject *value = NULL;
     PyObject *obj = NULL, *sub = NULL;
     Py_ssize_t ki;
-    int found, rc;
+    int found, rv;
 
     value = opt_select_traverse(item, spec->keys, spec->nkeys, &found);
     if (!value)
         return -1;
-    if (!found)
-        return 0; /* path absent - skip */
+    if (!found) {
+        rv = 0; /* path absent - skip */
+        goto done;
+    }
 
-    if (spec->rename)
-        return PyDict_SetItem(entry, spec->rename, value);
+    if (spec->rename) {
+        rv = PyDict_SetItem(entry, spec->rename, value);
+        goto done;
+    }
 
     /* No rename: reconstruct nested dict structure in output. */
     obj = entry;
     for (ki = 0; ki < spec->nkeys - 1; ki++) {
         sub = PyDict_GetItemWithError(obj, spec->keys[ki]);
         if (!sub) {
-            if (PyErr_Occurred())
-                return -1;
+            if (PyErr_Occurred()) {
+                rv = -1;
+                goto done;
+            }
             sub = PyDict_New();
-            if (!sub)
-                return -1;
-            rc = PyDict_SetItem(obj, spec->keys[ki], sub);
+            if (!sub) {
+                rv = -1;
+                goto done;
+            }
+            rv = PyDict_SetItem(obj, spec->keys[ki], sub);
             Py_DECREF(sub);
-            if (rc < 0)
-                return -1;
+            if (rv < 0)
+                goto done;
             sub = PyDict_GetItemWithError(obj, spec->keys[ki]);
-            if (!sub)
-                return PyErr_Occurred() ? -1 : 0;
+            if (!sub) {
+                rv = PyErr_Occurred() ? -1 : 0;
+                goto done;
+            }
         }
         obj = sub;
     }
-    return PyDict_SetItem(obj, spec->keys[spec->nkeys - 1], value);
+    rv = PyDict_SetItem(obj, spec->keys[spec->nkeys - 1], value);
+
+done:
+    Py_DECREF(value);
+    return rv;
 }
 
 /*
@@ -601,12 +661,11 @@ build_sort_pairs(PyObject *list, compiled_order_spec_t *spec)
 
     for (i = 0; i < m; i++) {
         raw = opt_traverse_keys(PyList_GET_ITEM(list, i),
-                                spec->keys, spec->nkeys, &found);
+                                spec->keys, spec->key_indices, spec->nkeys, &found);
         if (!raw) {
             Py_DECREF(pairs);
             return NULL;
         }
-        Py_INCREF(raw);
 
         idx = PyLong_FromSsize_t(i);
         if (!idx) {
@@ -654,8 +713,7 @@ reconstruct_from_pairs(PyObject *source, PyObject *pairs)
             return NULL;
         }
         item = PyList_GET_ITEM(source, orig);
-        Py_INCREF(item);
-        PyList_SET_ITEM(result, i, item);
+        PyList_SET_ITEM(result, i, Py_NewRef(item));
     }
 
     return result;
@@ -674,10 +732,8 @@ sort_by_spec(PyObject *list, compiled_order_spec_t *spec)
     PyObject *pairs = NULL, *sorted_non = NULL;
     PyObject *first = NULL, *second = NULL, *result = NULL;
 
-    if (n <= 1) {
-        Py_INCREF(list);
-        return list;
-    }
+    if (n <= 1)
+        return Py_NewRef(list);
 
     if (spec->nulls_mode != 0) {
         nulls = PyList_New(0);
@@ -687,8 +743,7 @@ sort_by_spec(PyObject *list, compiled_order_spec_t *spec)
         if (partition_nulls(list, spec->top_key, nulls, non_nulls) < 0)
             goto fail;
     } else {
-        non_nulls = list;
-        Py_INCREF(non_nulls);
+        non_nulls = Py_NewRef(list);
     }
 
     pairs = build_sort_pairs(non_nulls, spec);
@@ -704,8 +759,7 @@ sort_by_spec(PyObject *list, compiled_order_spec_t *spec)
 
     sorted_non = reconstruct_from_pairs(non_nulls, pairs);
     Py_DECREF(pairs);
-    Py_DECREF(non_nulls);
-    non_nulls = NULL;
+    Py_CLEAR(non_nulls);
     if (!sorted_non)
         goto fail;
 
@@ -732,15 +786,19 @@ apply_order(PyObject *list, compiled_order_spec_t *specs, Py_ssize_t nspecs)
     PyObject *sorted = NULL;
     Py_ssize_t di;
 
-    if (nspecs == 0) {
-        Py_INCREF(list);
-        return list;
-    }
+    if (nspecs == 0)
+        return Py_NewRef(list);
 
-    rv = list;
-    Py_INCREF(rv);
+    rv = Py_NewRef(list);
 
-    for (di = 0; di < nspecs; di++) {
+    /*
+     * Iterate in reverse so that specs[0] is the primary (most significant)
+     * sort key.  Timsort is stable: each pass preserves the order established
+     * by later passes, so applying specs[nspecs-1] first and specs[0] last
+     * means ties at every level are broken by the next spec in the original
+     * order_by list.
+     */
+    for (di = nspecs - 1; di >= 0; di--) {
         sorted = sort_by_spec(rv, &specs[di]);
         Py_DECREF(rv);
         if (!sorted)
@@ -770,8 +828,7 @@ apply_options(PyObject *filtered, CompiledOptionsObject *co)
         if (!rv)
             return NULL;
     } else {
-        rv = filtered;
-        Py_INCREF(rv);
+        rv = Py_NewRef(filtered);
     }
 
     if (co->count_flag) {

@@ -2,6 +2,29 @@
 
 from typing import Any, Iterable, final
 
+# order_by prefix constants
+FILTER_ORDER_NULLS_FIRST_PREFIX: str
+FILTER_ORDER_NULLS_LAST_PREFIX: str
+FILTER_ORDER_REVERSE_PREFIX: str
+
+# filter operator constants
+FILTER_OP_EQ: str
+FILTER_OP_NE: str
+FILTER_OP_GT: str
+FILTER_OP_GE: str
+FILTER_OP_LT: str
+FILTER_OP_LE: str
+FILTER_OP_REGEX: str
+FILTER_OP_IN: str
+FILTER_OP_NOT_IN: str
+FILTER_OP_REGEX_IN: str
+FILTER_OP_REGEX_NOT_IN: str
+FILTER_OP_STARTSWITH: str
+FILTER_OP_NOT_STARTSWITH: str
+FILTER_OP_ENDSWITH: str
+FILTER_OP_NOT_ENDSWITH: str
+FILTER_OP_CI_PREFIX: str
+
 
 @final
 class CompiledFilters:

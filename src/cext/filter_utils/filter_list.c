@@ -814,11 +814,8 @@ eval_simple_from(PyObject *item, const simple_filter_t *sf,
              * v is borrowed from cur.  If we own cur, incref v so it stays
              * alive when we release cur below.
              */
-            if (cur_owned) {
-                Py_INCREF(v);
-                Py_DECREF(cur_owned);
-                cur_owned = v;
-            }
+            if (cur_owned)
+                Py_SETREF(cur_owned, Py_NewRef(v));
             cur = v;
 
         } else if (PyList_Check(cur) || PyTuple_Check(cur)) {
@@ -846,11 +843,8 @@ eval_simple_from(PyObject *item, const simple_filter_t *sf,
                     ? PySequence_Fast_GET_ITEM(cur, pp->digit_val)
                     : Py_None;
                 /* v borrowed from cur; same ownership dance as dict case */
-                if (cur_owned) {
-                    Py_INCREF(v);
-                    Py_DECREF(cur_owned);
-                    cur_owned = v;
-                }
+                if (cur_owned)
+                    Py_SETREF(cur_owned, Py_NewRef(v));
                 cur = v;
             } else {
                 /*
@@ -871,8 +865,7 @@ eval_simple_from(PyObject *item, const simple_filter_t *sf,
                     Py_XDECREF(cur_owned);
                     return 0;
                 }
-                Py_XDECREF(cur_owned);
-                cur_owned = v;
+                Py_XSETREF(cur_owned, v);
                 cur = v;
             }
 
