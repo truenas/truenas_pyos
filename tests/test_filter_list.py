@@ -827,6 +827,42 @@ def test_order_by_nulls_first_reverse():
     assert values == sorted(values, reverse=True)
 
 
+def test_order_by_multi_key_primary():
+    # order_by=["score", "name"]: score is primary, name breaks ties.
+    data = [
+        {"id": 1, "score": 2, "name": "charlie"},
+        {"id": 2, "score": 1, "name": "bob"},
+        {"id": 3, "score": 2, "name": "alice"},
+        {"id": 4, "score": 1, "name": "dave"},
+    ]
+    co = compile_options(order_by=["score", "name"])
+    result = tnfilter(data, filters=compile_filters([]), options=co)
+    assert [(r["score"], r["name"]) for r in result] == [
+        (1, "bob"),
+        (1, "dave"),
+        (2, "alice"),
+        (2, "charlie"),
+    ]
+
+
+def test_order_by_multi_key_tiebreaker_desc():
+    # order_by=["score", "-name"]: score ascending, ties broken by name descending.
+    data = [
+        {"id": 1, "score": 2, "name": "alice"},
+        {"id": 2, "score": 1, "name": "bob"},
+        {"id": 3, "score": 2, "name": "charlie"},
+        {"id": 4, "score": 1, "name": "dave"},
+    ]
+    co = compile_options(order_by=["score", "-name"])
+    result = tnfilter(data, filters=compile_filters([]), options=co)
+    assert [(r["score"], r["name"]) for r in result] == [
+        (1, "dave"),
+        (1, "bob"),
+        (2, "charlie"),
+        (2, "alice"),
+    ]
+
+
 def test_select_rename():
     co = compile_options(select=[["id", "user_id"], "name"])
     result = tnfilter(BASIC[:1], filters=compile_filters([]), options=co)

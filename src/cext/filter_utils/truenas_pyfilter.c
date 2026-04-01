@@ -440,6 +440,32 @@ PyInit_truenas_pyfilter(void)
     if (PyModule_AddType(m, &CompiledOptions_Type) < 0)
         goto fail;
 
+    /* order_by prefix constants */
+#define ADD_STR(name, val) \
+    if (PyModule_AddStringConstant(m, name, val) < 0) goto fail
+    ADD_STR("FILTER_ORDER_NULLS_FIRST_PREFIX", "nulls_first:");
+    ADD_STR("FILTER_ORDER_NULLS_LAST_PREFIX",  "nulls_last:");
+    ADD_STR("FILTER_ORDER_REVERSE_PREFIX",     "-");
+
+    /* filter operator constants */
+    ADD_STR("FILTER_OP_EQ",              "=");
+    ADD_STR("FILTER_OP_NE",              "!=");
+    ADD_STR("FILTER_OP_GT",              ">");
+    ADD_STR("FILTER_OP_GE",              ">=");
+    ADD_STR("FILTER_OP_LT",              "<");
+    ADD_STR("FILTER_OP_LE",              "<=");
+    ADD_STR("FILTER_OP_REGEX",           "~");
+    ADD_STR("FILTER_OP_IN",              "in");
+    ADD_STR("FILTER_OP_NOT_IN",          "nin");
+    ADD_STR("FILTER_OP_REGEX_IN",        "rin");
+    ADD_STR("FILTER_OP_REGEX_NOT_IN",    "rnin");
+    ADD_STR("FILTER_OP_STARTSWITH",      "^");
+    ADD_STR("FILTER_OP_NOT_STARTSWITH",  "!^");
+    ADD_STR("FILTER_OP_ENDSWITH",        "$");
+    ADD_STR("FILTER_OP_NOT_ENDSWITH",    "!$");
+    ADD_STR("FILTER_OP_CI_PREFIX",       "C");
+#undef ADD_STR
+
     return m;
 
 fail:
