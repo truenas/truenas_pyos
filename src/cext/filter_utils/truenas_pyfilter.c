@@ -115,6 +115,21 @@ py_compile_options(PyObject *self, PyObject *args, PyObject *kwargs)
                                      &offset_val, &limit_val))
         return NULL;
 
+    if (get_val && limit_val > 1) {
+        PyErr_SetString(PyExc_ValueError, "get=True is incompatible with limit > 1");
+        return NULL;
+    }
+
+    if (get_val && offset_val) {
+        PyErr_SetString(PyExc_ValueError, "get=True is incompatible with offset");
+        return NULL;
+    }
+
+    if (limit_val > 10000) {
+        PyErr_SetString(PyExc_ValueError, "limit must not exceed 10000");
+        return NULL;
+    }
+
     repr_str = kwargs ? PyObject_Repr(kwargs) : PyUnicode_FromString("{}");
     if (!repr_str)
         return NULL;
