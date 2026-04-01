@@ -153,15 +153,25 @@ options = truenas_pyfilter.compile_options(
 
 ---
 
-## `match(item, *, filters)`
+## `match(item, *, filters, options=None)`
 
-Test whether a single item matches all compiled filters.
+Test whether a single item matches all compiled filters, optionally projecting
+matched items via `select`.
 
 ```python
 filters = truenas_pyfilter.compile_filters([["uid", "=", 1000]])
 
-truenas_pyfilter.match({"uid": 1000, "name": "alice"}, filters=filters)  # True
-truenas_pyfilter.match({"uid": 1001, "name": "bob"},   filters=filters)  # False
+# Basic usage — returns the original item or None
+truenas_pyfilter.match({"uid": 1000, "name": "alice"}, filters=filters)
+# {"uid": 1000, "name": "alice"}
+
+truenas_pyfilter.match({"uid": 1001, "name": "bob"}, filters=filters)
+# None
+
+# With select — returns a projected dict on match
+options = truenas_pyfilter.compile_options(select=["name"])
+truenas_pyfilter.match({"uid": 1000, "name": "alice"}, filters=filters, options=options)
+# {"name": "alice"}
 ```
 
 **Parameters:**
@@ -169,8 +179,18 @@ truenas_pyfilter.match({"uid": 1001, "name": "bob"},   filters=filters)  # False
   back to `getattr`.
 - `filters` (CompiledFilters): Pre-compiled filter tree from
   `compile_filters()`. **Keyword-only.**
+- `options` (CompiledOptions | None): Pre-compiled options from
+  `compile_options()`. Only the `select` field is applied; `order_by`, `count`,
+  `offset`, and `limit` are ignored for single-item matching.
+  **Keyword-only. Default: `None`.**
 
-**Returns:** `bool` — `True` if the item matches all filters, `False` otherwise.
+**Returns:**
+
+| Condition | Return value |
+|---|---|
+| Item does not match | `None` |
+| Item matches, no `select` in options | Original `item` (unchanged) |
+| Item matches, `select` in options | New projected `dict` |
 
 ---
 

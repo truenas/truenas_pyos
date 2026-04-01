@@ -555,8 +555,8 @@ done:
  * Apply select projection to a single item.
  * Returns a new dict, or NULL on error (exception set).
  */
-static PyObject *
-opt_select_item(PyObject *item, compiled_select_spec_t *specs, Py_ssize_t nspecs)
+PyObject *
+apply_select_item(PyObject *item, compiled_select_spec_t *specs, Py_ssize_t nspecs)
 {
     PyObject *entry;
     Py_ssize_t si;
@@ -592,7 +592,7 @@ apply_select(PyObject *list, compiled_select_spec_t *specs, Py_ssize_t nspecs)
         return NULL;
 
     for (i = 0; i < n; i++) {
-        projected = opt_select_item(PyList_GET_ITEM(list, i), specs, nspecs);
+        projected = apply_select_item(PyList_GET_ITEM(list, i), specs, nspecs);
         if (!projected) {
             Py_DECREF(result);
             return NULL;

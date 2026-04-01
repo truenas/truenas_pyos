@@ -220,18 +220,45 @@ py_match(PyObject *self, PyObject *args, PyObject *kwargs)
 {
     PyObject *item = NULL;
     PyObject *filters_obj = NULL;
+    PyObject *options_obj = Py_None;
     fl_state_t *state = NULL;
     CompiledFiltersObject *cf = NULL;
+    CompiledOptionsObject *co = NULL;
     bool matched;
 
-    static const char *kwnames[] = { "item", "filters", NULL };
+    static const char *kwnames[] = { "item", "filters", "options", NULL };
 
-    filters_obj = Py_None;
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O$O!",
+    /*
+     * Format "O|$O!O":
+     *   O   — positional 'item' (required)
+     *   |   — remaining args are optional (required before $)
+     *   $   — keyword-only from here
+     *   O!  — optional keyword 'filters' (type-checked when provided)
+     *   O   — optional keyword 'options'
+     *
+     * 'filters' is logically required; we detect the not-provided case by
+     * checking whether filters_obj is still Py_None after parsing (an actual
+     * None passed by the caller is rejected by the O! type check).
+     */
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|$O!O",
                                      discard_const_p(char *, kwnames),
                                      &item,
-                                     &CompiledFilters_Type, &filters_obj))
+                                     &CompiledFilters_Type, &filters_obj,
+                                     &options_obj))
         return NULL;
+
+    if (filters_obj == Py_None) {
+        PyErr_SetString(PyExc_TypeError,
+                        "match() missing required keyword argument: 'filters'");
+        return NULL;
+    }
+
+    if (options_obj != Py_None &&
+        !PyObject_TypeCheck(options_obj, &CompiledOptions_Type)) {
+        PyErr_SetString(PyExc_TypeError,
+                        "match: options must be a CompiledOptions or None");
+        return NULL;
+    }
 
     state = (fl_state_t *)PyModule_GetState(self);
     if (!state) {
@@ -244,13 +271,20 @@ py_match(PyObject *self, PyObject *args, PyObject *kwargs)
     if (!match_item(item, cf->filters, cf->nfilters, state, &matched))
         return NULL;
 
-    return PyBool_FromLong(matched);
+    if (!matched)
+        Py_RETURN_NONE;
+
+    co = (CompiledOptionsObject *)options_obj;
+    if (options_obj != Py_None && co->nselect > 0)
+        return apply_select_item(item, co->select_specs, co->nselect);
+
+    return Py_NewRef(item);
 }
 
 /* -- method table -------------------------------------------------------------- */
 
 PyDoc_STRVAR(match_doc,
-"match(item, *, filters: CompiledFilters) -> bool\n"
+"match(item, *, filters: CompiledFilters, options: CompiledOptions | None = None)\n"
 "--\n\n"
 "Test whether a single item matches all compiled filters.\n\n"
 "Parameters\n"
@@ -258,11 +292,16 @@ PyDoc_STRVAR(match_doc,
 "item : Any\n"
 "    The item to test (dict uses fast path; other objects fall back to getattr).\n"
 "filters : CompiledFilters\n"
-"    Pre-compiled filter tree from compile_filters().\n\n"
+"    Pre-compiled filter tree from compile_filters().\n"
+"options : CompiledOptions or None, optional\n"
+"    Pre-compiled options from compile_options(). Only the select field is\n"
+"    applied; other options (order_by, count, offset, limit) are ignored.\n\n"
 "Returns\n"
 "-------\n"
-"bool\n"
-"    True if the item matches all filters, False otherwise.\n"
+"Any or None\n"
+"    None if the item does not match. If it matches and options contains a\n"
+"    select spec, returns a new projected dict. Otherwise returns the original\n"
+"    item unchanged.\n"
 );
 
 PyDoc_STRVAR(tnfilter_doc,
