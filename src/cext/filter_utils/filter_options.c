@@ -198,9 +198,9 @@ compile_select_specs(PyObject *select_val,
             rename = NULL;
         } else if (PyList_Check(spec) || PyTuple_Check(spec)) {
             if (PySequence_Size(spec) != 2) {
+                PyErr_Format(PyExc_ValueError,
+                    "%R: select as list may only contain two parameters", spec);
                 Py_DECREF(spec);
-                PyErr_SetString(PyExc_ValueError,
-                    "filter_list: select spec list must be [target, new_name]");
                 goto error;
             }
             target = PySequence_GetItem(spec, 0);
@@ -209,6 +209,22 @@ compile_select_specs(PyObject *select_val,
             if (!target || !rename) {
                 Py_XDECREF(target);
                 Py_XDECREF(rename);
+                Py_DECREF(spec);
+                goto error;
+            }
+            if (!PyUnicode_Check(target)) {
+                PyErr_Format(PyExc_ValueError,
+                    "%R: first item must be a string", spec);
+                Py_DECREF(target);
+                Py_DECREF(rename);
+                Py_DECREF(spec);
+                goto error;
+            }
+            if (!PyUnicode_Check(rename)) {
+                PyErr_Format(PyExc_ValueError,
+                    "%R: second item must be a string", spec);
+                Py_DECREF(target);
+                Py_DECREF(rename);
                 Py_DECREF(spec);
                 goto error;
             }
