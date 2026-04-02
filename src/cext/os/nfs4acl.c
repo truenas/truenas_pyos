@@ -1030,8 +1030,8 @@ NFS4ACL_get_xattr_bytes(PyObject *acl)
 
 /*
  * Inheritance-propagation flags — only valid on directory ACLs.
- * INHERIT_ONLY is additionally only meaningful when paired with
- * FILE_INHERIT or DIRECTORY_INHERIT.
+ * INHERIT_ONLY and NO_PROPAGATE_INHERIT are additionally only meaningful
+ * when paired with FILE_INHERIT or DIRECTORY_INHERIT.
  *
  * NB: FILE_INHERIT and DIR_INHERIT are bits inside NFS4_PROPAGATE_MASK,
  * so has_inheritable=1 always implies has_propagate=1.
@@ -1060,6 +1060,16 @@ nfs4acl_valid(int fd, const char *data, size_t len)
 	if (len < NFS4_HDR_SZ)
 		return 0;
 
+	if (fd == -1) {
+		is_dir = 1;
+	} else {
+		if (fstat(fd, &st) < 0) {
+			PyErr_SetFromErrno(PyExc_OSError);
+			return -1;
+		}
+		is_dir = S_ISDIR(st.st_mode);
+	}
+
 	p = (const uint32_t *)data;
 	naces = be32toh(p[1]);
 	has_propagate = 0;
@@ -1082,11 +1092,25 @@ nfs4acl_valid(int fd, const char *data, size_t len)
 			return -1;
 		}
 
-		/* INHERIT_ONLY requires FILE_INHERIT or DIRECTORY_INHERIT. */
-		if ((ace_flags & NFS4_ACE_INHERIT_ONLY_ACE) &&
+		/*
+		 * INHERIT_ONLY and NO_PROPAGATE_INHERIT require FILE_INHERIT or
+		 * DIRECTORY_INHERIT to also be set.  These checks are only
+		 * meaningful for directories: on files, any propagation flag is
+		 * unconditionally rejected below with a clearer "only valid on
+		 * directories" diagnostic, which takes priority.
+		 */
+		if (is_dir && (ace_flags & NFS4_ACE_INHERIT_ONLY_ACE) &&
 		    !(ace_flags & (NFS4_ACE_FILE_INHERIT_ACE | NFS4_ACE_DIRECTORY_INHERIT_ACE))) {
 			PyErr_SetString(PyExc_ValueError,
 			    "INHERIT_ONLY requires FILE_INHERIT or "
+			    "DIRECTORY_INHERIT to also be set");
+			return -1;
+		}
+
+		if (is_dir && (ace_flags & NFS4_ACE_NO_PROPAGATE_INHERIT_ACE) &&
+		    !(ace_flags & (NFS4_ACE_FILE_INHERIT_ACE | NFS4_ACE_DIRECTORY_INHERIT_ACE))) {
+			PyErr_SetString(PyExc_ValueError,
+			    "NO_PROPAGATE_INHERIT requires FILE_INHERIT or "
 			    "DIRECTORY_INHERIT to also be set");
 			return -1;
 		}
@@ -1095,16 +1119,6 @@ nfs4acl_valid(int fd, const char *data, size_t len)
 			has_propagate = 1;
 		if (ace_flags & (NFS4_ACE_FILE_INHERIT_ACE | NFS4_ACE_DIRECTORY_INHERIT_ACE))
 			has_inheritable = 1;
-	}
-
-	if (fd == -1) {
-		is_dir = 1;
-	} else {
-		if (fstat(fd, &st) < 0) {
-			PyErr_SetFromErrno(PyExc_OSError);
-			return -1;
-		}
-		is_dir = S_ISDIR(st.st_mode);
 	}
 
 	/* Propagation flags are only valid on directories. */

@@ -1657,6 +1657,41 @@ def test_nfs4_valid_no_propagate_inherit_on_file_rejected(nfs4_dataset):
         os.close(fd)
 
 
+def test_nfs4_valid_no_propagate_without_propagation_rejected(nfs4_dataset):
+    # NO_PROPAGATE_INHERIT without FILE_INHERIT or DIRECTORY_INHERIT is invalid,
+    # even when other ACEs in the same ACL have FILE_INHERIT (per-ACE check).
+    aces = [
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.NO_PROPAGATE_INHERIT,
+                  t.NFS4Perm.READ_DATA, t.NFS4Who.EVERYONE),
+        t.NFS4Ace(t.NFS4AceType.ALLOW,
+                  t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT,
+                  _NFS4_FULL, t.NFS4Who.OWNER),
+    ]
+    fd = _open_dir(nfs4_dataset, 'val_no_propagate_no_inherit')
+    try:
+        with pytest.raises(ValueError, match='NO_PROPAGATE_INHERIT'):
+            t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
+    finally:
+        os.close(fd)
+
+
+def test_nfs4_valid_no_propagate_with_file_inherit_accepted(nfs4_dataset):
+    # NO_PROPAGATE_INHERIT is valid when paired with FILE_INHERIT.
+    aces = [
+        t.NFS4Ace(t.NFS4AceType.ALLOW,
+                  t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.NO_PROPAGATE_INHERIT,
+                  t.NFS4Perm.READ_DATA, t.NFS4Who.EVERYONE),
+        t.NFS4Ace(t.NFS4AceType.ALLOW,
+                  t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT,
+                  _NFS4_FULL, t.NFS4Who.OWNER),
+    ]
+    fd = _open_dir(nfs4_dataset, 'val_no_propagate_ok')
+    try:
+        t.fsetacl(fd, t.NFS4ACL.from_aces(aces))  # must not raise
+    finally:
+        os.close(fd)
+
+
 def test_nfs4_valid_directory_without_inheritable_rejected(nfs4_dataset):
     # _BASE_NFS4_ACES has no FILE_INHERIT or DIRECTORY_INHERIT — invalid on a dir.
     fd = _open_dir(nfs4_dataset, 'val_dir_no_inherit')
