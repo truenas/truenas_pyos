@@ -924,6 +924,28 @@ def test_unknown_kwarg_raises_type_error(bad_kwarg):
         compile_options(**bad_kwarg)
 
 
+@pytest.mark.parametrize("bad_select", [
+    [['foobar.stuff.more_stuff']],           # too few items
+    [['foobar.stuff.more_stuff', 'cat', 'dog']],  # too many items
+])
+def test_select_as_list_wrong_length_raises(bad_select):
+    with pytest.raises(ValueError) as ve:
+        compile_options(select=bad_select)
+    assert 'select as list may only contain two parameters' in str(ve.value)
+
+
+def test_select_as_list_non_string_first_item_raises():
+    with pytest.raises(ValueError) as ve:
+        compile_options(select=[[1, 'cat']])
+    assert 'first item must be a string' in str(ve.value)
+
+
+def test_select_as_list_non_string_second_item_raises():
+    with pytest.raises(ValueError) as ve:
+        compile_options(select=[['cat', 1]])
+    assert 'second item must be a string' in str(ve.value)
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # compile_filters: edge cases
 # ═════════════════════════════════════════════════════════════════════════════
