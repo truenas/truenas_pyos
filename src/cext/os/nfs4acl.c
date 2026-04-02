@@ -1030,8 +1030,8 @@ NFS4ACL_get_xattr_bytes(PyObject *acl)
 
 /*
  * Inheritance-propagation flags — only valid on directory ACLs.
- * INHERIT_ONLY is additionally only meaningful when paired with
- * FILE_INHERIT or DIRECTORY_INHERIT.
+ * INHERIT_ONLY and NO_PROPAGATE_INHERIT are additionally only meaningful
+ * when paired with FILE_INHERIT or DIRECTORY_INHERIT.
  *
  * NB: FILE_INHERIT and DIR_INHERIT are bits inside NFS4_PROPAGATE_MASK,
  * so has_inheritable=1 always implies has_propagate=1.
@@ -1087,6 +1087,15 @@ nfs4acl_valid(int fd, const char *data, size_t len)
 		    !(ace_flags & (NFS4_ACE_FILE_INHERIT_ACE | NFS4_ACE_DIRECTORY_INHERIT_ACE))) {
 			PyErr_SetString(PyExc_ValueError,
 			    "INHERIT_ONLY requires FILE_INHERIT or "
+			    "DIRECTORY_INHERIT to also be set");
+			return -1;
+		}
+
+		/* NO_PROPAGATE_INHERIT requires FILE_INHERIT or DIRECTORY_INHERIT. */
+		if ((ace_flags & NFS4_ACE_NO_PROPAGATE_INHERIT_ACE) &&
+		    !(ace_flags & (NFS4_ACE_FILE_INHERIT_ACE | NFS4_ACE_DIRECTORY_INHERIT_ACE))) {
+			PyErr_SetString(PyExc_ValueError,
+			    "NO_PROPAGATE_INHERIT requires FILE_INHERIT or "
 			    "DIRECTORY_INHERIT to also be set");
 			return -1;
 		}
