@@ -522,12 +522,20 @@ parse_posix_aces(const uint8_t *buf, Py_ssize_t bufsz, int is_default)
 
 		id_v = (xid == POSIX_SPECIAL_ID) ? -1L : (long)xid;
 
-		tag_o = PyObject_CallOneArg(state->POSIXTag_enum,
-		    tmp = PyLong_FromUnsignedLong(tag_raw));
-		Py_XDECREF(tmp);
-		perm_o = PyObject_CallOneArg(state->POSIXPerm_enum,
-		    tmp = PyLong_FromUnsignedLong(perm_raw));
-		Py_XDECREF(tmp);
+		tmp = PyLong_FromUnsignedLong(tag_raw);
+		if (tmp == NULL) {
+			Py_DECREF(result);
+			return NULL;
+		}
+		tag_o = PyObject_CallOneArg(state->POSIXTag_enum, tmp);
+		Py_XSETREF(tmp, PyLong_FromUnsignedLong(perm_raw));
+		if (tmp == NULL) {
+			Py_XDECREF(tag_o);
+			Py_DECREF(result);
+			return NULL;
+		}
+		perm_o = PyObject_CallOneArg(state->POSIXPerm_enum, tmp);
+		Py_CLEAR(tmp);
 		id_o = PyLong_FromLong(id_v);
 
 		if (!tag_o || !perm_o || !id_o) {

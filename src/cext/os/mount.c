@@ -275,32 +275,28 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	if (sm->mask & STATMOUNT_MNT_BASIC) {
 		tmp = PyLong_FromUnsignedLongLong(sm->mnt_id);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 0, tmp);
 
 		tmp = PyLong_FromUnsignedLongLong(sm->mnt_parent_id);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 1, tmp);
 
 		tmp = PyLong_FromUnsignedLong(sm->mnt_id_old);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 2, tmp);
 
 		tmp = PyLong_FromUnsignedLong(sm->mnt_parent_id_old);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 3, tmp);
@@ -315,8 +311,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	if (sm->mask & STATMOUNT_MNT_ROOT) {
 		tmp = sm->mnt_root ? PyUnicode_FromString(sm->str + sm->mnt_root) : Py_NewRef(Py_None);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 4, tmp);
@@ -327,8 +322,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	if (sm->mask & STATMOUNT_MNT_POINT) {
 		tmp = sm->mnt_point ? PyUnicode_FromString(sm->str + sm->mnt_point) : Py_NewRef(Py_None);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 5, tmp);
@@ -340,32 +334,28 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	if (sm->mask & STATMOUNT_MNT_BASIC) {
 		tmp = PyLong_FromUnsignedLongLong(sm->mnt_attr);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 6, tmp);
 
 		tmp = PyLong_FromUnsignedLongLong(sm->mnt_propagation);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 7, tmp);
 
 		tmp = PyLong_FromUnsignedLongLong(sm->mnt_peer_group);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 8, tmp);
 
 		tmp = PyLong_FromUnsignedLongLong(sm->mnt_master);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 9, tmp);
@@ -380,8 +370,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	if (sm->mask & STATMOUNT_PROPAGATE_FROM) {
 		tmp = PyLong_FromUnsignedLongLong(sm->propagate_from);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 10, tmp);
@@ -393,8 +382,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	if (sm->mask & STATMOUNT_FS_TYPE) {
 		tmp = sm->fs_type ? PyUnicode_FromString(sm->str + sm->fs_type) : Py_NewRef(Py_None);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 11, tmp);
@@ -406,8 +394,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	if (sm->mask & STATMOUNT_MNT_NS_ID) {
 		tmp = PyLong_FromUnsignedLongLong(sm->mnt_ns_id);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 12, tmp);
@@ -429,8 +416,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 			tmp = opts ? PyUnicode_FromString(opts) : Py_NewRef(Py_None);
 		}
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 13, tmp);
@@ -442,32 +428,28 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	if (sm->mask & STATMOUNT_SB_BASIC) {
 		tmp = PyLong_FromUnsignedLong(sm->sb_dev_major);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 14, tmp);
 
 		tmp = PyLong_FromUnsignedLong(sm->sb_dev_minor);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 15, tmp);
 
 		tmp = PyLong_FromUnsignedLongLong(sm->sb_magic);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 16, tmp);
 
 		tmp = PyLong_FromUnsignedLong(sm->sb_flags);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, 17, tmp);
@@ -483,8 +465,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	if (sm->mask & STATMOUNT_FS_SUBTYPE) {
 		tmp = sm->fs_subtype ? PyUnicode_FromString(sm->str + sm->fs_subtype) : Py_NewRef(Py_None);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, IDX_FS_SUBTYPE, tmp);
@@ -498,8 +479,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	if (sm->mask & STATMOUNT_SB_SOURCE) {
 		tmp = sm->sb_source ? PyUnicode_FromString(sm->str + sm->sb_source) : Py_NewRef(Py_None);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, IDX_SB_SOURCE, tmp);
@@ -514,8 +494,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 		if (sm->opt_array && sm->opt_num > 0) {
 			PyObject *opt_list = PyList_New(0);
 			if (opt_list == NULL) {
-				Py_DECREF(result);
-				result = NULL;
+				Py_CLEAR(result);
 				goto cleanup;
 			}
 			const char *opt_ptr = sm->str + sm->opt_array;
@@ -523,15 +502,13 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 				PyObject *opt_str = PyUnicode_FromString(opt_ptr);
 				if (opt_str == NULL) {
 					Py_DECREF(opt_list);
-					Py_DECREF(result);
-					result = NULL;
+					Py_CLEAR(result);
 					goto cleanup;
 				}
 				if (PyList_Append(opt_list, opt_str) < 0) {
 					Py_DECREF(opt_str);
 					Py_DECREF(opt_list);
-					Py_DECREF(result);
-					result = NULL;
+					Py_CLEAR(result);
 					goto cleanup;
 				}
 				Py_DECREF(opt_str);
@@ -552,8 +529,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 		if (sm->opt_sec_array && sm->opt_sec_num > 0) {
 			PyObject *opt_sec_list = PyList_New(0);
 			if (opt_sec_list == NULL) {
-				Py_DECREF(result);
-				result = NULL;
+				Py_CLEAR(result);
 				goto cleanup;
 			}
 			const char *opt_ptr = sm->str + sm->opt_sec_array;
@@ -561,15 +537,13 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 				PyObject *opt_str = PyUnicode_FromString(opt_ptr);
 				if (opt_str == NULL) {
 					Py_DECREF(opt_sec_list);
-					Py_DECREF(result);
-					result = NULL;
+					Py_CLEAR(result);
 					goto cleanup;
 				}
 				if (PyList_Append(opt_sec_list, opt_str) < 0) {
 					Py_DECREF(opt_str);
 					Py_DECREF(opt_sec_list);
-					Py_DECREF(result);
-					result = NULL;
+					Py_CLEAR(result);
 					goto cleanup;
 				}
 				Py_DECREF(opt_str);
@@ -589,8 +563,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	if (sm->mask & STATMOUNT_SUPPORTED_MASK) {
 		tmp = PyLong_FromUnsignedLongLong(sm->supported_mask);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, IDX_SUPPORTED_MASK, tmp);
@@ -604,8 +577,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	if (sm->mask & STATMOUNT_MNT_UIDMAP) {
 		tmp = sm->mnt_uidmap ? PyUnicode_FromString(sm->str + sm->mnt_uidmap) : Py_NewRef(Py_None);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, IDX_MNT_UIDMAP, tmp);
@@ -619,8 +591,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	if (sm->mask & STATMOUNT_MNT_GIDMAP) {
 		tmp = sm->mnt_gidmap ? PyUnicode_FromString(sm->str + sm->mnt_gidmap) : Py_NewRef(Py_None);
 		if (tmp == NULL) {
-			Py_DECREF(result);
-			result = NULL;
+			Py_CLEAR(result);
 			goto cleanup;
 		}
 		PyStructSequence_SET_ITEM(result, IDX_MNT_GIDMAP, tmp);
@@ -632,8 +603,7 @@ PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 	// mask
 	tmp = PyLong_FromUnsignedLongLong(sm->mask);
 	if (tmp == NULL) {
-		Py_DECREF(result);
-		result = NULL;
+		Py_CLEAR(result);
 		goto cleanup;
 	}
 	PyStructSequence_SET_ITEM(result, IDX_MASK_FINAL, tmp);
