@@ -603,29 +603,28 @@ nfs4ace_decode(const uint32_t *p, truenas_os_state_t *state)
 	who_type_v = iflag ? who_raw : NFS4_ACL_WHO_NAMED;
 	who_id_v = iflag ? -1L : (long)who_raw;
 
-#define CALL_ENUM(e, v) PyObject_CallOneArg((e), tmp = PyLong_FromUnsignedLong(v))
-
-	ace_type_o = CALL_ENUM(state->NFS4AceType_enum, ace_type_v);
-	Py_XDECREF(tmp);
-	ace_flags_o = CALL_ENUM(state->NFS4Flag_enum, ace_flags_v);
-	Py_XDECREF(tmp);
-	access_mask_o = CALL_ENUM(state->NFS4Perm_enum, access_mask_v);
-	Py_XDECREF(tmp);
-	who_type_o = CALL_ENUM(state->NFS4Who_enum, who_type_v);
-	Py_XDECREF(tmp);
+	tmp = PyLong_FromUnsignedLong(ace_type_v);
+	if (tmp == NULL)
+		goto error;
+	ace_type_o = PyObject_CallOneArg(state->NFS4AceType_enum, tmp);
+	Py_XSETREF(tmp, PyLong_FromUnsignedLong(ace_flags_v));
+	if (tmp == NULL)
+		goto error;
+	ace_flags_o = PyObject_CallOneArg(state->NFS4Flag_enum, tmp);
+	Py_XSETREF(tmp, PyLong_FromUnsignedLong(access_mask_v));
+	if (tmp == NULL)
+		goto error;
+	access_mask_o = PyObject_CallOneArg(state->NFS4Perm_enum, tmp);
+	Py_XSETREF(tmp, PyLong_FromUnsignedLong(who_type_v));
+	if (tmp == NULL)
+		goto error;
+	who_type_o = PyObject_CallOneArg(state->NFS4Who_enum, tmp);
+	Py_CLEAR(tmp);
 	who_id_o = PyLong_FromLong(who_id_v);
 
-#undef CALL_ENUM
-
 	if (!ace_type_o || !ace_flags_o || !access_mask_o ||
-	    !who_type_o || !who_id_o) {
-		Py_XDECREF(ace_type_o);
-		Py_XDECREF(ace_flags_o);
-		Py_XDECREF(access_mask_o);
-		Py_XDECREF(who_type_o);
-		Py_XDECREF(who_id_o);
-		return NULL;
-	}
+	    !who_type_o || !who_id_o)
+		goto error;
 
 	ace = PyObject_CallFunction(
 	    (PyObject *)&NFS4Ace_Type, "OOOOO",
@@ -636,6 +635,15 @@ nfs4ace_decode(const uint32_t *p, truenas_os_state_t *state)
 	Py_DECREF(who_type_o);
 	Py_DECREF(who_id_o);
 	return ace;
+
+error:
+	Py_XDECREF(tmp);
+	Py_XDECREF(ace_type_o);
+	Py_XDECREF(ace_flags_o);
+	Py_XDECREF(access_mask_o);
+	Py_XDECREF(who_type_o);
+	Py_XDECREF(who_id_o);
+	return NULL;
 }
 
 /* NFS4ACL.aces property */
