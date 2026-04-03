@@ -60,6 +60,15 @@ The full sequence above is what CI runs in `qemu-4-test.sh`.
 - Prefer the PyUnicode API (`PyUnicode_*`) over C string APIs (`strcmp`, `strtol` on UTF-8 bytes, etc.) when working with Python string objects.
 - Use `PyMem_RawMalloc` / `PyMem_RawCalloc` / `PyMem_RawFree` for manual memory allocation; do not use `malloc` / `calloc` / `free`.
 
+## C extension reference counting
+
+- Use `Py_CLEAR(x)` instead of `Py_DECREF(x); x = NULL;` — they are equivalent but `Py_CLEAR` is one line and avoids the dangling pointer window.
+- Use `Py_SETREF(x, y)` / `Py_XSETREF(x, y)` instead of `Py_DECREF(x); x = y;` / `Py_XDECREF(x); x = y;` when reassigning an owned reference to a new value. `Py_SETREF` asserts the old value is non-NULL; use the `X` variant when it may be NULL.
+- Do not embed side-effectful assignments (`tmp = expr`) inside function call argument lists. Assign to the temporary first, then pass it to the function, then use `Py_XSETREF` for subsequent reuse of the same temporary.
+- Always NULL-check the result of object-creating calls (`PyLong_From*`, `PyUnicode_From*`, etc.) before passing the result to any other function. Passing NULL into a C-API call is undefined behaviour — CPython asserts `arg != NULL` in debug builds and will crash or corrupt state in release builds. An aggregated check (`if (!a || !b || !c)`) after all the allocations is acceptable only when none of the allocated values are passed to another function before the check.
+- Never call `Py_DECREF` / `Py_XDECREF` on borrowed references (`PyList_GET_ITEM`, `PyTuple_GET_ITEM`, `PySequence_Fast_GET_ITEM`, dict values from `PyDict_GetItem`, etc.).
+- In `tp_dealloc`, clear all owned `PyObject *` fields with `Py_CLEAR` before calling `tp_free`.
+
 ## Kernel / ZFS version compatibility
 
 All C source changes must be consistent with the TrueNAS kernel and ZFS versions.
