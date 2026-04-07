@@ -887,9 +887,8 @@ eval_simple_from(PyObject *item, const simple_filter_t *sf,
                 Py_XDECREF(cur_owned);
                 return result;
             }
-            Py_XDECREF(cur_owned);
+            Py_XSETREF(cur_owned, v);
             cur = v;
-            cur_owned = v;
         }
     }
 
