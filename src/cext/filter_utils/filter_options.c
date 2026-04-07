@@ -683,7 +683,16 @@ build_sort_pairs(PyObject *list, compiled_order_spec_t *spec)
             return NULL;
         }
 
-        idx = PyLong_FromSsize_t(i);
+        /*
+         * For a descending pass, store the negated index as the tie-breaker.
+         * PyList_Sort will order equal-keyed pairs by this value, so negating
+         * it causes them to land in reverse-index order after the sort.
+         * PyList_Reverse then flips that back to forward-index order, which
+         * preserves the relative ordering that lower-priority passes established.
+         * reconstruct_from_pairs strips the sign before using the value as a
+         * list index.
+         */
+        idx = PyLong_FromSsize_t(spec->reverse ? -i : i);
         if (!idx) {
             Py_DECREF(raw);
             Py_DECREF(pairs);
@@ -728,6 +737,9 @@ reconstruct_from_pairs(PyObject *source, PyObject *pairs)
             Py_DECREF(result);
             return NULL;
         }
+        /* Strip the sign used by build_sort_pairs for descending tie-breaking. */
+        if (orig < 0)
+            orig = -orig;
         item = PyList_GET_ITEM(source, orig);
         PyList_SET_ITEM(result, i, Py_NewRef(item));
     }
