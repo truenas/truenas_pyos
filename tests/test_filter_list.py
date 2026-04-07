@@ -863,6 +863,75 @@ def test_order_by_multi_key_tiebreaker_desc():
     ]
 
 
+def test_order_by_desc_primary_equal_asc_tiebreaker():
+    # Regression: when the primary (descending) key is equal for all rows,
+    # the ascending tie-breaker must still determine final order.
+    # Previously PyList_Reverse would flip equal-keyed pairs and undo the
+    # tie-breaking established by lower-priority passes.
+    data = [
+        {"id": 1, "gid": 0, "builtin": True, "group": "wheel"},
+        {"id": 43, "gid": 0, "builtin": True, "group": "root"},
+    ]
+    cf = compile_filters([])
+    co = compile_options(order_by=["-builtin", "gid", "group"])
+    result = tnfilter(data, filters=cf, options=co)
+    assert [r["group"] for r in result] == ["root", "wheel"]
+
+
+def test_order_by_desc_primary_equal_desc_tiebreaker():
+    # Same regression, but with a descending tie-breaker.
+    data = [
+        {"id": 1, "gid": 0, "builtin": True, "group": "root"},
+        {"id": 43, "gid": 0, "builtin": True, "group": "wheel"},
+    ]
+    cf = compile_filters([])
+    co = compile_options(order_by=["-builtin", "gid", "-group"])
+    result = tnfilter(data, filters=cf, options=co)
+    assert [r["group"] for r in result] == ["wheel", "root"]
+
+
+def test_order_by_desc_primary_mixed_asc_tiebreaker():
+    # When primary key values differ, descending order must be correct AND
+    # equal-primary-key rows must still be broken by the tie-breaker.
+    data = [
+        {"id": 1, "score": 1, "name": "charlie"},
+        {"id": 2, "score": 2, "name": "bob"},
+        {"id": 3, "score": 2, "name": "alice"},
+        {"id": 4, "score": 1, "name": "dave"},
+    ]
+    co = compile_options(order_by=["-score", "name"])
+    result = tnfilter(data, filters=compile_filters([]), options=co)
+    assert [(r["score"], r["name"]) for r in result] == [
+        (2, "alice"),
+        (2, "bob"),
+        (1, "charlie"),
+        (1, "dave"),
+    ]
+
+
+def test_order_by_desc_mid_list():
+    # Regression: descending key in the middle of order_by must not disturb
+    # the ordering set by lower-priority keys, and the higher-priority key
+    # must still govern primary grouping.
+    # order_by=["gid", "-builtin", "group"]:
+    #   gid ascending → within each gid, builtin descending (True before False)
+    #   → within equal builtin, group ascending.
+    data = [
+        {"gid": 0, "builtin": True,  "group": "wheel"},
+        {"gid": 0, "builtin": False, "group": "staff"},
+        {"gid": 0, "builtin": True,  "group": "root"},
+        {"gid": 1, "builtin": True,  "group": "sudo"},
+    ]
+    co = compile_options(order_by=["gid", "-builtin", "group"])
+    result = tnfilter(data, filters=compile_filters([]), options=co)
+    assert [(r["gid"], r["builtin"], r["group"]) for r in result] == [
+        (0, True,  "root"),
+        (0, True,  "wheel"),
+        (0, False, "staff"),
+        (1, True,  "sudo"),
+    ]
+
+
 def test_select_rename():
     co = compile_options(select=[["id", "user_id"], "name"])
     result = tnfilter(BASIC[:1], filters=compile_filters([]), options=co)

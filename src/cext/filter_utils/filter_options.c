@@ -683,7 +683,14 @@ build_sort_pairs(PyObject *list, compiled_order_spec_t *spec)
             return NULL;
         }
 
-        idx = PyLong_FromSsize_t(i);
+        /*
+         * Negate the index when sorting in reverse so that equal-keyed pairs
+         * sort in reverse-index order before PyList_Reverse is applied.
+         * This ensures PyList_Reverse restores the original relative order of
+         * equal elements rather than destroying the ordering established by
+         * lower-priority sort passes.
+         */
+        idx = PyLong_FromSsize_t(spec->reverse ? -i : i);
         if (!idx) {
             Py_DECREF(raw);
             Py_DECREF(pairs);
@@ -728,6 +735,9 @@ reconstruct_from_pairs(PyObject *source, PyObject *pairs)
             Py_DECREF(result);
             return NULL;
         }
+        /* build_sort_pairs negates the index for reverse sorts; recover it. */
+        if (orig < 0)
+            orig = -orig;
         item = PyList_GET_ITEM(source, orig);
         PyList_SET_ITEM(result, i, Py_NewRef(item));
     }
