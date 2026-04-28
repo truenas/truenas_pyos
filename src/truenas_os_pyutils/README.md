@@ -17,6 +17,8 @@ Symlink-safe file I/O using `openat2(RESOLVE_NO_SYMLINKS)`.
 | `safe_open(path, mode, ..., dir_fd)` | context manager | Drop-in for `open()` that rejects symlinks in any path component. |
 | `atomic_write(target, mode, *, tmppath, uid, gid, perms)` | context manager | Yields a file object; atomically replaces `target` on clean exit using `renameat2(AT_RENAME_EXCHANGE)`. |
 | `atomic_replace(*, temp_path, target_file, data, uid, gid, perms)` | function | Writes `data` to `target_file` atomically. Thin wrapper around `atomic_write`. |
+| `safe_copy(src, dst)` | function | Symlink-safe regular-file copy. Preserves uid/gid/mode/times. Refuses to overwrite (`O_EXCL`). Drop-in for `shutil.copytree`'s `copy_function`. |
+| `safe_copytree(src, dst)` | function | Symlink-safe recursive directory-tree copy. Uses `safe_copy` for files and replicates uid/gid on directories. |
 
 All write operations use `RESOLVE_NO_SYMLINKS` for TOCTOU protection. Pass
 `uid=-1` or `gid=-1` to preserve the existing file's ownership.

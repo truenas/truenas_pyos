@@ -7,7 +7,13 @@ yielded values. The tests are also valid pytest tests that execute at runtime.
 from pathlib import Path
 from typing import IO, Any, BinaryIO, TextIO, assert_type
 
-from truenas_os_pyutils.io import SymlinkInPathError, atomic_write, safe_open
+from truenas_os_pyutils.io import (
+    SymlinkInPathError,
+    atomic_write,
+    safe_copy,
+    safe_copytree,
+    safe_open,
+)
 
 
 def test_safe_open_yields_io(tmp_path: Path) -> None:
@@ -38,3 +44,17 @@ def test_atomic_write_binary_mode_yields_binary_io(tmp_path: Path) -> None:
 def test_symlink_in_path_error_is_oserror() -> None:
     e: OSError = SymlinkInPathError('/x')
     assert_type(e, OSError)
+
+
+def test_safe_copy_returns_str(tmp_path: Path) -> None:
+    src = tmp_path / 'src.bin'
+    src.write_bytes(b'x')
+    rv = safe_copy(str(src), str(tmp_path / 'dst.bin'))
+    assert_type(rv, str)
+
+
+def test_safe_copytree_returns_str(tmp_path: Path) -> None:
+    src = tmp_path / 'src'
+    src.mkdir()
+    rv = safe_copytree(str(src), str(tmp_path / 'dst'))
+    assert_type(rv, str)

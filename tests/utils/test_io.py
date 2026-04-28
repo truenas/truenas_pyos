@@ -8,6 +8,8 @@ from truenas_os_pyutils.io import (
     SymlinkInPathError,
     atomic_replace,
     atomic_write,
+    safe_copy,
+    safe_copytree,
     safe_open,
 )
 
@@ -305,3 +307,210 @@ def test_atomic_write_multiple_writes(atomic_dir):
         f.write('line2\n')
     with open(target) as f:
         assert f.read() == 'line1\nline2\n'
+
+
+# ── safe_copy ─────────────────────────────────────────────────────────────────
+
+def test_safe_copy_basic(tmp_path):
+    src = tmp_path / 'src.bin'
+    dst = tmp_path / 'dst.bin'
+    src.write_bytes(b'payload')
+    rv = safe_copy(str(src), str(dst))
+    assert rv == str(dst)
+    assert dst.read_bytes() == b'payload'
+    assert src.read_bytes() == b'payload'  # source untouched
+
+
+def test_safe_copy_empty_file(tmp_path):
+    src = tmp_path / 'empty.bin'
+    dst = tmp_path / 'empty_copy.bin'
+    src.write_bytes(b'')
+    safe_copy(str(src), str(dst))
+    assert dst.read_bytes() == b''
+
+
+def test_safe_copy_preserves_uid_gid(tmp_path):
+    src = tmp_path / 'src.bin'
+    dst = tmp_path / 'dst.bin'
+    src.write_bytes(b'x')
+    os.chown(str(src), 8675309, 8675310)
+    safe_copy(str(src), str(dst))
+    st = os.stat(str(dst))
+    assert st.st_uid == 8675309
+    assert st.st_gid == 8675310
+
+
+def test_safe_copy_preserves_mode(tmp_path):
+    src = tmp_path / 'src.bin'
+    dst = tmp_path / 'dst.bin'
+    src.write_bytes(b'x')
+    os.chmod(str(src), 0o600)
+    safe_copy(str(src), str(dst))
+    assert stat.S_IMODE(os.stat(str(dst)).st_mode) == 0o600
+
+
+def test_safe_copy_preserves_times(tmp_path):
+    src = tmp_path / 'src.bin'
+    dst = tmp_path / 'dst.bin'
+    src.write_bytes(b'x')
+    # Pin the source mtime well in the past (epoch + 1 day) so we can
+    # detect that the destination inherited it rather than being stamped
+    # at copy time.
+    target_atime_ns = 86_400 * 10**9  # 1 day after epoch
+    target_mtime_ns = 86_400 * 10**9 + 12_345
+    os.utime(str(src), ns=(target_atime_ns, target_mtime_ns))
+    safe_copy(str(src), str(dst))
+    dst_st = os.stat(str(dst))
+    assert dst_st.st_mtime_ns == target_mtime_ns
+
+
+def test_safe_copy_refuses_existing_dst_file(tmp_path):
+    src = tmp_path / 'src.bin'
+    dst = tmp_path / 'dst.bin'
+    src.write_bytes(b'src-content')
+    dst.write_bytes(b'dst-stale')
+    with pytest.raises(FileExistsError):
+        safe_copy(str(src), str(dst))
+    # Pre-existing dst must not be clobbered
+    assert dst.read_bytes() == b'dst-stale'
+
+
+def test_safe_copy_refuses_dst_symlink_squatter(tmp_path):
+    # Pre-create a symlink at dst pointing to /etc/passwd. O_EXCL must
+    # refuse to follow or replace it; nothing must be written to the
+    # symlink's target.
+    src = tmp_path / 'src.bin'
+    dst = tmp_path / 'dst.bin'
+    bait = tmp_path / 'bait.txt'
+    bait.write_text('bait-original')
+    src.write_bytes(b'attacker-payload')
+    os.symlink(str(bait), str(dst))
+    with pytest.raises((FileExistsError, SymlinkInPathError)):
+        safe_copy(str(src), str(dst))
+    assert bait.read_text() == 'bait-original'
+
+
+def test_safe_copy_rejects_symlink_src(tmp_path):
+    real = tmp_path / 'real.bin'
+    real.write_bytes(b'real-data')
+    src = tmp_path / 'link.bin'
+    os.symlink(str(real), str(src))
+    dst = tmp_path / 'dst.bin'
+    with pytest.raises(SymlinkInPathError):
+        safe_copy(str(src), str(dst))
+
+
+def test_safe_copy_rejects_symlink_in_src_path(tmp_path):
+    real_dir = tmp_path / 'real'
+    real_dir.mkdir()
+    (real_dir / 'src.bin').write_bytes(b'data')
+    link_dir = tmp_path / 'link_dir'
+    os.symlink(str(real_dir), str(link_dir))
+    dst = tmp_path / 'dst.bin'
+    with pytest.raises(SymlinkInPathError):
+        safe_copy(str(link_dir / 'src.bin'), str(dst))
+
+
+def test_safe_copy_missing_src(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        safe_copy(str(tmp_path / 'nonexistent.bin'), str(tmp_path / 'dst.bin'))
+
+
+# ── safe_copytree ─────────────────────────────────────────────────────────────
+
+def _make_tree(root, files=(('a.txt', b'aa'), ('b.txt', b'bb'))):
+    root.mkdir()
+    for name, data in files:
+        (root / name).write_bytes(data)
+
+
+def test_safe_copytree_flat(tmp_path):
+    src = tmp_path / 'src'
+    dst = tmp_path / 'dst'
+    _make_tree(src)
+    rv = safe_copytree(str(src), str(dst))
+    assert rv == str(dst)
+    assert (dst / 'a.txt').read_bytes() == b'aa'
+    assert (dst / 'b.txt').read_bytes() == b'bb'
+
+
+def test_safe_copytree_preserves_dir_uid_gid(tmp_path):
+    src = tmp_path / 'src'
+    dst = tmp_path / 'dst'
+    _make_tree(src)
+    os.chown(str(src), 8675309, 8675310)
+    safe_copytree(str(src), str(dst))
+    st = os.stat(str(dst))
+    assert st.st_uid == 8675309
+    assert st.st_gid == 8675310
+
+
+def test_safe_copytree_preserves_file_uid_gid(tmp_path):
+    src = tmp_path / 'src'
+    dst = tmp_path / 'dst'
+    _make_tree(src)
+    os.chown(str(src / 'a.txt'), 8675309, 8675310)
+    safe_copytree(str(src), str(dst))
+    st = os.stat(str(dst / 'a.txt'))
+    assert st.st_uid == 8675309
+    assert st.st_gid == 8675310
+
+
+def test_safe_copytree_nested(tmp_path):
+    src = tmp_path / 'src'
+    src.mkdir()
+    (src / 'top.txt').write_bytes(b'top')
+    sub = src / 'sub'
+    sub.mkdir()
+    (sub / 'inner.txt').write_bytes(b'inner')
+    os.chown(str(sub), 8675309, 8675310)
+    dst = tmp_path / 'dst'
+    safe_copytree(str(src), str(dst))
+    assert (dst / 'top.txt').read_bytes() == b'top'
+    assert (dst / 'sub' / 'inner.txt').read_bytes() == b'inner'
+    sub_st = os.stat(str(dst / 'sub'))
+    assert sub_st.st_uid == 8675309
+    assert sub_st.st_gid == 8675310
+
+
+def test_safe_copytree_missing_src(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        safe_copytree(str(tmp_path / 'nonexistent'), str(tmp_path / 'dst'))
+
+
+def test_safe_copytree_refuses_existing_dst(tmp_path):
+    src = tmp_path / 'src'
+    dst = tmp_path / 'dst'
+    _make_tree(src)
+    dst.mkdir()
+    with pytest.raises(FileExistsError):
+        safe_copytree(str(src), str(dst))
+
+
+def test_safe_copytree_preserves_file_symlinks(tmp_path):
+    src = tmp_path / 'src'
+    src.mkdir()
+    target = src / 'target.txt'
+    target.write_bytes(b'data')
+    link = src / 'link.txt'
+    os.symlink('target.txt', str(link))
+    dst = tmp_path / 'dst'
+    safe_copytree(str(src), str(dst))
+    dst_link = dst / 'link.txt'
+    assert os.path.islink(str(dst_link))
+    assert os.readlink(str(dst_link)) == 'target.txt'
+
+
+def test_safe_copy_works_as_copytree_copy_function(tmp_path):
+    # Direct shutil.copytree with copy_function=safe_copy must preserve
+    # file uid/gid (proves the drop-in claim).
+    import shutil as _shutil
+    src = tmp_path / 'src'
+    src.mkdir()
+    (src / 'a.txt').write_bytes(b'aa')
+    os.chown(str(src / 'a.txt'), 8675309, 8675310)
+    dst = tmp_path / 'dst'
+    _shutil.copytree(str(src), str(dst), copy_function=safe_copy)
+    st = os.stat(str(dst / 'a.txt'))
+    assert st.st_uid == 8675309
+    assert st.st_gid == 8675310

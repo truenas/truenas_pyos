@@ -4,6 +4,8 @@
 from contextlib import contextmanager
 import errno
 import os
+import shutil
+import stat
 import truenas_os
 from tempfile import TemporaryDirectory
 import typing
@@ -214,3 +216,94 @@ def atomic_write(target: str, mode: typing.Literal["w", "wb"] = "w", *, tmppath:
                 os.close(src_dirfd)
         finally:
             os.close(dst_dirfd)
+
+
+def safe_copy(src: str, dst: str) -> str:
+    """Symlink-safe copy of a regular file.
+
+    Both source and destination are opened via openat2(RESOLVE_NO_SYMLINKS),
+    so any symlink in either path (including the leaf) is rejected with
+    SymlinkInPathError. The destination is opened with mode 'xb', which
+    sets O_CREAT|O_EXCL — the kernel refuses to clobber any pre-existing
+    inode at dst (regular file, symlink, directory, anything).
+
+    Source uid/gid, mode, and atime/mtime are replicated to the destination
+    via fchown / fchmod / utime-by-fd while the destination fd is held.
+    xattrs are NOT copied.
+
+    Suitable as the `copy_function` argument to shutil.copytree — signature
+    matches shutil.copy2's positional contract and the function returns
+    `dst` (mirroring copy2's return value).
+
+    Args:
+        src: Path to the source file. May be absolute or relative.
+        dst: Path to the destination file. May be absolute or relative.
+
+    Returns:
+        The destination path (unchanged from the input).
+
+    Raises:
+        SymlinkInPathError: any component of src or dst is a symlink, or
+            src is itself a symlink.
+        FileNotFoundError: src does not exist.
+        FileExistsError: dst already exists (any inode type).
+        OSError: other openat2 / read / write failures (e.g. ENOSPC).
+    """
+    with safe_open(src, 'rb') as src_f:
+        src_st = os.fstat(src_f.fileno())
+        with safe_open(dst, 'xb') as dst_f:
+            shutil.copyfileobj(src_f, dst_f)
+            # Flush the Python buffer before fchown/fchmod/utime so the
+            # kernel-level write() that updates mtime happens BEFORE we
+            # set the timestamps. Otherwise close-time flush bumps mtime
+            # back to the current wall clock.
+            dst_f.flush()
+            os.fchown(dst_f.fileno(), src_st.st_uid, src_st.st_gid)
+            os.fchmod(dst_f.fileno(), stat.S_IMODE(src_st.st_mode))
+            os.utime(dst_f.fileno(), ns=(src_st.st_atime_ns, src_st.st_mtime_ns))
+    return dst
+
+
+def safe_copytree(src: str, dst: str) -> str:
+    """Symlink-safe recursive copy of a directory tree.
+
+    Wraps shutil.copytree with copy_function=safe_copy and symlinks=True,
+    so every regular file is copied via openat2(RESOLVE_NO_SYMLINKS) and
+    O_EXCL while symlinks are preserved as symlinks at the destination.
+    After the tree is copied, this function post-walks it once to
+    replicate uid/gid on every directory — shutil.copystat (which
+    copytree calls internally) preserves directory mode, times, and
+    xattrs but NOT ownership.
+
+    The destination tree must not already exist; shutil.copytree raises
+    FileExistsError if it does.
+
+    Args:
+        src: Path to the source directory. May be absolute or relative.
+        dst: Path to the destination directory. May be absolute or relative.
+
+    Returns:
+        The destination path (unchanged from the input).
+
+    Raises:
+        SymlinkInPathError: any source-side path component is a symlink
+            (raised by safe_copy on individual file copies).
+        FileNotFoundError: src does not exist.
+        FileExistsError: dst already exists.
+        OSError: other failures.
+
+    Note:
+        File-level operations are RESOLVE_NO_SYMLINKS-anchored via
+        safe_copy. The directory-ownership post-walk uses os.stat / os.chown
+        by absolute path, which is sufficient when src/dst live under
+        system-controlled directories but is not hardened against an
+        attacker racing to drop symlinks under dst between copytree and
+        the chown walk.
+    """
+    shutil.copytree(src, dst, copy_function=safe_copy, symlinks=True)
+    for src_root, _dirs, _files in os.walk(src):
+        rel = os.path.relpath(src_root, src)
+        dst_root = dst if rel == '.' else os.path.join(dst, rel)
+        src_st = os.stat(src_root)
+        os.chown(dst_root, src_st.st_uid, src_st.st_gid)
+    return dst
