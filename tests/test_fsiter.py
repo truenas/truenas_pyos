@@ -1650,3 +1650,91 @@ def test_eacces_inaccessible_directory_raises(world_tmp_path):
             list(iterator)
     finally:
         os.seteuid(0)
+
+
+# ── include_symlinks=True ───────────────────────────────────────────────────
+
+def test_iter_yields_symlinks_when_enabled(temp_mount_tree_with_symlinks):
+    """include_symlinks=True yields the symlink entries with islnk=True."""
+    items = list(truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree_with_symlinks),
+        get_filesystem_name(temp_mount_tree_with_symlinks),
+        include_symlinks=True,
+    ))
+    by_name = {item.name: item for item in items}
+
+    # File symlink, directory symlink, and broken symlink are all yielded.
+    for name in ("symlink_to_file1.txt", "symlink_to_dir1", "broken_symlink"):
+        assert name in by_name, f"expected {name} to be yielded"
+        assert by_name[name].islnk is True
+        assert by_name[name].isdir is False
+        assert by_name[name].isreg is False
+
+
+def test_iter_default_still_skips_symlinks(temp_mount_tree_with_symlinks):
+    """Default include_symlinks=False preserves the historical skip behavior."""
+    items = list(truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree_with_symlinks),
+        get_filesystem_name(temp_mount_tree_with_symlinks),
+    ))
+    names = {item.name for item in items}
+    for n in ("symlink_to_file1.txt", "symlink_to_dir1", "broken_symlink"):
+        assert n not in names
+
+
+def test_iter_symlink_fd_supports_readlink(temp_mount_tree_with_symlinks):
+    """The IterInstance.fd for a symlink supports readlinkat with AT_EMPTY_PATH."""
+    target_by_name = {
+        "symlink_to_file1.txt": "file1.txt",
+        "symlink_to_dir1": "dir1",
+        "broken_symlink": "/nonexistent",
+    }
+
+    seen = {}
+    for item in truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree_with_symlinks),
+        get_filesystem_name(temp_mount_tree_with_symlinks),
+        include_symlinks=True,
+    ):
+        if not item.islnk:
+            continue
+        seen[item.name] = os.readlink("", dir_fd=item.fd)
+
+    assert seen == target_by_name
+
+
+def test_iter_symlink_fd_supports_statx(temp_mount_tree_with_symlinks):
+    """statx with AT_EMPTY_PATH on the symlink fd returns S_IFLNK in stx_mode."""
+    found = False
+    for item in truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree_with_symlinks),
+        get_filesystem_name(temp_mount_tree_with_symlinks),
+        include_symlinks=True,
+    ):
+        if not item.islnk:
+            continue
+        result = truenas_os.statx(
+            "", dir_fd=item.fd,
+            flags=truenas_os.AT_EMPTY_PATH,
+            mask=truenas_os.STATX_BASIC_STATS,
+        )
+        assert stat.S_ISLNK(result.stx_mode)
+        found = True
+    assert found, "no symlink yielded for statx round-trip"
+
+
+def test_iter_symlinks_do_not_descend(temp_mount_tree_with_symlinks):
+    """A symlink pointing to a directory must not cause iteration into its target."""
+    items = list(truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree_with_symlinks),
+        get_filesystem_name(temp_mount_tree_with_symlinks),
+        include_symlinks=True,
+    ))
+    # nested1.txt lives inside dir1; if we accidentally descended through
+    # symlink_to_dir1 we would see it twice.
+    nested_paths = [
+        os.path.join(item.parent, item.name)
+        for item in items if item.name == "nested1.txt"
+    ]
+    assert len(nested_paths) == 1
+    assert nested_paths[0].endswith("/dir1/nested1.txt")

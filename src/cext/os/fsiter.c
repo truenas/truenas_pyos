@@ -302,17 +302,41 @@ process_next_entry(FilesystemIteratorObject *self,
 		   struct dirent *entry,
 		   fsiter_error_t *err)
 {
-	int fd, ret;
+	int fd = -1;
+	int ret = 0;
 	struct statx st;
-	bool is_dir;
-	int open_flags;
+	bool is_dir = false;
+	bool is_lnk = false;
+	int open_flags = 0;
 
 	/* Store directory entry name */
 	strlcpy(self->last.name, entry->d_name, sizeof(self->last.name));
 
-	/* Open entry with openat2 */
 	is_dir = (entry->d_type == DT_DIR);
-	open_flags = is_dir ? OFLAGS_DIR_ITER : self->state.file_open_flags;
+	is_lnk = (entry->d_type == DT_LNK);
+
+	/*
+	 * Symlinks are dropped silently by default — they otherwise fail
+	 * the openat2 below with ELOOP because of RESOLVE_NO_SYMLINKS.
+	 * Callers that need symlinks pass include_symlinks=True; we then
+	 * open with O_PATH | O_NOFOLLOW so the resulting fd refers to the
+	 * link itself (statx + readlink via /proc/self/fd both work; data
+	 * read/write is intentionally not supported).
+	 *
+	 * Note: filesystems that report DT_UNKNOWN for symlinks (rare, but
+	 * possible on some network filesystems) will still hit the regular
+	 * file_open_flags path and ELOOP-skip below.  ZFS / ext4 / xfs
+	 * populate d_type correctly so this affects only edge cases.
+	 */
+	if (is_lnk && !self->state.include_symlinks)
+		return FSITER_CONTINUE;
+
+	if (is_dir)
+		open_flags = OFLAGS_DIR_ITER;
+	else if (is_lnk)
+		open_flags = O_PATH | O_NOFOLLOW;
+	else
+		open_flags = self->state.file_open_flags;
 
 	fd = openat2_impl(dirfd(cur_dir->dirp), entry->d_name, open_flags, RESOLVE_FLAGS_ITER);
 	if (fd < 0) {
@@ -331,8 +355,11 @@ process_next_entry(FilesystemIteratorObject *self,
 		 * name_to_handle_at both work on a read-only fd.
 		 * If O_RDONLY also fails, skip the entry silently.
 		 * EROFS means the filesystem went read-only — that is fatal.
+		 *
+		 * Symlinks skip the O_RDONLY fallback — opening a symlink
+		 * O_RDONLY|O_NOFOLLOW always ELOOPs anyway.
 		 */
-		if (!is_dir && (errno == EPERM || errno == EACCES)) {
+		if (!is_dir && !is_lnk && (errno == EPERM || errno == EACCES)) {
 			fd = openat2_impl(dirfd(cur_dir->dirp), entry->d_name,
 					  O_RDONLY | O_NOFOLLOW, RESOLVE_FLAGS_ITER);
 			if (fd < 0)

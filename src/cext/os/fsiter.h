@@ -55,6 +55,7 @@ typedef struct {
 	size_t cnt;
 	size_t cnt_bytes;
 	int file_open_flags;
+	bool include_symlinks;	/* yield DT_LNK entries when true */
 } iter_state_t;
 
 /* Iterator object returned by iter_filesystem_contents */
