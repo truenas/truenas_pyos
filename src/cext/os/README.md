@@ -564,6 +564,13 @@ for item in truenas_os.iter_filesystem_contents("/mnt/tank", "tank/dataset"):
 - `reporting_callback` (callable|None): Function(dir_stack, FilesystemIterState, private_data) (default: None)
 - `reporting_private_data` (any): User data for callback (default: None)
 - `dir_stack` (tuple|None): Tuple of (path, inode) tuples from a previous iterator to restore directory path (default: None)
+- `include_symlinks` (bool, keyword-only): When `True`, symlinks are
+  yielded as `IterInstance` entries with `islnk=True`; the `fd` is an
+  `O_PATH | O_NOFOLLOW` descriptor.  Use
+  `os.readlink("", dir_fd=item.fd)` to read the target and
+  `statx(item.fd, "", AT_EMPTY_PATH)` to stat the link itself.  When
+  `False` (default), symlinks are silently skipped.  Symlinks are
+  never traversed.
 
 **Returns:** FilesystemIterator yielding IterInstance objects
 
@@ -856,6 +863,100 @@ An individual POSIX ACL entry.
 **POSIXTag constants:** `USER_OBJ`, `USER`, `GROUP_OBJ`, `GROUP`, `MASK`, `OTHER`
 
 **POSIXPerm flags:** `READ`, `WRITE`, `EXECUTE`
+
+---
+
+### Extended Attributes
+
+Generic fd-based xattr operations.  Values up to `XATTR_SIZE_MAX`
+(2 MiB) are supported; oversized writes raise `OSError(E2BIG)`.
+
+#### `fgetxattr(fd, name)`
+
+Read an extended attribute value.
+
+```python
+import truenas_os, os
+
+fd = os.open("/path/to/file", os.O_RDONLY)
+try:
+    value = truenas_os.fgetxattr(fd, "user.foo")
+finally:
+    os.close(fd)
+```
+
+**Parameters:**
+- `fd` (int): Open file descriptor
+- `name` (str): Extended attribute name (e.g. `'user.foo'`)
+
+**Returns:** `bytes` — the xattr value
+
+**Raises:** `OSError` — `ENODATA` if absent; `E2BIG` if the value exceeds
+`XATTR_SIZE_MAX`; other errnos as documented in `fgetxattr(2)`.
+
+---
+
+#### `fsetxattr(fd, name, value, flags=0)`
+
+Write an extended attribute value.
+
+```python
+import truenas_os, os
+
+fd = os.open("/path/to/file", os.O_RDWR)
+try:
+    truenas_os.fsetxattr(fd, "user.foo", b"hello")
+    truenas_os.fsetxattr(fd, "user.bar", b"new", flags=truenas_os.XATTR_CREATE)
+finally:
+    os.close(fd)
+```
+
+**Parameters:**
+- `fd` (int): Open file descriptor
+- `name` (str): Extended attribute name
+- `value` (bytes): Attribute value
+- `flags` (int, keyword-only, optional): Must be `0` (default; create or
+  replace), `XATTR_CREATE` (fail if the attribute exists), or
+  `XATTR_REPLACE` (fail if the attribute does not exist).
+
+**Returns:** `None`
+
+**Raises:**
+- `ValueError` if `flags` is not `0`, `XATTR_CREATE`, or `XATTR_REPLACE`.
+- `OSError` — `E2BIG` if `len(value) > XATTR_SIZE_MAX`; `EEXIST` with
+  `XATTR_CREATE` on an existing attribute; `ENODATA` with
+  `XATTR_REPLACE` on a missing attribute; other errnos as documented
+  in `fsetxattr(2)`.
+
+---
+
+#### `flistxattr(fd)`
+
+List all extended attribute names on an open fd.
+
+```python
+import truenas_os, os
+
+fd = os.open("/path/to/file", os.O_RDONLY)
+try:
+    names = truenas_os.flistxattr(fd)
+finally:
+    os.close(fd)
+print(names)  # ['user.foo', 'user.bar', ...]
+```
+
+**Parameters:**
+- `fd` (int): Open file descriptor
+
+**Returns:** `list[str]` — extended attribute names (empty list if none)
+
+**Raises:** `OSError` — `E2BIG` if the cumulative name list exceeds
+`XATTR_SIZE_MAX`; other errnos as documented in `flistxattr(2)`.
+
+**XATTR_* constants:**
+- `XATTR_CREATE` (1) — `fsetxattr` flag: fail if the attribute already exists
+- `XATTR_REPLACE` (2) — `fsetxattr` flag: fail if the attribute does not exist
+- `XATTR_SIZE_MAX` (2097152) — upper bound on xattr value / name-list size
 
 ---
 

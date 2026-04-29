@@ -42,3 +42,12 @@ include them.
 A `RuntimeWarning` is emitted at import time if the package was built without
 `STATMOUNT_SB_SOURCE` support (kernel < 6.18); `mount_source` will be `None`
 and ZFS snapshot detection will be disabled in that case.
+
+---
+
+## `truenas_shutil/`
+
+Recursive file-tree copy plus the file-level copy/clone primitives.
+Provides `copytree`, `CopyTreeConfig`, and the standalone helpers
+(`copyfile`, `clonefile`, `copysendfile`, …) — see
+[`truenas_shutil/README.md`](truenas_shutil/README.md) for the full API.

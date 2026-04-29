@@ -16,6 +16,7 @@
 #include "renameat2.h"
 #include "truenas_os_state.h"
 #include "acl.h"
+#include "xattr.h"
 
 #define MODULE_DOC "TrueNAS OS module"
 
@@ -832,7 +833,7 @@ PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
 "                         btime_cutoff=0, cnt=0, cnt_bytes=0,\n"
 "                         file_open_flags=0, reporting_increment=1000,\n"
 "                         reporting_callback=None, reporting_private_data=None,\n"
-"                         dir_stack=None)\n"
+"                         dir_stack=None, include_symlinks=False)\n"
 "--\n\n"
 "Iterate over all files and directories in a filesystem.\n"
 "Provides secure iteration using openat2 and statx, preventing symlink attacks\n"
@@ -867,6 +868,13 @@ PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
 "    (path, inode) tuples obtained from a previous iterator's dir_stack() method.\n"
 "    If provided, the iterator will attempt to restore to that position in the tree.\n"
 "    Raises IteratorRestoreError if restoration fails.\n"
+"include_symlinks : bool, keyword-only, optional, default=False\n"
+"    When True, symlink entries are yielded with islnk=True; their fd is\n"
+"    an O_PATH | O_NOFOLLOW descriptor.  Read the target with\n"
+"    `os.readlink('', dir_fd=item.fd)` and stat with\n"
+"    `statx(fd=item.fd, path='', flags=AT_EMPTY_PATH)`; data read/write\n"
+"    is not supported on these fds.  When False (default), symlinks are\n"
+"    silently skipped.  Symlinks are never traversed.\n"
 "Returns\n"
 "-------\n"
 "iterator : FilesystemIterator\n"
@@ -1214,39 +1222,166 @@ py_fsetacl_posix(PyObject *obj, PyObject *args)
 	Py_RETURN_NONE;
 }
 
+PyDoc_STRVAR(py_fgetxattr__doc__,
+"fgetxattr(fd, name)\n"
+"--\n\n"
+"Read the extended attribute `name` from an open file descriptor.\n\n"
+"Parameters\n"
+"----------\n"
+"fd : int\n"
+"    Open file descriptor\n"
+"name : str\n"
+"    Extended attribute name (e.g. 'user.foo')\n\n"
+"Returns\n"
+"-------\n"
+"bytes\n"
+"    The attribute value\n\n"
+"Raises\n"
+"------\n"
+"OSError\n"
+"    ENODATA if the attribute is absent; E2BIG if the value exceeds\n"
+"    XATTR_SIZE_MAX; other errnos as documented in fgetxattr(2).\n"
+);
+
+static PyObject *
+py_fgetxattr(PyObject *obj, PyObject *args, PyObject *kwargs)
+{
+	int fd = -1;
+	const char *name = NULL;
+	static const char * const kwnames[] = { "fd", "name", NULL };
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "is:fgetxattr",
+	                                 discard_const_p(char *, kwnames),
+	                                 &fd, &name))
+		return NULL;
+
+	return do_fgetxattr(fd, name);
+}
+
+PyDoc_STRVAR(py_fsetxattr__doc__,
+"fsetxattr(fd, name, value, *, flags=0)\n"
+"--\n\n"
+"Write `value` as the extended attribute `name` on an open fd.\n\n"
+"Parameters\n"
+"----------\n"
+"fd : int\n"
+"    Open file descriptor\n"
+"name : str\n"
+"    Extended attribute name (e.g. 'user.foo')\n"
+"value : bytes\n"
+"    Attribute value\n"
+"flags : int, keyword-only, optional\n"
+"    Must be 0, XATTR_CREATE, or XATTR_REPLACE.  Default 0 means\n"
+"    create or replace.\n\n"
+"Returns\n"
+"-------\n"
+"None\n\n"
+"Raises\n"
+"------\n"
+"ValueError\n"
+"    If flags is not 0, XATTR_CREATE, or XATTR_REPLACE.\n"
+"OSError\n"
+"    E2BIG if len(value) exceeds XATTR_SIZE_MAX; EEXIST with\n"
+"    XATTR_CREATE on an existing attribute; ENODATA with\n"
+"    XATTR_REPLACE on a missing attribute; other errnos as\n"
+"    documented in fsetxattr(2).\n"
+);
+
+static PyObject *
+py_fsetxattr(PyObject *obj, PyObject *args, PyObject *kwargs)
+{
+	int fd = -1;
+	const char *name = NULL;
+	const char *value = NULL;
+	Py_ssize_t value_len = 0;
+	int flags = 0;
+	static const char * const kwnames[] = {
+	    "fd", "name", "value", "flags", NULL
+	};
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "isy#|$i:fsetxattr",
+	                                 discard_const_p(char *, kwnames),
+	                                 &fd, &name,
+	                                 &value, &value_len, &flags))
+		return NULL;
+
+	if (do_fsetxattr(fd, name, value, (size_t)value_len, flags) < 0)
+		return NULL;
+
+	Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(py_flistxattr__doc__,
+"flistxattr(fd)\n"
+"--\n\n"
+"Return the list of extended attribute names on an open fd.\n\n"
+"Parameters\n"
+"----------\n"
+"fd : int\n"
+"    Open file descriptor\n\n"
+"Returns\n"
+"-------\n"
+"list of str\n"
+"    Extended attribute names (empty list if none).\n\n"
+"Raises\n"
+"------\n"
+"OSError\n"
+"    E2BIG if the cumulative name list exceeds XATTR_SIZE_MAX; other\n"
+"    errnos as documented in flistxattr(2).\n"
+);
+
+static PyObject *
+py_flistxattr(PyObject *obj, PyObject *args, PyObject *kwargs)
+{
+	int fd = -1;
+	static const char * const kwnames[] = { "fd", NULL };
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "i:flistxattr",
+	                                 discard_const_p(char *, kwnames),
+	                                 &fd))
+		return NULL;
+
+	return do_flistxattr(fd);
+}
+
 /*
  * Python wrapper for iter_filesystem_contents
  */
 static PyObject *
 py_iter_filesystem_contents(PyObject *self, PyObject *args, PyObject *kwargs)
 {
-	const char *mountpoint;
+	const char *mountpoint = NULL;
 	const char *relative_path = NULL;
-	const char *filesystem_name;
+	const char *filesystem_name = NULL;
 	iter_state_t state = {0};
 
-	/* New reporting parameters */
+	/* Reporting parameters */
 	size_t reporting_cb_increment = 1000;
 	PyObject *reporting_cb = NULL;
 	PyObject *reporting_cb_private_data = NULL;
 	PyObject *dir_stack = NULL;
+	int include_symlinks = 0;
 
 	static char *kwlist[] = {
 		"mountpoint", "filesystem_name", "relative_path",
 		"btime_cutoff", "cnt", "cnt_bytes", "file_open_flags",
 		"reporting_increment", "reporting_callback", "reporting_private_data",
-		"dir_stack",
+		"dir_stack", "include_symlinks",
 		NULL
 	};
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ss|zLKKiKOOO:iter_filesystem_contents", kwlist,
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs,
+					  "ss|zLKKiKOOOp:iter_filesystem_contents",
+					  kwlist,
 					  &mountpoint, &filesystem_name, &relative_path,
 					  &state.btime_cutoff, &state.cnt, &state.cnt_bytes,
 					  &state.file_open_flags,
 					  &reporting_cb_increment, &reporting_cb, &reporting_cb_private_data,
-					  &dir_stack)) {
+					  &dir_stack, &include_symlinks)) {
 		return NULL;
 	}
+
+	state.include_symlinks = (include_symlinks != 0);
 
 	return create_filesystem_iterator(mountpoint, relative_path, filesystem_name, &state,
 	                                  reporting_cb_increment, reporting_cb, reporting_cb_private_data,
@@ -1374,6 +1509,24 @@ static PyMethodDef truenas_os_methods[] = {
 		.ml_flags = METH_VARARGS,
 		.ml_doc   = py_fsetacl_posix__doc__
 	},
+	{
+		.ml_name  = "fgetxattr",
+		.ml_meth  = (PyCFunction)py_fgetxattr,
+		.ml_flags = METH_VARARGS|METH_KEYWORDS,
+		.ml_doc   = py_fgetxattr__doc__
+	},
+	{
+		.ml_name  = "fsetxattr",
+		.ml_meth  = (PyCFunction)py_fsetxattr,
+		.ml_flags = METH_VARARGS|METH_KEYWORDS,
+		.ml_doc   = py_fsetxattr__doc__
+	},
+	{
+		.ml_name  = "flistxattr",
+		.ml_meth  = (PyCFunction)py_flistxattr,
+		.ml_flags = METH_VARARGS|METH_KEYWORDS,
+		.ml_doc   = py_flistxattr__doc__
+	},
 	{ .ml_name = NULL }
 };
 
@@ -1495,6 +1648,12 @@ PyObject* module_init(void)
 
 	// Initialize POSIX ACL enums and types
 	if (init_posixacl(m) < 0) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	// Initialize xattr constants
+	if (init_xattr_constants(m) < 0) {
 		Py_DECREF(m);
 		return NULL;
 	}
