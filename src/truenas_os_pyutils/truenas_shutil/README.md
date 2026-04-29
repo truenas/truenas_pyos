@@ -1,9 +1,16 @@
-# truenas_os_pyutils.shutil
+# truenas_os_pyutils.truenas_shutil
 
 Recursive file-tree copy plus the file-level copy/clone primitives that
-back it.  Public symbols are re-exported from `truenas_os_pyutils.shutil`,
-so callers can write `from truenas_os_pyutils.shutil import copytree`
-without reaching into the submodules.
+back it.  Public symbols are re-exported from
+`truenas_os_pyutils.truenas_shutil`, so callers can write
+`from truenas_os_pyutils.truenas_shutil import copytree` without reaching
+into the submodules.
+
+The function names mirror stdlib `shutil` where they correspond
+(`copyfile`, `copytree`, `copyfileobj`-style run-together naming);
+`copy_permissions` and `copy_xattrs` keep descriptive snake_case names
+because they cover more than the closest stdlib analogue (POSIX ACL +
+ZFS NFS4 xattrs, filtered xattr namespaces).
 
 Driven by `truenas_os.iter_filesystem_contents` (depth-first, GIL released,
 mountpoint-validated).  Mirrors the `AclTool` pattern in
@@ -22,10 +29,10 @@ already have open fds.
 |---|---|---|
 | `copy_permissions(src_fd, dst_fd, xattrs, mode)` | function | Replicate POSIX mode or ACL xattrs. |
 | `copy_xattrs(src_fd, dst_fd, xattrs)` | function | Copy non-ACL extended attributes. |
-| `clone_file(src_fd, dst_fd)` | function | Block-level clone via `copy_file_range(2)` (raises `EXDEV` across filesystems). |
-| `clone_or_copy_file(src_fd, dst_fd)` | function | Try `clone_file`; on `EXDEV` fall back to `copy_sendfile`. |
-| `copy_sendfile(src_fd, dst_fd)` | function | Zero-copy via `sendfile(2)` with userspace fallback. |
-| `copy_file_userspace(src_fd, dst_fd)` | function | Pure userspace copy via `shutil.copyfileobj`. |
+| `clonefile(src_fd, dst_fd)` | function | Block-level clone via `copy_file_range(2)` (raises `EXDEV` across filesystems). |
+| `copyfile(src_fd, dst_fd)` | function | Try `clonefile`; on `EXDEV` fall back to `copysendfile`. |
+| `copysendfile(src_fd, dst_fd)` | function | Zero-copy via `sendfile(2)` with userspace fallback. |
+| `copyuserspace(src_fd, dst_fd)` | function | Pure userspace copy via `shutil.copyfileobj`. |
 | `MAX_RW_SZ` | int | Maximum kernel read/write size (`INT_MAX & ~4096`). |
 | `ACL_XATTRS`, `ACCESS_ACL_XATTRS` | frozenset | xattr names that hold ACL data. |
 
@@ -129,9 +136,9 @@ length stays the same but the last entry differs.
 
 ## Tests
 
-- `tests/utils/test_shutil_copy.py` — file-level primitives.
-- `tests/utils/test_shutil_copytree.py` — tree-level operations,
+- `tests/utils/test_truenas_shutil_copy.py` — file-level primitives.
+- `tests/utils/test_truenas_shutil_copytree.py` — tree-level operations,
   including `CopyFlags`, `CopyTreeOp`, `CopyJob`, `exist_ok`, and a
   ZFS-gated `.zfs` ctldir test.
-- `tests/type_checks/test_shutil_types.py` — `assert_type`-based static
-  typing pins for the public surface.
+- `tests/type_checks/test_truenas_shutil_types.py` — `assert_type`-based
+  static typing pins for the public surface.

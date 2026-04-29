@@ -45,9 +45,9 @@ and ZFS snapshot detection will be disabled in that case.
 
 ---
 
-## `shutil/`
+## `truenas_shutil/`
 
 Recursive file-tree copy plus the file-level copy/clone primitives.
 Provides `copytree`, `CopyTreeConfig`, and the standalone helpers
-(`clone_file`, `copy_sendfile`, …) — see [`shutil/README.md`](shutil/README.md)
-for the full API.
+(`copyfile`, `clonefile`, `copysendfile`, …) — see
+[`truenas_shutil/README.md`](truenas_shutil/README.md) for the full API.

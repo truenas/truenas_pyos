@@ -44,14 +44,14 @@ setup(
         'truenas_pyfilter',
         '_truenas_os_scripts',
         'truenas_os_pyutils',
-        'truenas_os_pyutils.shutil',
+        'truenas_os_pyutils.truenas_shutil',
     ],
     package_dir={
         'truenas_os': 'stubs/truenas_os',
         'truenas_pyfilter': 'stubs/truenas_pyfilter',
         '_truenas_os_scripts': 'scripts',
         'truenas_os_pyutils': 'src/truenas_os_pyutils',
-        'truenas_os_pyutils.shutil': 'src/truenas_os_pyutils/shutil',
+        'truenas_os_pyutils.truenas_shutil': 'src/truenas_os_pyutils/truenas_shutil',
     },
     package_data={
         'truenas_os': ['*.pyi', 'py.typed'],

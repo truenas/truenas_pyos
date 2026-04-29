@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 #
-# Tests for truenas_os_pyutils.shutil.copytree — recursive directory tree
+# Tests for truenas_os_pyutils.truenas_shutil.copytree — recursive directory tree
 # copy.  The walker is driven by truenas_os.iter_filesystem_contents (fsiter)
 # which validates the source against statmount, so all tests use real
 # directories on a real mount (tmp_path or a ZFS dataset fixture).
@@ -12,7 +12,7 @@ from operator import eq, ne
 
 import pytest
 
-from truenas_os_pyutils.shutil import (
+from truenas_os_pyutils.truenas_shutil import (
     DEF_CP_FLAGS,
     CopyFlags,
     CopyTreeConfig,
