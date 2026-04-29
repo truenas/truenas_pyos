@@ -15,7 +15,7 @@ Symlink-safe file I/O using `openat2(RESOLVE_NO_SYMLINKS)`.
 |---|---|---|
 | `SymlinkInPathError` | exception | Raised when a symlink is detected in a path. Subclass of `OSError` with `errno=ELOOP`. |
 | `safe_open(path, mode, ..., dir_fd)` | context manager | Drop-in for `open()` that rejects symlinks in any path component. |
-| `atomic_write(target, mode, *, tmppath, uid, gid, perms)` | context manager | Yields a file object; atomically replaces `target` on clean exit using `renameat2(AT_RENAME_EXCHANGE)`. |
+| `atomic_write(target, mode, *, tmppath, uid, gid, perms, noclobber)` | context manager | Yields a file object; atomically replaces `target` on clean exit using `renameat2(AT_RENAME_EXCHANGE)`. With `noclobber=True`, fails (`FileExistsError`) if `target` already exists and uses `AT_RENAME_NOREPLACE` to also fail on rename-time races. |
 | `atomic_replace(*, temp_path, target_file, data, uid, gid, perms)` | function | Writes `data` to `target_file` atomically. Thin wrapper around `atomic_write`. |
 
 All write operations use `RESOLVE_NO_SYMLINKS` for TOCTOU protection. Pass
