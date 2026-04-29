@@ -21,6 +21,7 @@ truenas_os_ext = Extension(
         'src/cext/os/util_enum.c',
         'src/cext/os/nfs4acl.c',
         'src/cext/os/posixacl.c',
+        'src/cext/os/xattr.c',
     ],
     include_dirs=['src/cext/os']
 )
@@ -38,12 +39,19 @@ truenas_pyfilter_ext = Extension(
 
 setup(
     ext_modules=[truenas_os_ext, truenas_pyfilter_ext],
-    packages=['truenas_os', 'truenas_pyfilter', '_truenas_os_scripts', 'truenas_os_pyutils'],
+    packages=[
+        'truenas_os',
+        'truenas_pyfilter',
+        '_truenas_os_scripts',
+        'truenas_os_pyutils',
+        'truenas_os_pyutils.truenas_shutil',
+    ],
     package_dir={
         'truenas_os': 'stubs/truenas_os',
         'truenas_pyfilter': 'stubs/truenas_pyfilter',
         '_truenas_os_scripts': 'scripts',
         'truenas_os_pyutils': 'src/truenas_os_pyutils',
+        'truenas_os_pyutils.truenas_shutil': 'src/truenas_os_pyutils/truenas_shutil',
     },
     package_data={
         'truenas_os': ['*.pyi', 'py.typed'],
