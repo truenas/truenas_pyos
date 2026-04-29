@@ -305,3 +305,58 @@ def test_atomic_write_multiple_writes(atomic_dir):
         f.write('line2\n')
     with open(target) as f:
         assert f.read() == 'line1\nline2\n'
+
+
+def test_atomic_write_noclobber_creates_new(atomic_dir):
+    target = str(atomic_dir / 'noclobber_new.txt')
+    assert not os.path.exists(target)
+    with atomic_write(target, noclobber=True) as f:
+        f.write('fresh')
+    with open(target) as f:
+        assert f.read() == 'fresh'
+
+
+def test_atomic_write_noclobber_creates_new_binary(atomic_dir):
+    target = str(atomic_dir / 'noclobber_new.bin')
+    with atomic_write(target, 'wb', noclobber=True) as f:
+        f.write(b'\x00\x01\x02')
+    with open(target, 'rb') as f:
+        assert f.read() == b'\x00\x01\x02'
+
+
+def test_atomic_write_noclobber_raises_on_existing(atomic_dir):
+    target = str(atomic_dir / 'noclobber_existing.txt')
+    with open(target, 'w') as f:
+        f.write('original')
+
+    with pytest.raises(FileExistsError) as exc_info:
+        with atomic_write(target, noclobber=True) as f:
+            f.write('should not be written')
+
+    assert exc_info.value.errno == errno.EEXIST
+    # Original content is preserved
+    with open(target) as f:
+        assert f.read() == 'original'
+
+
+def test_atomic_write_noclobber_raises_on_existing_symlink(atomic_dir):
+    real = atomic_dir / 'real_target.txt'
+    real.write_text('real content')
+    link = atomic_dir / 'noclobber_symlink.txt'
+    link.symlink_to(real)
+
+    with pytest.raises(FileExistsError) as exc_info:
+        with atomic_write(str(link), noclobber=True) as f:
+            f.write('should not be written')
+
+    assert exc_info.value.errno == errno.EEXIST
+
+
+def test_atomic_write_noclobber_default_is_false(atomic_dir):
+    target = str(atomic_dir / 'default_replaces.txt')
+    with open(target, 'w') as f:
+        f.write('original')
+    with atomic_write(target) as f:
+        f.write('replaced')
+    with open(target) as f:
+        assert f.read() == 'replaced'
