@@ -112,18 +112,21 @@ def atomic_replace(
 @typing.overload
 @contextmanager
 def atomic_write(target: str, mode: typing.Literal["w"] = "w", *, tmppath: str | None = None,
-                 uid: int = 0, gid: int = 0, perms: int = 0o644) -> typing.Generator[typing.TextIO, None, None]: ...
+                 uid: int = 0, gid: int = 0, perms: int = 0o644,
+                 noclobber: bool = False) -> typing.Generator[typing.TextIO, None, None]: ...
 
 
 @typing.overload
 @contextmanager
 def atomic_write(target: str, mode: typing.Literal["wb"], *, tmppath: str | None = None,
-                 uid: int = 0, gid: int = 0, perms: int = 0o644) -> typing.Generator[typing.BinaryIO, None, None]: ...
+                 uid: int = 0, gid: int = 0, perms: int = 0o644,
+                 noclobber: bool = False) -> typing.Generator[typing.BinaryIO, None, None]: ...
 
 
 @contextmanager
 def atomic_write(target: str, mode: typing.Literal["w", "wb"] = "w", *, tmppath: str | None = None,
-                 uid: int = 0, gid: int = 0, perms: int = 0o644) -> typing.Generator[typing.IO[typing.Any], None, None]:
+                 uid: int = 0, gid: int = 0, perms: int = 0o644,
+                 noclobber: bool = False) -> typing.Generator[typing.IO[typing.Any], None, None]:
     """Context manager for atomic file writes with symlink race protection.
 
     Yields a file-like object for writing. On successful context manager exit,
@@ -143,16 +146,24 @@ def atomic_write(target: str, mode: typing.Literal["w", "wb"] = "w", *, tmppath:
         uid: User ID for file ownership (default: 0/root).
         gid: Group ID for file ownership (default: 0/root).
         perms: File permissions as octal integer (default: 0o644).
+        noclobber: If True, fail with FileExistsError when target already exists,
+                   and use AT_RENAME_NOREPLACE so the rename also fails atomically
+                   if target races into existence between the initial check and
+                   the rename. Defaults to False (existing target is replaced).
 
     Yields:
         File-like object for writing
 
     Raises:
+        FileExistsError: If noclobber=True and target already exists.
         OSError: If openat2/renameat2 operations fail.
 
     Note:
         - tmppath and target must be on the same filesystem for rename to work
-        - If target doesn't exist, uses regular rename instead of exchange
+        - With noclobber=False (default): existing target replaced via
+          AT_RENAME_EXCHANGE, or plain rename when target does not exist
+        - With noclobber=True: fail-fast on existing target, then
+          AT_RENAME_NOREPLACE on the rename to catch races
         - File is only replaced if the context manager exits successfully
         - If an intermediate symlink is detected during openat2 call then errno
           will be set to ELOOP
@@ -193,6 +204,9 @@ def atomic_write(target: str, mode: typing.Literal["w", "wb"] = "w", *, tmppath:
                 except FileNotFoundError:
                     pass
 
+                if noclobber and existing_stat is not None:
+                    raise FileExistsError(errno.EEXIST, 'Destination exists', target)
+
                 with safe_open(target_filename, mode, dir_fd=src_dirfd) as f:
                     os.fchown(f.fileno(), uid, gid)
                     os.fchmod(f.fileno(), perms)
@@ -200,8 +214,13 @@ def atomic_write(target: str, mode: typing.Literal["w", "wb"] = "w", *, tmppath:
                     f.flush()
                     os.fsync(f.fileno())
 
-                # Determine rename flags based on whether target exists
-                rename_flags = truenas_os.AT_RENAME_EXCHANGE if existing_stat else 0
+                # Pick rename flags for the requested semantics.
+                if noclobber:
+                    rename_flags = truenas_os.AT_RENAME_NOREPLACE
+                elif existing_stat:
+                    rename_flags = truenas_os.AT_RENAME_EXCHANGE
+                else:
+                    rename_flags = 0
 
                 truenas_os.renameat2(
                     src=target_filename,
