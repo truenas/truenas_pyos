@@ -58,7 +58,6 @@ do_fgetxattr(int fd, const char *name)
 		 * with NULL data initialises an uninitialised mutable bytes
 		 * we can write into via PyBytes_AS_STRING.
 		 */
-		Py_CLEAR(result);
 		bufsize = probe_size > 0 ? (size_t)probe_size : 1;
 		result = PyBytes_FromStringAndSize(NULL, (Py_ssize_t)bufsize);
 		if (result == NULL)
@@ -80,12 +79,18 @@ do_fgetxattr(int fd, const char *name)
 		if (read_size >= 0)
 			break;
 
-		if (errno != ERANGE) {
-			PyErr_SetFromErrno(PyExc_OSError);
-			Py_DECREF(result);
-			return NULL;
+		if (errno == ERANGE) {
+			/*
+			 * xattr mutated / grew while we were getting it
+			 * so loop again to redo buffer allocation
+			 */
+			Py_CLEAR(result);
+			continue;
 		}
-		/* ERANGE: value grew between probe and read; re-probe. */
+
+		PyErr_SetFromErrno(PyExc_OSError);
+		Py_DECREF(result);
+		return NULL;
 	}
 
 	/*
@@ -132,7 +137,6 @@ do_flistxattr(int fd)
 	int rc = 0;
 
 	for (i = 0; (bufsize = buffer_sizes[i]) != 0; i++) {
-		PyMem_RawFree(buf);
 		buf = PyMem_RawMalloc(bufsize);
 		if (buf == NULL) {
 			PyErr_NoMemory();
@@ -148,13 +152,19 @@ do_flistxattr(int fd)
 
 		if (async_err)
 			goto cleanup;
+
 		if (read_size >= 0)
 			break;
-		if (errno != ERANGE) {
-			PyErr_SetFromErrno(PyExc_OSError);
-			goto cleanup;
+
+		if (errno == ERANGE) {
+			/* try the next (larger) buffer. */
+			PyMem_RawFree(buf);
+			buf = NULL;
+			continue;
 		}
-		/* ERANGE: try the next (larger) buffer. */
+
+		PyErr_SetFromErrno(PyExc_OSError);
+		goto cleanup;
 	}
 
 	if (read_size == -1) {
