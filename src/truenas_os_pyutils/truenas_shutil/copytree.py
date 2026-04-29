@@ -6,7 +6,7 @@
 # mirrors the AclTool pattern in middleware plugins/filesystem_/utils.py.
 # ZFS snapshot mounts and the .zfs ctldir are always skipped.
 #
-# Tests are in tests/utils/test_shutil_copytree.py.
+# Tests are in tests/utils/test_truenas_shutil_copytree.py.
 from __future__ import annotations
 
 import enum
@@ -40,12 +40,12 @@ from truenas_os import RESOLVE_NO_SYMLINKS, flistxattr, openat2
 
 from ..mount import statmount as _statmount
 from .copy import (
-    clone_file,
-    clone_or_copy_file,
-    copy_file_userspace,
+    clonefile,
     copy_permissions,
-    copy_sendfile,
     copy_xattrs,
+    copyfile,
+    copysendfile,
+    copyuserspace,
 )
 
 
@@ -228,13 +228,13 @@ def _get_mount_info(fd: int) -> tuple[str, str, str | None, int]:
 def _select_copy_fn(op: CopyTreeOp) -> Callable[[int, int], int]:
     match op:
         case CopyTreeOp.DEFAULT:
-            return clone_or_copy_file
+            return copyfile
         case CopyTreeOp.CLONE:
-            return clone_file
+            return clonefile
         case CopyTreeOp.SENDFILE:
-            return copy_sendfile
+            return copysendfile
         case CopyTreeOp.USERSPACE:
-            return copy_file_userspace
+            return copyuserspace
         case _:
             raise ValueError(f"{op}: unexpected copy operation")
 
@@ -273,8 +273,8 @@ class _CopyTreeRunner:
         in place as files / dirs / symlinks / bytes are processed.
     c_fn : Callable[[int, int], int]
         Per-file copy primitive selected from ``config.op``
-        (``clone_or_copy_file`` / ``clone_file`` / ``copy_sendfile`` /
-        ``copy_file_userspace``).
+        (``copyfile`` / ``clonefile`` / ``copysendfile`` /
+        ``copyuserspace``).
     src_fd : int
         Caller-owned source-root directory fd.  Borrowed for the
         lifetime of the runner; not closed here.

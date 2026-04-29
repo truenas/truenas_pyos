@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 #
-# Tests for truenas_os_pyutils.shutil.copy — the file-level copy/clone
+# Tests for truenas_os_pyutils.truenas_shutil.copy — the file-level copy/clone
 # primitives that operate on open file descriptors.
 import errno
 import os
@@ -10,16 +10,16 @@ from unittest import mock
 
 import pytest
 
-from truenas_os_pyutils.shutil.copy import (
+from truenas_os_pyutils.truenas_shutil.copy import (
     ACCESS_ACL_XATTRS,
     ACL_XATTRS,
     MAX_RW_SZ,
-    clone_file,
-    clone_or_copy_file,
-    copy_file_userspace,
+    clonefile,
     copy_permissions,
-    copy_sendfile,
     copy_xattrs,
+    copyfile,
+    copysendfile,
+    copyuserspace,
 )
 
 
@@ -45,10 +45,10 @@ def test_acl_xattrs_constants():
     assert "system.posix_acl_default" not in ACCESS_ACL_XATTRS
 
 
-# ── copy_file_userspace ───────────────────────────────────────────────────────
+# ── copyuserspace ───────────────────────────────────────────────────────
 
 
-def test_copy_file_userspace_copies_data(tmp_path):
+def test_copyuserspace_copies_data(tmp_path):
     src = tmp_path / "src.bin"
     dst = tmp_path / "dst.bin"
     payload = b"hello world\n" * 1000
@@ -58,7 +58,7 @@ def test_copy_file_userspace_copies_data(tmp_path):
     src_fd = os.open(str(src), os.O_RDONLY)
     dst_fd = os.open(str(dst), os.O_RDWR)
     try:
-        n = copy_file_userspace(src_fd, dst_fd)
+        n = copyuserspace(src_fd, dst_fd)
     finally:
         os.close(src_fd)
         os.close(dst_fd)
@@ -67,7 +67,7 @@ def test_copy_file_userspace_copies_data(tmp_path):
     assert dst.read_bytes() == payload
 
 
-def test_copy_file_userspace_empty_file(tmp_path):
+def test_copyuserspace_empty_file(tmp_path):
     src = tmp_path / "empty.bin"
     dst = tmp_path / "out.bin"
     src.write_bytes(b"")
@@ -75,16 +75,16 @@ def test_copy_file_userspace_empty_file(tmp_path):
     src_fd = os.open(str(src), os.O_RDONLY)
     dst_fd = os.open(str(dst), os.O_RDWR)
     try:
-        assert copy_file_userspace(src_fd, dst_fd) == 0
+        assert copyuserspace(src_fd, dst_fd) == 0
     finally:
         os.close(src_fd)
         os.close(dst_fd)
 
 
-# ── copy_sendfile ─────────────────────────────────────────────────────────────
+# ── copysendfile ─────────────────────────────────────────────────────────────
 
 
-def test_copy_sendfile_copies_data(tmp_path):
+def test_copysendfile_copies_data(tmp_path):
     src = tmp_path / "src.bin"
     dst = tmp_path / "dst.bin"
     payload = b"sendfile data\n" * 100
@@ -94,7 +94,7 @@ def test_copy_sendfile_copies_data(tmp_path):
     src_fd = os.open(str(src), os.O_RDONLY)
     dst_fd = os.open(str(dst), os.O_RDWR)
     try:
-        n = copy_sendfile(src_fd, dst_fd)
+        n = copysendfile(src_fd, dst_fd)
     finally:
         os.close(src_fd)
         os.close(dst_fd)
@@ -103,22 +103,22 @@ def test_copy_sendfile_copies_data(tmp_path):
     assert dst.read_bytes() == payload
 
 
-def test_copy_sendfile_falls_back_when_sendfile_returns_zero(tmp_path, monkeypatch):
+def test_copysendfile_falls_back_when_sendfile_returns_zero(tmp_path, monkeypatch):
     # If the kernel cannot do sendfile from this src and the destination is
-    # still empty, copy_sendfile should call copy_file_userspace.
+    # still empty, copysendfile should call copyuserspace.
     src = tmp_path / "src.bin"
     dst = tmp_path / "dst.bin"
     src.write_bytes(b"fallback")
     dst.write_bytes(b"")
 
     # Simulate sendfile being unavailable for this src/dst combo.
-    import truenas_os_pyutils.shutil.copy as mod
+    import truenas_os_pyutils.truenas_shutil.copy as mod
     monkeypatch.setattr(mod, "sendfile", lambda *a, **kw: 0)
 
     src_fd = os.open(str(src), os.O_RDONLY)
     dst_fd = os.open(str(dst), os.O_RDWR)
     try:
-        n = copy_sendfile(src_fd, dst_fd)
+        n = copysendfile(src_fd, dst_fd)
     finally:
         os.close(src_fd)
         os.close(dst_fd)
@@ -127,10 +127,10 @@ def test_copy_sendfile_falls_back_when_sendfile_returns_zero(tmp_path, monkeypat
     assert dst.read_bytes() == b"fallback"
 
 
-# ── clone_file / clone_or_copy_file ───────────────────────────────────────────
+# ── clonefile / copyfile ───────────────────────────────────────────
 
 
-def test_clone_file_copies_data_within_same_filesystem(tmp_path):
+def test_clonefile_copies_data_within_same_filesystem(tmp_path):
     src = tmp_path / "src.bin"
     dst = tmp_path / "dst.bin"
     payload = b"clone payload\n" * 100
@@ -140,7 +140,7 @@ def test_clone_file_copies_data_within_same_filesystem(tmp_path):
     src_fd = os.open(str(src), os.O_RDONLY)
     dst_fd = os.open(str(dst), os.O_RDWR)
     try:
-        n = clone_file(src_fd, dst_fd)
+        n = clonefile(src_fd, dst_fd)
     finally:
         os.close(src_fd)
         os.close(dst_fd)
@@ -149,7 +149,7 @@ def test_clone_file_copies_data_within_same_filesystem(tmp_path):
     assert dst.read_bytes() == payload
 
 
-def test_clone_or_copy_file_falls_back_on_exdev(tmp_path, monkeypatch):
+def test_copyfile_falls_back_on_exdev(tmp_path, monkeypatch):
     src = tmp_path / "src.bin"
     dst = tmp_path / "dst.bin"
     payload = b"xdev fallback\n"
@@ -157,7 +157,7 @@ def test_clone_or_copy_file_falls_back_on_exdev(tmp_path, monkeypatch):
     dst.write_bytes(b"")
 
     # Simulate cross-filesystem copy: copy_file_range raises EXDEV.
-    import truenas_os_pyutils.shutil.copy as mod
+    import truenas_os_pyutils.truenas_shutil.copy as mod
 
     def fake_copy_file_range(*a, **kw):
         raise OSError(errno.EXDEV, "Invalid cross-device link")
@@ -167,7 +167,7 @@ def test_clone_or_copy_file_falls_back_on_exdev(tmp_path, monkeypatch):
     src_fd = os.open(str(src), os.O_RDONLY)
     dst_fd = os.open(str(dst), os.O_RDWR)
     try:
-        n = clone_or_copy_file(src_fd, dst_fd)
+        n = copyfile(src_fd, dst_fd)
     finally:
         os.close(src_fd)
         os.close(dst_fd)
@@ -176,13 +176,13 @@ def test_clone_or_copy_file_falls_back_on_exdev(tmp_path, monkeypatch):
     assert dst.read_bytes() == payload
 
 
-def test_clone_or_copy_file_propagates_other_oserror(tmp_path, monkeypatch):
+def test_copyfile_propagates_other_oserror(tmp_path, monkeypatch):
     src = tmp_path / "src.bin"
     dst = tmp_path / "dst.bin"
     src.write_bytes(b"data")
     dst.write_bytes(b"")
 
-    import truenas_os_pyutils.shutil.copy as mod
+    import truenas_os_pyutils.truenas_shutil.copy as mod
 
     def fake_copy_file_range(*a, **kw):
         raise OSError(errno.EIO, "I/O error")
@@ -193,7 +193,7 @@ def test_clone_or_copy_file_propagates_other_oserror(tmp_path, monkeypatch):
     dst_fd = os.open(str(dst), os.O_RDWR)
     try:
         with pytest.raises(OSError) as exc_info:
-            clone_or_copy_file(src_fd, dst_fd)
+            copyfile(src_fd, dst_fd)
         assert exc_info.value.errno == errno.EIO
     finally:
         os.close(src_fd)
@@ -236,8 +236,8 @@ def test_copy_permissions_skips_fchmod_when_acl_xattr_listed(tmp_path):
     src_fd = os.open(str(src), os.O_RDWR)
     dst_fd = os.open(str(dst), os.O_RDWR)
     try:
-        with mock.patch("truenas_os_pyutils.shutil.copy.fgetxattr") as g, \
-             mock.patch("truenas_os_pyutils.shutil.copy.fsetxattr") as s:
+        with mock.patch("truenas_os_pyutils.truenas_shutil.copy.fgetxattr") as g, \
+             mock.patch("truenas_os_pyutils.truenas_shutil.copy.fsetxattr") as s:
             g.return_value = b"\x00" * 12
             copy_permissions(
                 src_fd, dst_fd, ["system.posix_acl_access"], 0o741
@@ -263,8 +263,8 @@ def test_copy_xattrs_skips_acl_and_system(tmp_path):
     src_fd = os.open(str(src), os.O_RDWR)
     dst_fd = os.open(str(dst), os.O_RDWR)
     try:
-        with mock.patch("truenas_os_pyutils.shutil.copy.fgetxattr") as g, \
-             mock.patch("truenas_os_pyutils.shutil.copy.fsetxattr") as s:
+        with mock.patch("truenas_os_pyutils.truenas_shutil.copy.fgetxattr") as g, \
+             mock.patch("truenas_os_pyutils.truenas_shutil.copy.fsetxattr") as s:
             g.return_value = b"value"
             copy_xattrs(
                 src_fd,
@@ -293,7 +293,7 @@ def test_copy_xattrs_empty_list_is_noop(tmp_path):
     src_fd = os.open(str(src), os.O_RDWR)
     dst_fd = os.open(str(dst), os.O_RDWR)
     try:
-        with mock.patch("truenas_os_pyutils.shutil.copy.fsetxattr") as s:
+        with mock.patch("truenas_os_pyutils.truenas_shutil.copy.fsetxattr") as s:
             copy_xattrs(src_fd, dst_fd, [])
             assert s.call_count == 0
     finally:
@@ -314,7 +314,7 @@ def _read_chunks(fd, n_chunks, chunk_sz):
     return [os.pread(fd, chunk_sz, i * chunk_sz) for i in range(n_chunks)]
 
 
-def test_clone_file_multi_megabyte(tmp_path):
+def test_clonefile_multi_megabyte(tmp_path):
     """Clone a multi-MiB file to exercise the copy_file_range loop body."""
     chunk_sz = 1024 * 1024  # 1 MiB
     n_chunks = 16  # 16 MiB total
@@ -322,7 +322,7 @@ def test_clone_file_multi_megabyte(tmp_path):
     dst_fd = os.open(str(tmp_path / "large_dst"), os.O_CREAT | os.O_RDWR, 0o600)
     try:
         _write_random_chunks(src_fd, n_chunks, chunk_sz, seed=8675309)
-        clone_file(src_fd, dst_fd)
+        clonefile(src_fd, dst_fd)
         assert _read_chunks(src_fd, n_chunks, chunk_sz) == _read_chunks(
             dst_fd, n_chunks, chunk_sz
         )
@@ -331,7 +331,7 @@ def test_clone_file_multi_megabyte(tmp_path):
         os.close(dst_fd)
 
 
-def test_clone_or_copy_file_full_fallthrough(tmp_path, monkeypatch):
+def test_copyfile_full_fallthrough(tmp_path, monkeypatch):
     """Chain clone → sendfile → userspace by forcing each tier to fail."""
     chunk_sz = 1024 * 1024
     n_chunks = 4
@@ -340,7 +340,7 @@ def test_clone_or_copy_file_full_fallthrough(tmp_path, monkeypatch):
     try:
         _write_random_chunks(src_fd, n_chunks, chunk_sz, seed=8675309)
 
-        import truenas_os_pyutils.shutil.copy as copy_mod
+        import truenas_os_pyutils.truenas_shutil.copy as copy_mod
 
         def fake_copy_file_range(*a, **kw):
             raise OSError(errno.EXDEV, "MOCK EXDEV")
@@ -348,7 +348,7 @@ def test_clone_or_copy_file_full_fallthrough(tmp_path, monkeypatch):
         monkeypatch.setattr(copy_mod, "copy_file_range", fake_copy_file_range)
         monkeypatch.setattr(copy_mod, "sendfile", lambda *a, **kw: 0)
 
-        clone_or_copy_file(src_fd, dst_fd)
+        copyfile(src_fd, dst_fd)
 
         assert _read_chunks(src_fd, n_chunks, chunk_sz) == _read_chunks(
             dst_fd, n_chunks, chunk_sz
@@ -358,27 +358,27 @@ def test_clone_or_copy_file_full_fallthrough(tmp_path, monkeypatch):
         os.close(dst_fd)
 
 
-def test_copy_sendfile_does_not_fall_through_when_sendfile_works(
+def test_copysendfile_does_not_fall_through_when_sendfile_works(
     tmp_path, monkeypatch
 ):
-    """copy_sendfile must NOT invoke userspace fallback on a happy sendfile."""
+    """copysendfile must NOT invoke userspace fallback on a happy sendfile."""
     src = tmp_path / "sf_src"
     dst = tmp_path / "sf_dst"
     payload = b"a" * 4096
     src.write_bytes(payload)
     dst.write_bytes(b"")
 
-    import truenas_os_pyutils.shutil.copy as copy_mod
+    import truenas_os_pyutils.truenas_shutil.copy as copy_mod
 
     def boom(*a, **kw):
-        raise AssertionError("copy_file_userspace must not be called")
+        raise AssertionError("copyuserspace must not be called")
 
-    monkeypatch.setattr(copy_mod, "copy_file_userspace", boom)
+    monkeypatch.setattr(copy_mod, "copyuserspace", boom)
 
     src_fd = os.open(str(src), os.O_RDONLY)
     dst_fd = os.open(str(dst), os.O_RDWR)
     try:
-        n = copy_sendfile(src_fd, dst_fd)
+        n = copysendfile(src_fd, dst_fd)
     finally:
         os.close(src_fd)
         os.close(dst_fd)

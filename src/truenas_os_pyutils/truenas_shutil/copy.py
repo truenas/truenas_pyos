@@ -4,7 +4,7 @@
 # single source/destination pair.  copytree() composes them across a tree;
 # callers can also use them directly without involving the recursive walker.
 #
-# Tests are in tests/utils/test_shutil_copy.py.
+# Tests are in tests/utils/test_truenas_shutil_copy.py.
 from __future__ import annotations
 
 from errno import EXDEV
@@ -24,12 +24,12 @@ from truenas_os import fgetxattr, fsetxattr
 
 __all__ = [
     "MAX_RW_SZ",
-    "clone_file",
-    "clone_or_copy_file",
-    "copy_file_userspace",
+    "clonefile",
     "copy_permissions",
-    "copy_sendfile",
     "copy_xattrs",
+    "copyfile",
+    "copysendfile",
+    "copyuserspace",
 ]
 
 
@@ -108,7 +108,7 @@ def copy_xattrs(src_fd: int, dst_fd: int, xattr_list: list[str]) -> None:
         fsetxattr(dst_fd, xat_name, xat_buf)
 
 
-def copy_file_userspace(src_fd: int, dst_fd: int) -> int:
+def copyuserspace(src_fd: int, dst_fd: int) -> int:
     """Userspace-only file copy via ``shutil.copyfileobj``.
 
     Args:
@@ -128,10 +128,10 @@ def copy_file_userspace(src_fd: int, dst_fd: int) -> int:
     return fstat(dst_fd).st_size
 
 
-def copy_sendfile(src_fd: int, dst_fd: int) -> int:
+def copysendfile(src_fd: int, dst_fd: int) -> int:
     """Optimized file copy using ``sendfile(2)``.
 
-    Falls back to ``copy_file_userspace`` if ``sendfile`` writes nothing
+    Falls back to ``copyuserspace`` if ``sendfile`` writes nothing
     and the destination is still empty (mirrors CPython's
     ``_fastcopy_sendfile`` fallback semantics).
 
@@ -150,12 +150,12 @@ def copy_sendfile(src_fd: int, dst_fd: int) -> int:
         offset += sent
 
     if offset == 0 and lseek(dst_fd, 0, SEEK_CUR) == 0:
-        return copy_file_userspace(src_fd, dst_fd)
+        return copyuserspace(src_fd, dst_fd)
 
     return offset
 
 
-def clone_file(src_fd: int, dst_fd: int) -> int:
+def clonefile(src_fd: int, dst_fd: int) -> int:
     """Block-level clone via ``copy_file_range(2)``.
 
     Args:
@@ -182,8 +182,8 @@ def clone_file(src_fd: int, dst_fd: int) -> int:
     return offset
 
 
-def clone_or_copy_file(src_fd: int, dst_fd: int) -> int:
-    """Try ``clone_file``; on ``EXDEV`` fall back to ``copy_sendfile``.
+def copyfile(src_fd: int, dst_fd: int) -> int:
+    """Try ``clonefile``; on ``EXDEV`` fall back to ``copysendfile``.
 
     Args:
         src_fd: Source file descriptor.
@@ -193,8 +193,8 @@ def clone_or_copy_file(src_fd: int, dst_fd: int) -> int:
         Number of bytes written.
     """
     try:
-        return clone_file(src_fd, dst_fd)
+        return clonefile(src_fd, dst_fd)
     except OSError as err:
         if err.errno == EXDEV:
-            return copy_sendfile(src_fd, dst_fd)
+            return copysendfile(src_fd, dst_fd)
         raise

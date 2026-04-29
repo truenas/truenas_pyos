@@ -3,17 +3,17 @@
 # (depth-first, GIL released, mountpoint-validated).
 #
 # - copy.py: file-level primitives (copy_permissions, copy_xattrs,
-#   copy_file_userspace, copy_sendfile, clone_file, clone_or_copy_file)
+#   copyuserspace, copysendfile, clonefile, copyfile)
 # - copytree.py: tree-level recursion (CopyFlags, CopyTreeOp, CopyJob,
 #   CopyTreeConfig, CopyTreeStats, copytree)
 from .copy import (
     MAX_RW_SZ,
-    clone_file,
-    clone_or_copy_file,
-    copy_file_userspace,
+    clonefile,
     copy_permissions,
-    copy_sendfile,
     copy_xattrs,
+    copyfile,
+    copysendfile,
+    copyuserspace,
 )
 from .copytree import (
     CLONETREE_ROOT_DEPTH,
@@ -35,11 +35,11 @@ __all__ = [
     "CopyTreeOp",
     "CopyTreeStats",
     "ReportingCallback",
-    "clone_file",
-    "clone_or_copy_file",
-    "copy_file_userspace",
+    "clonefile",
     "copy_permissions",
-    "copy_sendfile",
     "copy_xattrs",
+    "copyfile",
+    "copysendfile",
     "copytree",
+    "copyuserspace",
 ]
