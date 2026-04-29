@@ -895,6 +895,7 @@ def iter_filesystem_contents(
     reporting_callback: Callable[[tuple[tuple[str, int], ...], FilesystemIterState, Any], Any] | None = None,
     reporting_private_data: Any = None,
     dir_stack: tuple[tuple[str, int], ...] | None = None,
+    include_symlinks: bool = False,
 ) -> FilesystemIterator:
     """Iterate filesystem contents with mount validation.
 
@@ -917,6 +918,12 @@ def iter_filesystem_contents(
         dir_stack: Optional directory stack from previous iteration to restore position.
             Should be obtained from FilesystemIterator.dir_stack(). If provided, iterator
             will navigate to that position and resume iteration from there.
+        include_symlinks: When True, symlink entries are yielded with
+            ``IterInstance.islnk == True``.  Their fd is an O_PATH | O_NOFOLLOW
+            descriptor — usable with ``statx(fd, "", AT_EMPTY_PATH)`` and
+            with ``os.readlink("", dir_fd=fd)`` to read the target, but not
+            with read/write.  When False (default), symlinks are silently
+            skipped.  Symlinks are never traversed.
 
     Returns:
         FilesystemIterator that yields IterInstance objects
@@ -1149,3 +1156,40 @@ def fsetacl_posix(
 ) -> None:
     """Set POSIX ACL xattrs from raw bytes.  Low-level interface."""
     ...
+
+# ── Generic xattr functions ──────────────────────────────────────────────────
+
+def fgetxattr(fd: int, name: str) -> bytes:
+    """Read the extended attribute `name` from an open file descriptor.
+
+    Raises ``OSError(ENODATA)`` if the attribute is absent and
+    ``OSError(E2BIG)`` if the value exceeds ``XATTR_SIZE_MAX``.
+    """
+    ...
+
+def fsetxattr(
+    fd: int,
+    name: str,
+    value: bytes,
+    *,
+    flags: int = 0,
+) -> None:
+    """Set the extended attribute `name` to `value` on an open fd.
+
+    `flags` must be 0, ``XATTR_CREATE``, or ``XATTR_REPLACE``; any
+    other value raises ``ValueError``.  Raises ``OSError(E2BIG)`` if
+    ``len(value)`` exceeds ``XATTR_SIZE_MAX``.
+    """
+    ...
+
+def flistxattr(fd: int) -> list[str]:
+    """Return the list of extended attribute names on an open fd.
+
+    Raises ``OSError(E2BIG)`` if the cumulative name list exceeds
+    ``XATTR_SIZE_MAX``.
+    """
+    ...
+
+XATTR_CREATE: int    # 1 — fail if attribute exists
+XATTR_REPLACE: int   # 2 — fail if attribute does not exist
+XATTR_SIZE_MAX: int  # 2 * 1024 * 1024 — TrueNAS xattr value cap
