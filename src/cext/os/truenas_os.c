@@ -833,7 +833,8 @@ PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
 "                         btime_cutoff=0, cnt=0, cnt_bytes=0,\n"
 "                         file_open_flags=0, reporting_increment=1000,\n"
 "                         reporting_callback=None, reporting_private_data=None,\n"
-"                         dir_stack=None, include_symlinks=False)\n"
+"                         dir_stack=None, include_symlinks=False,\n"
+"                         include_mountpoints=False)\n"
 "--\n\n"
 "Iterate over all files and directories in a filesystem.\n"
 "Provides secure iteration using openat2 and statx, preventing symlink attacks\n"
@@ -875,6 +876,19 @@ PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
 "    `statx(fd=item.fd, path='', flags=AT_EMPTY_PATH)`; data read/write\n"
 "    is not supported on these fds.  When False (default), symlinks are\n"
 "    silently skipped.  Symlinks are never traversed.\n"
+"include_mountpoints : bool, keyword-only, optional, default=False\n"
+"    When True, child mountpoints (entries on a different filesystem from\n"
+"    the one being iterated) are yielded with ismount=True; their fd is\n"
+"    an O_PATH descriptor referring to the mount root.  Use\n"
+"    `statx(fd=item.fd, path='', flags=AT_EMPTY_PATH)` for metadata; the\n"
+"    statx attributes will include STATX_ATTR_MOUNT_ROOT.  All other\n"
+"    operations that require read access on the fd — read/write,\n"
+"    listxattr, getxattr, fcntl ioctls — return EBADF; the caller must\n"
+"    reopen by path (the full path is\n"
+"    `os.path.join(item.parent, item.name)`).  The iterator never\n"
+"    descends into these entries regardless of skip() state — its\n"
+"    single-filesystem guarantee is preserved.  When False (default),\n"
+"    child mountpoints are silently skipped.\n"
 "Returns\n"
 "-------\n"
 "iterator : FilesystemIterator\n"
@@ -1361,27 +1375,29 @@ py_iter_filesystem_contents(PyObject *self, PyObject *args, PyObject *kwargs)
 	PyObject *reporting_cb_private_data = NULL;
 	PyObject *dir_stack = NULL;
 	int include_symlinks = 0;
+	int include_mountpoints = 0;
 
 	static char *kwlist[] = {
 		"mountpoint", "filesystem_name", "relative_path",
 		"btime_cutoff", "cnt", "cnt_bytes", "file_open_flags",
 		"reporting_increment", "reporting_callback", "reporting_private_data",
-		"dir_stack", "include_symlinks",
+		"dir_stack", "include_symlinks", "include_mountpoints",
 		NULL
 	};
 
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs,
-					  "ss|zLKKiKOOOp:iter_filesystem_contents",
+					  "ss|zLKKiKOOOpp:iter_filesystem_contents",
 					  kwlist,
 					  &mountpoint, &filesystem_name, &relative_path,
 					  &state.btime_cutoff, &state.cnt, &state.cnt_bytes,
 					  &state.file_open_flags,
 					  &reporting_cb_increment, &reporting_cb, &reporting_cb_private_data,
-					  &dir_stack, &include_symlinks)) {
+					  &dir_stack, &include_symlinks, &include_mountpoints)) {
 		return NULL;
 	}
 
 	state.include_symlinks = (include_symlinks != 0);
+	state.include_mountpoints = (include_mountpoints != 0);
 
 	return create_filesystem_iterator(mountpoint, relative_path, filesystem_name, &state,
 	                                  reporting_cb_increment, reporting_cb, reporting_cb_private_data,

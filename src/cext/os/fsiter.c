@@ -58,6 +58,7 @@ enum {
 	ITER_INST_ISDIR,
 	ITER_INST_ISLNK,
 	ITER_INST_ISREG,
+	ITER_INST_ISMOUNT,
 	ITER_INST_NUM_FIELDS
 };
 
@@ -70,6 +71,7 @@ static PyStructSequence_Field iter_instance_fields[] = {
 	{"isdir", "True if directory, False if file"},
 	{"islnk", "True if symlink, False otherwise"},
 	{"isreg", "True if regular file, False otherwise"},
+	{"ismount", "True if entry is a child mountpoint (fd is O_PATH; not descended into)"},
 	{NULL}
 };
 
@@ -169,13 +171,25 @@ py_fsiter_state_from_struct(const iter_state_t *c_state, const char *current_dir
 
 /*
  * Helper: Create IterInstance from fd, statx, parent path, and name
+ *
+ * is_mount is propagated from the iter_entry_t.is_mount flag set by
+ * process_next_entry's EXDEV path: when true the fd is O_PATH and the
+ * caller must not attempt data I/O through it.
  */
 static PyObject *
-create_iter_instance(int fd, const struct statx *st, const char *parent, const char *name)
+create_iter_instance(int fd, const struct statx *st, bool is_mount,
+		     const char *parent, const char *name)
 {
-	PyObject *inst, *statx_obj, *parent_obj, *name_obj, *fd_obj;
-	PyObject *isdir_obj, *islnk_obj, *isreg_obj;
-	truenas_os_state_t *state;
+	PyObject *inst = NULL;
+	PyObject *statx_obj = NULL;
+	PyObject *parent_obj = NULL;
+	PyObject *name_obj = NULL;
+	PyObject *fd_obj = NULL;
+	PyObject *isdir_obj = NULL;
+	PyObject *islnk_obj = NULL;
+	PyObject *isreg_obj = NULL;
+	PyObject *ismount_obj = NULL;
+	truenas_os_state_t *state = NULL;
 
 	/* Convert statx struct to Python object */
 	statx_obj = statx_to_pyobject(st);
@@ -214,6 +228,7 @@ create_iter_instance(int fd, const struct statx *st, const char *parent, const c
 	isdir_obj = Py_NewRef(S_ISDIR(st->stx_mode) ? Py_True : Py_False);
 	islnk_obj = Py_NewRef(S_ISLNK(st->stx_mode) ? Py_True : Py_False);
 	isreg_obj = Py_NewRef(S_ISREG(st->stx_mode) ? Py_True : Py_False);
+	ismount_obj = Py_NewRef(is_mount ? Py_True : Py_False);
 
 	PyStructSequence_SET_ITEM(inst, ITER_INST_PARENT, parent_obj);
 	PyStructSequence_SET_ITEM(inst, ITER_INST_NAME, name_obj);
@@ -222,6 +237,7 @@ create_iter_instance(int fd, const struct statx *st, const char *parent, const c
 	PyStructSequence_SET_ITEM(inst, ITER_INST_ISDIR, isdir_obj);
 	PyStructSequence_SET_ITEM(inst, ITER_INST_ISLNK, islnk_obj);
 	PyStructSequence_SET_ITEM(inst, ITER_INST_ISREG, isreg_obj);
+	PyStructSequence_SET_ITEM(inst, ITER_INST_ISMOUNT, ismount_obj);
 
 	return inst;
 }
@@ -312,6 +328,9 @@ process_next_entry(FilesystemIteratorObject *self,
 	/* Store directory entry name */
 	strlcpy(self->last.name, entry->d_name, sizeof(self->last.name));
 
+	/* Default: not a mountpoint.  Set true only on the EXDEV fallback below. */
+	self->last.is_mount = false;
+
 	is_dir = (entry->d_type == DT_DIR);
 	is_lnk = (entry->d_type == DT_LNK);
 
@@ -341,12 +360,48 @@ process_next_entry(FilesystemIteratorObject *self,
 	fd = openat2_impl(dirfd(cur_dir->dirp), entry->d_name, open_flags, RESOLVE_FLAGS_ITER);
 	if (fd < 0) {
 		/* ELOOP: intermediate component replaced with symlink (shouldn't be possible)
-		 * EXDEV: entry is on a different filesystem (crossed mount boundary)
 		 * ENOENT: file was deleted between readdir and open (TOCTOU race)
-		 * In all cases, prune this branch and continue iteration.
+		 * Prune this branch and continue iteration.
 		 */
-		if (errno == ELOOP || errno == EXDEV || errno == ENOENT) {
+		if (errno == ELOOP || errno == ENOENT) {
 			return FSITER_CONTINUE;
+		}
+		/*
+		 * EXDEV: entry crosses a mount boundary.  By default we silently
+		 * skip — the iterator's job is to stay within one filesystem.
+		 * If the caller passed include_mountpoints=True we re-open the
+		 * entry with O_PATH (no RESOLVE_NO_XDEV) so the resulting fd
+		 * refers to the mount root for stat/listxattr, but cannot be
+		 * used for data I/O.  RESOLVE_NO_SYMLINKS still rules out a
+		 * symlink swap racing the openat2.  The yield path below uses
+		 * FSITER_YIELD_FILE so the iterator never descends into the
+		 * mount, regardless of skip() state — its single-filesystem
+		 * guarantee is preserved.
+		 */
+		if (errno == EXDEV) {
+			if (!self->state.include_mountpoints) {
+				return FSITER_CONTINUE;
+			}
+			fd = openat2_impl(dirfd(cur_dir->dirp), entry->d_name,
+					  O_PATH | O_NOFOLLOW, RESOLVE_NO_SYMLINKS);
+			if (fd < 0) {
+				if (errno == ELOOP || errno == ENOENT) {
+					return FSITER_CONTINUE;
+				}
+				SET_ERROR_ERRNO(err, "openat2(%s) [mountpoint]", entry->d_name);
+				return FSITER_ERROR;
+			}
+			ret = statx_impl(fd, "", STATX_FLAGS_ITER, STATX_MASK_ITER, &st);
+			if (ret < 0) {
+				SET_ERROR_ERRNO(err, "statx(%s) [mountpoint]", entry->d_name);
+				close(fd);
+				return FSITER_ERROR;
+			}
+			self->last.fd = fd;
+			memcpy(&self->last.st, &st, sizeof(struct statx));
+			self->last.is_dir = S_ISDIR(st.stx_mode);
+			self->last.is_mount = true;
+			return FSITER_YIELD_FILE;
 		}
 		/*
 		 * EPERM/EACCES: per-file access denial (e.g. immutable flag, ACL).
@@ -816,6 +871,7 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 		case FSITER_YIELD_FILE:
 			/* Create IterInstance for file */
 			result = create_iter_instance(self->last.fd, &self->last.st,
+						      self->last.is_mount,
 						      cur_dir->path, self->last.name);
 			if (result == NULL)
 				return NULL;
@@ -837,6 +893,7 @@ FilesystemIterator_next(FilesystemIteratorObject *self)
 			result = NULL;
 			if (!self->restoring_from_cookie) {
 				result = create_iter_instance(self->last.fd, &self->last.st,
+							      self->last.is_mount,
 							      cur_dir->path, self->last.name);
 				if (result == NULL)
 					return NULL;

@@ -40,6 +40,7 @@ typedef struct {
 	struct statx st;
 	int fd;
 	bool is_dir;
+	bool is_mount;	/* yielded via include_mountpoints fallback; fd is O_PATH */
 } iter_entry_t;
 
 /* Directory stack entry */
@@ -55,7 +56,8 @@ typedef struct {
 	size_t cnt;
 	size_t cnt_bytes;
 	int file_open_flags;
-	bool include_symlinks;	/* yield DT_LNK entries when true */
+	bool include_symlinks;		/* yield DT_LNK entries when true */
+	bool include_mountpoints;	/* yield child mountpoint entries (O_PATH fd) when true */
 } iter_state_t;
 
 /* Iterator object returned by iter_filesystem_contents */

@@ -571,6 +571,18 @@ for item in truenas_os.iter_filesystem_contents("/mnt/tank", "tank/dataset"):
   `statx(item.fd, "", AT_EMPTY_PATH)` to stat the link itself.  When
   `False` (default), symlinks are silently skipped.  Symlinks are
   never traversed.
+- `include_mountpoints` (bool, keyword-only): When `True`, child
+  mountpoints (entries on a different filesystem from the one being
+  iterated) are yielded as `IterInstance` entries with `ismount=True`;
+  the `fd` is an `O_PATH` descriptor pointing at the mount root.  Use
+  `statx(item.fd, "", AT_EMPTY_PATH)` for metadata (its `stx_attributes`
+  will include `STATX_ATTR_MOUNT_ROOT`).  All other syscalls that need
+  read access — read/write, `listxattr`, `getxattr`, fcntl ioctls —
+  return `EBADF` on the fd; the caller must reopen by path
+  (`os.path.join(item.parent, item.name)`) for those.  The iterator
+  never descends into these entries regardless of `skip()` state — its
+  single-filesystem guarantee is preserved.  When `False` (default),
+  child mountpoints are silently skipped.
 
 **Returns:** FilesystemIterator yielding IterInstance objects
 
@@ -582,6 +594,7 @@ for item in truenas_os.iter_filesystem_contents("/mnt/tank", "tank/dataset"):
 - `isdir` (bool): True if directory, False otherwise
 - `islnk` (bool): True if symlink, False otherwise
 - `isreg` (bool): True if regular file, False otherwise
+- `ismount` (bool): True if entry is a child mountpoint yielded via `include_mountpoints` (fd is O_PATH; not descended into)
 
 **FilesystemIterator.get_stats() returns FilesystemIterState:**
 - `cnt` (int): Items yielded
