@@ -4,6 +4,7 @@ import pytest
 import truenas_os
 import os
 import stat
+import subprocess
 import time
 
 
@@ -1738,3 +1739,104 @@ def test_iter_symlinks_do_not_descend(temp_mount_tree_with_symlinks):
     ]
     assert len(nested_paths) == 1
     assert nested_paths[0].endswith("/dir1/nested1.txt")
+
+
+# ── include_mountpoints=True ────────────────────────────────────────────────
+
+@pytest.fixture
+def temp_mount_tree_with_submount(temp_mount_tree):
+    """temp_mount_tree with a tmpfs mounted at <root>/submount.
+
+    Requires root because mount(2) needs CAP_SYS_ADMIN.  The tmpfs hosts a
+    single file ``inside.txt`` that the iterator must NOT yield (it lives on
+    a different filesystem).
+    """
+    submount = temp_mount_tree / "submount"
+    submount.mkdir()
+    subprocess.check_call(["mount", "-t", "tmpfs", "tmpfs", str(submount)])
+    try:
+        (submount / "inside.txt").write_bytes(b"z" * 10)
+        yield temp_mount_tree
+    finally:
+        subprocess.check_call(["umount", str(submount)])
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="requires root for mount(2)")
+def test_iter_default_skips_mountpoints(temp_mount_tree_with_submount):
+    """Default include_mountpoints=False preserves the historical skip behavior."""
+    items = list(truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree_with_submount),
+        get_filesystem_name(temp_mount_tree_with_submount),
+    ))
+    names = {i.name for i in items}
+    assert "submount" not in names
+    assert "inside.txt" not in names
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="requires root for mount(2)")
+def test_iter_yields_mountpoints_when_enabled(temp_mount_tree_with_submount):
+    """include_mountpoints=True yields the child mount root with ismount=True."""
+    items = list(truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree_with_submount),
+        get_filesystem_name(temp_mount_tree_with_submount),
+        include_mountpoints=True,
+    ))
+    by_name = {i.name: i for i in items}
+
+    assert "submount" in by_name
+    sm = by_name["submount"]
+    assert sm.ismount is True
+    assert sm.isdir is True
+    assert sm.islnk is False
+    assert sm.isreg is False
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="requires root for mount(2)")
+def test_iter_mountpoint_fd_supports_statx(temp_mount_tree_with_submount):
+    """statx with AT_EMPTY_PATH on the mountpoint fd reports STATX_ATTR_MOUNT_ROOT."""
+    found = False
+    for item in truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree_with_submount),
+        get_filesystem_name(temp_mount_tree_with_submount),
+        include_mountpoints=True,
+    ):
+        if not item.ismount:
+            continue
+        result = truenas_os.statx(
+            "", dir_fd=item.fd,
+            flags=truenas_os.AT_EMPTY_PATH,
+            mask=truenas_os.STATX_BASIC_STATS,
+        )
+        assert stat.S_ISDIR(result.stx_mode)
+        assert result.stx_attributes & truenas_os.STATX_ATTR_MOUNT_ROOT
+        found = True
+    assert found, "no mountpoint yielded for statx round-trip"
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="requires root for mount(2)")
+def test_iter_does_not_descend_into_mountpoints(temp_mount_tree_with_submount):
+    """File inside the child mount must not be yielded — the iter is scoped to one fs."""
+    items = list(truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree_with_submount),
+        get_filesystem_name(temp_mount_tree_with_submount),
+        include_mountpoints=True,
+    ))
+    assert "inside.txt" not in {i.name for i in items}
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="requires root for mount(2)")
+def test_iter_mountpoint_fd_is_o_path(temp_mount_tree_with_submount):
+    """The fd handed back is O_PATH — fdopendir / direct read are rejected."""
+    for item in truenas_os.iter_filesystem_contents(
+        str(temp_mount_tree_with_submount),
+        get_filesystem_name(temp_mount_tree_with_submount),
+        include_mountpoints=True,
+    ):
+        if not item.ismount:
+            continue
+        # fdopendir on an O_PATH fd raises OSError(EBADF).  os.scandir uses
+        # fdopendir under the hood, so this is the simplest negative check.
+        with pytest.raises(OSError):
+            list(os.scandir(item.fd))
+        return
+    pytest.fail("no mountpoint yielded")
