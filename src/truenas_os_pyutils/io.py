@@ -4,9 +4,10 @@
 from contextlib import contextmanager
 import errno
 import os
-import truenas_os
 from tempfile import TemporaryDirectory
 import typing
+
+import truenas_os
 
 
 class SymlinkInPathError(OSError):

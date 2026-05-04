@@ -750,6 +750,7 @@ class IterInstance(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
     __match_args__: ClassVar[tuple[
         Literal['parent'], Literal['name'], Literal['fd'],
         Literal['statxinfo'], Literal['isdir'], Literal['islnk'], Literal['isreg'],
+        Literal['ismount'],
     ]]
     def __replace__(self, /, **changes: Any) -> IterInstance: ...
     @property
@@ -766,6 +767,8 @@ class IterInstance(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
     def islnk(self) -> bool: ...  # True if symlink, False otherwise
     @property
     def isreg(self) -> bool: ...  # True if regular file, False otherwise
+    @property
+    def ismount(self) -> bool: ...  # True if entry is a child mountpoint (fd is O_PATH)
 
 @final
 class FilesystemIterState(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
@@ -896,6 +899,7 @@ def iter_filesystem_contents(
     reporting_private_data: Any = None,
     dir_stack: tuple[tuple[str, int], ...] | None = None,
     include_symlinks: bool = False,
+    include_mountpoints: bool = False,
 ) -> FilesystemIterator:
     """Iterate filesystem contents with mount validation.
 
@@ -924,6 +928,17 @@ def iter_filesystem_contents(
             with ``os.readlink("", dir_fd=fd)`` to read the target, but not
             with read/write.  When False (default), symlinks are silently
             skipped.  Symlinks are never traversed.
+        include_mountpoints: When True, child mountpoint entries are yielded
+            with ``IterInstance.ismount == True``.  Their fd is an O_PATH
+            descriptor pointing at the mount root — usable with
+            ``statx(fd, "", AT_EMPTY_PATH)`` (whose ``stx_attributes`` will
+            include ``STATX_ATTR_MOUNT_ROOT``).  All other syscalls that
+            need read access — read/write, listxattr, getxattr, fcntl
+            ioctls — return EBADF on the fd; the caller must reopen by
+            path.  The iterator never descends into these entries
+            regardless of ``skip()`` state, so the single-filesystem
+            invariant is preserved.  When False (default), child
+            mountpoints are silently skipped.
 
     Returns:
         FilesystemIterator that yields IterInstance objects
