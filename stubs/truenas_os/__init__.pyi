@@ -1155,10 +1155,7 @@ def fsetacl(fd: int, acl: NFS4ACL | POSIXACL | None) -> None:
     """Set the ACL on an open file descriptor.
 
     acl must match the ACL type supported by the filesystem, or None to
-    remove the ACL xattr(s) entirely.  For NFS4 the single
-    system.nfs4_acl_xdr xattr is removed; for POSIX both
-    system.posix_acl_access and system.posix_acl_default are removed.
-    ENODATA on any individual removal is silently ignored.
+    remove the ACL xattr(s) entirely.
     Raises OSError on failure, TypeError if acl is not NFS4ACL, POSIXACL,
     or None.
     """
