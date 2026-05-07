@@ -889,7 +889,6 @@ def iter_filesystem_contents(
     mountpoint: str,
     filesystem_name: str,
     relative_path: str | None = None,
-    /,
     btime_cutoff: int = 0,
     cnt: int = 0,
     cnt_bytes: int = 0,

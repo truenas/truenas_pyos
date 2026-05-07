@@ -829,7 +829,7 @@ static PyObject *py_renameat2(PyObject *obj,
 }
 
 PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
-"iter_filesystem_contents(mountpoint, filesystem_name, relative_path=None, /,\n"
+"iter_filesystem_contents(mountpoint, filesystem_name, relative_path=None,\n"
 "                         btime_cutoff=0, cnt=0, cnt_bytes=0,\n"
 "                         file_open_flags=0, reporting_increment=1000,\n"
 "                         reporting_callback=None, reporting_private_data=None,\n"
