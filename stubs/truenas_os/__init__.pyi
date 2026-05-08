@@ -889,7 +889,6 @@ def iter_filesystem_contents(
     mountpoint: str,
     filesystem_name: str,
     relative_path: str | None = None,
-    /,
     btime_cutoff: int = 0,
     cnt: int = 0,
     cnt_bytes: int = 0,
@@ -1152,11 +1151,13 @@ def validate_acl(fd: int, acl: NFS4ACL | POSIXACL) -> None:
     """
     ...
 
-def fsetacl(fd: int, acl: NFS4ACL | POSIXACL) -> None:
+def fsetacl(fd: int, acl: NFS4ACL | POSIXACL | None) -> None:
     """Set the ACL on an open file descriptor.
 
-    acl must match the ACL type supported by the filesystem.
-    Raises OSError on failure, TypeError if acl is not NFS4ACL or POSIXACL.
+    acl must match the ACL type supported by the filesystem, or None to
+    remove the ACL xattr(s) entirely.
+    Raises OSError on failure, TypeError if acl is not NFS4ACL, POSIXACL,
+    or None.
     """
     ...
 
