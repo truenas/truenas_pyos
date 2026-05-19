@@ -156,6 +156,30 @@ class StatmountResult(tuple[Any, ...]):  # PyStructSequence, not a true NamedTup
     @property
     def mask(self) -> int: ...
 
+# IdmapMappingEntry type - PyStructSequence for uid_map / gid_map entries
+@final
+class IdmapMappingEntry(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
+    """A single uid_map / gid_map entry: (inside, outside, length).
+
+    Field ordering mirrors a /proc/<pid>/uid_map line, and matches
+    util-linux's X-mount.idmap=<u|g>:<inside>:<outside>:<length>.
+
+    Construct via :func:`create_idmap_mapping`, which validates the field
+    ranges. Tuple-style access (entry[0], entry[1], entry[2]) is also
+    supported.
+    """
+    n_fields: ClassVar[int]
+    n_sequence_fields: ClassVar[int]
+    n_unnamed_fields: ClassVar[int]
+    __match_args__: ClassVar[tuple[str, ...]]
+    def __replace__(self, /, **changes: Any) -> IdmapMappingEntry: ...
+    @property
+    def inside(self) -> int: ...
+    @property
+    def outside(self) -> int: ...
+    @property
+    def length(self) -> int: ...
+
 # statx function
 def statx(
     path: str | bytes,
@@ -511,6 +535,85 @@ def umount2(
     MNT_EXPIRE : Mark mount point as expired. If not busy, unmount it.
                  Repeated calls will unmount an expired mount.
     UMOUNT_NOFOLLOW : Don't dereference target if it is a symbolic link
+    """
+    ...
+
+# User-namespace primitives for idmapped mounts
+def create_idmap_mapping(inside: int, outside: int, length: int, /) -> IdmapMappingEntry:
+    """Construct a validated IdmapMappingEntry for a uid_map / gid_map entry.
+
+    Parameters
+    ----------
+    inside : int
+        Starting ID inside the new user namespace. Must be in [0, UINT32_MAX].
+    outside : int
+        Starting ID in the parent user namespace. Must be in [0, UINT32_MAX].
+    length : int
+        Length of the contiguous range. Must be in [1, UINT32_MAX].
+
+    Returns
+    -------
+    IdmapMappingEntry
+
+    Raises
+    ------
+    ValueError
+        If any field is out of range, length is 0, or inside+length /
+        outside+length overflows UINT32_MAX.
+    TypeError
+        If any argument is not an integer.
+    """
+    ...
+
+def create_idmap_userns(
+    *,
+    uid_map: Iterable[IdmapMappingEntry],
+    gid_map: Iterable[IdmapMappingEntry],
+) -> int:
+    """Create a new user namespace populated with the given uid/gid maps.
+
+    Returns an owning fd that pins the namespace. Caller must close.
+
+    Internally: clone3 with CLONE_VM | CLONE_NEWUSER | CLONE_PIDFD |
+    CLONE_CLEAR_SIGHAND on an mmap'd child stack. The child blocks in
+    pause(); the parent writes /proc/<pid>/{setgroups,uid_map,gid_map},
+    issues ioctl(PIDFD_GET_USER_NAMESPACE) on the pidfd to retrieve the
+    userns fd, then SIGKILLs the child and waitpids. CLONE_VM avoids
+    copying the parent's page tables. The GIL is dropped for the syscall
+    sequence.
+
+    Parameters
+    ----------
+    uid_map : Iterable[IdmapMappingEntry]
+        Non-empty iterable of UID mapping entries. Construct via
+        :func:`create_idmap_mapping`.
+    gid_map : Iterable[IdmapMappingEntry]
+        Non-empty iterable of GID mapping entries.
+
+    Returns
+    -------
+    int
+        File descriptor pinning the new user namespace.
+
+    Raises
+    ------
+    TypeError
+        If any element is not an IdmapMappingEntry instance. Raw tuples are
+        rejected at the C boundary; build entries with create_idmap_mapping.
+    ValueError
+        If uid_map or gid_map is empty.
+    OSError
+        On any kernel-level failure (clone3, /proc map writes, ioctl).
+
+    Notes
+    -----
+    The privileged-map-write check (kernel/user_namespace.c) requires
+    CAP_SETUID and CAP_SETGID in the parent user namespace. Root in
+    init_user_ns trivially satisfies this. Without those caps, the kernel
+    restricts each map to a single line mapping the caller's own EUID/EGID
+    1:1.
+
+    Requires Linux >= 6.9 for the PIDFD_GET_USER_NAMESPACE ioctl.
     """
     ...
 

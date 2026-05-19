@@ -12,6 +12,7 @@
 #include "mount_setattr.h"
 #include "fsmount.h"
 #include "umount2.h"
+#include "userns.h"
 #include "fsiter.h"
 #include "renameat2.h"
 #include "truenas_os_state.h"
@@ -763,6 +764,75 @@ static PyObject *py_umount2(PyObject *obj,
 	return do_umount2(target, flags);
 }
 
+PyDoc_STRVAR(py_create_idmap_mapping__doc__,
+"create_idmap_mapping(inside, outside, length, /)\n"
+"--\n\n"
+"Construct a validated IdmapMappingEntry for a uid_map / gid_map entry.\n\n"
+"All three positional arguments must be non-negative integers that fit in a\n"
+"32-bit unsigned range. `length` must be at least 1. `inside + length` and\n"
+"`outside + length` must not overflow UINT32_MAX.\n\n"
+"The returned IdmapMappingEntry is a PyStructSequence with named fields\n"
+"(.inside, .outside, .length) and tuple-style access (entry[0], entry[1],\n"
+"entry[2]). Field ordering mirrors a /proc/<pid>/uid_map line and util-linux's\n"
+"X-mount.idmap=<u|g>:<inside>:<outside>:<length>.\n\n"
+"Parameters\n"
+"----------\n"
+"inside : int\n"
+"    Starting ID inside the new user namespace.\n"
+"outside : int\n"
+"    Starting ID in the parent user namespace.\n"
+"length : int\n"
+"    Length of the contiguous range (>= 1).\n\n"
+"Returns\n"
+"-------\n"
+"IdmapMappingEntry\n\n"
+"Raises\n"
+"------\n"
+"ValueError\n"
+"    If any field is out of range, length is 0, or a range overflows.\n"
+"TypeError\n"
+"    If any argument is not an integer.\n"
+);
+
+PyDoc_STRVAR(py_create_idmap_userns__doc__,
+"create_idmap_userns(*, uid_map, gid_map)\n"
+"--\n\n"
+"Create a new user namespace populated with the given uid/gid maps and\n"
+"return an owning fd that pins it.\n\n"
+"Internally: clone3 with CLONE_VM | CLONE_VFORK | CLONE_FILES | CLONE_NEWUSER\n"
+"| CLONE_PIDFD | CLONE_CLEAR_SIGHAND; the (transient) child writes\n"
+"/proc/self/setgroups + uid_map + gid_map, then ioctl(PIDFD_GET_USER_NAMESPACE)\n"
+"to retrieve the userns fd; the parent waits for vfork completion and reaps.\n"
+"The GIL is dropped for the syscall sequence. Requires Linux >= 6.9 for the\n"
+"PIDFD_GET_USER_NAMESPACE ioctl.\n\n"
+"Parameters\n"
+"----------\n"
+"uid_map : Sequence[IdmapMappingEntry]\n"
+"    Non-empty sequence of UID mapping entries.\n"
+"gid_map : Sequence[IdmapMappingEntry]\n"
+"    Non-empty sequence of GID mapping entries.\n\n"
+"Returns\n"
+"-------\n"
+"int\n"
+"    File descriptor pinning the new user namespace. Caller owns and must close.\n\n"
+"Raises\n"
+"------\n"
+"TypeError\n"
+"    If any element is not an IdmapMappingEntry instance (raw tuples rejected;\n"
+"    construct entries via truenas_os.create_idmap_mapping).\n"
+"ValueError\n"
+"    If uid_map or gid_map is empty.\n"
+"OSError\n"
+"    On any kernel-level failure (clone3, /proc map writes, ioctl, waitpid).\n\n"
+"Notes\n"
+"-----\n"
+"- Caller must have CAP_SYS_ADMIN in the parent user namespace (root in\n"
+"  init_user_ns is sufficient) to write non-identity maps.\n"
+"- Feed the returned fd into truenas_os.mount_setattr(\n"
+"      attr_set=truenas_os.MOUNT_ATTR_IDMAP, userns_fd=fd, ...)\n"
+"  on a detached mount tree from truenas_os.open_tree(OPEN_TREE_CLONE).\n"
+);
+
 PyDoc_STRVAR(py_renameat2__doc__,
 "renameat2(src, dst, *, src_dir_fd=AT_FDCWD, dst_dir_fd=AT_FDCWD, flags)\n"
 "--\n\n"
@@ -826,6 +896,44 @@ static PyObject *py_renameat2(PyObject *obj,
 	}
 
 	return do_renameat2(olddirfd, oldpath, newdirfd, newpath, flags);
+}
+
+static PyObject *py_create_idmap_mapping(PyObject *obj,
+                                          PyObject *args)
+{
+	unsigned long inside;
+	unsigned long outside;
+	unsigned long length;
+
+	if (!PyArg_ParseTuple(args, "kkk:create_idmap_mapping",
+	                      &inside, &outside, &length)) {
+		return NULL;
+	}
+
+	return do_create_idmap_mapping(inside, outside, length);
+}
+
+static PyObject *py_create_idmap_userns(PyObject *obj,
+                                         PyObject *args,
+                                         PyObject *kwargs)
+{
+	PyObject *uid_seq = NULL;
+	PyObject *gid_seq = NULL;
+	const char *kwnames[] = { "uid_map", "gid_map", NULL };
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$OO:create_idmap_userns",
+	                                 discard_const_p(char *, kwnames),
+	                                 &uid_seq, &gid_seq)) {
+		return NULL;
+	}
+	if (uid_seq == NULL || gid_seq == NULL) {
+		PyErr_SetString(PyExc_TypeError,
+		                "create_idmap_userns() missing required "
+		                "keyword-only arguments 'uid_map' and 'gid_map'");
+		return NULL;
+	}
+
+	return do_create_idmap_userns(uid_seq, gid_seq);
 }
 
 PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
@@ -1484,6 +1592,18 @@ static PyMethodDef truenas_os_methods[] = {
 		.ml_doc = py_umount2__doc__
 	},
 	{
+		.ml_name = "create_idmap_mapping",
+		.ml_meth = (PyCFunction)py_create_idmap_mapping,
+		.ml_flags = METH_VARARGS,
+		.ml_doc = py_create_idmap_mapping__doc__
+	},
+	{
+		.ml_name = "create_idmap_userns",
+		.ml_meth = (PyCFunction)py_create_idmap_userns,
+		.ml_flags = METH_VARARGS|METH_KEYWORDS,
+		.ml_doc = py_create_idmap_userns__doc__
+	},
+	{
 		.ml_name = "renameat2",
 		.ml_meth = (PyCFunction)py_renameat2,
 		.ml_flags = METH_VARARGS|METH_KEYWORDS,
@@ -1640,6 +1760,12 @@ PyObject* module_init(void)
 
 	// Initialize umount2 constants
 	if (init_umount2_constants(m) < 0) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	// Initialize IdmapMappingEntry type (used by create_idmap_userns)
+	if (init_userns_type(m) < 0) {
 		Py_DECREF(m);
 		return NULL;
 	}
