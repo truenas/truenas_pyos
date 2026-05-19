@@ -48,19 +48,26 @@ and ZFS snapshot detection will be disabled in that case.
 
 ## `namespace.py`
 
-User-namespace helpers for idmapped mounts. Thin context-manager wrapper
+User-namespace helpers for idmapped mounts. Context-manager wrapper
 around `truenas_os.create_idmap_userns`; the C-level dance (clone3 +
 `/proc/<pid>/{setgroups,uid_map,gid_map}` writes + `PIDFD_GET_USER_NAMESPACE`
-ioctl + SIGKILL + waitpid) is GIL-free.
+ioctl + `pidfd_send_signal(SIGKILL)` + waitpid) is GIL-free.
 
 | Name | Type | Description |
 |---|---|---|
-| `idmap_userns(uid_map, gid_map)` | context manager | Creates a userns with the given maps; yields a fd that pins it; closes the fd on exit. Both arguments are `Iterable[truenas_os.IdmapMappingEntry]` — build entries with `truenas_os.create_idmap_mapping(inside, outside, length)` for validated construction (range and overflow checks). Raises `OSError` on kernel-level failure, `TypeError` on raw-tuple input, `ValueError` on empty input. |
+| `idmap_userns(uid_map, gid_map)` | context manager | Yields an open fd pinning a user namespace with the given maps. Backed by a process-wide cache keyed on `(uid_map, gid_map)`; the first call for a given map pair runs the full clone3 dance, subsequent calls reuse the cached fd. The yielded fd is an `os.dup()` of the cached one, so closing it on `with`-block exit doesn't affect the cache or other concurrent users. Both arguments are `Iterable[truenas_os.IdmapMappingEntry]` — build entries with `truenas_os.create_idmap_mapping(inside, outside, length)` for validated construction (range and overflow checks). Raises `OSError` on kernel-level failure, `TypeError` on raw-tuple input, `ValueError` on empty input. |
+| `clear_cache()` | function | Close and drop all cached pinning fds. For tests and explicit shutdown paths. Idempotent; safe to call while other threads hold dup'd fds from `idmap_userns` (their fds are independent of the cached originals). |
 
 Privileged (non-identity) maps require `CAP_SETUID` and `CAP_SETGID` in the
 parent user namespace. Root in `init_user_ns` trivially satisfies that.
 Without those caps the kernel restricts each map to a single line mapping
 the caller's own EUID/EGID 1:1.
+
+The cache amortises the cost of the clone3 dance across repeated
+calls with the same map pair. Entries are never evicted — evicting
+would introduce `close()`-vs-`dup()` races with concurrent readers
+that can't be closed without a heavier protocol; process exit cleans
+the fds up, and `clear_cache()` is available for explicit teardown.
 
 Requires Linux ≥ 6.9 for `PIDFD_GET_USER_NAMESPACE`.
 
