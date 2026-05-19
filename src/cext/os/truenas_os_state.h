@@ -9,6 +9,7 @@
 typedef struct {
 	PyObject *StatxResultType;
 	PyObject *StatmountResultType;
+	PyObject *IdmapMappingEntryType;
 	PyObject *IterInstanceType;
 	PyObject *FilesystemIterStateType;
 	PyObject *IteratorRestoreError;

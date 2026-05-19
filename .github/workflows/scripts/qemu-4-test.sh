@@ -158,7 +158,9 @@ echo "=========================================="
 ls -lh /tmp/cores/
 echo ""
 
+CORE_DUMPS_FOUND=0
 if ls /tmp/cores/core.* 2>/dev/null; then
+    CORE_DUMPS_FOUND=1
     echo "Core dumps found!"
     echo ""
     for core in /tmp/cores/core.*; do
@@ -186,13 +188,24 @@ else
     echo "No core dumps found in /tmp/cores/"
 fi
 
-echo $TEST_EXIT_CODE > ~/test-exitcode.txt
+# Any core dump generated during the run is a failure even if pytest
+# returned zero (e.g. a helper child crashed and didn't propagate).
+# Backtraces have already been printed above; just fail loudly here.
+FINAL_EXIT_CODE=$TEST_EXIT_CODE
+if [ $CORE_DUMPS_FOUND -ne 0 ]; then
+    echo "FAIL: $(ls /tmp/cores/core.* 2>/dev/null | wc -l) core dump(s) generated during the test run"
+    if [ $FINAL_EXIT_CODE -eq 0 ]; then
+        FINAL_EXIT_CODE=1
+    fi
+fi
+
+echo $FINAL_EXIT_CODE > ~/test-exitcode.txt
 
 echo "=========================================="
-echo "Test run complete (exit code: $TEST_EXIT_CODE)"
+echo "Test run complete (exit code: $FINAL_EXIT_CODE; pytest=$TEST_EXIT_CODE, cores=$CORE_DUMPS_FOUND)"
 echo "=========================================="
 
-exit $TEST_EXIT_CODE
+exit $FINAL_EXIT_CODE
 REMOTE_SCRIPT
 
 TEST_RESULT=$?
