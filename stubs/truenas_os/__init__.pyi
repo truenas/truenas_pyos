@@ -573,14 +573,7 @@ def create_idmap_userns(
     """Create a new user namespace populated with the given uid/gid maps.
 
     Returns an owning fd that pins the namespace. Caller must close.
-
-    Internally: clone3 with CLONE_VM | CLONE_NEWUSER | CLONE_PIDFD |
-    CLONE_CLEAR_SIGHAND on an mmap'd child stack. The child blocks in
-    pause(); the parent writes /proc/<pid>/{setgroups,uid_map,gid_map},
-    issues ioctl(PIDFD_GET_USER_NAMESPACE) on the pidfd to retrieve the
-    userns fd, then SIGKILLs the child and waitpids. CLONE_VM avoids
-    copying the parent's page tables. The GIL is dropped for the syscall
-    sequence.
+    The GIL is dropped for the syscall sequence.
 
     Parameters
     ----------
@@ -603,7 +596,7 @@ def create_idmap_userns(
     ValueError
         If uid_map or gid_map is empty.
     OSError
-        On any kernel-level failure (clone3, /proc map writes, ioctl).
+        On any kernel-level failure during namespace creation.
 
     Notes
     -----

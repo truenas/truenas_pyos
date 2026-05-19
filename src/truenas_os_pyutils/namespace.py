@@ -1,14 +1,8 @@
 """User-namespace helpers for idmapped mounts.
 
-Context-manager wrapper around :func:`truenas_os.create_idmap_userns`. The
-heavy lifting (clone3 + /proc map writes + pidfd ioctl) lives in the C
-extension and is GIL-free during the syscall sequence.
-
-A process-wide cache keyed on ``(uid_map, gid_map)`` keeps the per-call
-cost amortised — clone3 is forked exactly once per distinct map for the
-lifetime of the process. Container workloads typically share a single
-``(host_base, host_range)`` across many containers and many mounts, so
-after the first call this becomes a sub-microsecond dict lookup + dup.
+Context-manager wrapper around :func:`truenas_os.create_idmap_userns`,
+plus a process-wide cache keyed on ``(uid_map, gid_map)`` so the namespace
+is created at most once per distinct map for the lifetime of the process.
 """
 from __future__ import annotations
 
@@ -59,7 +53,7 @@ def idmap_userns(
     maps; close the fd on exit.
 
     Subsequent calls with the same maps reuse the cached pinning fd —
-    the costly clone3 dance runs once per distinct ``(uid_map, gid_map)``
+    the namespace is created once per distinct ``(uid_map, gid_map)``
     for the lifetime of the process. The fd yielded to the caller is an
     ``os.dup()`` of the cached fd, so the with-block's normal close on
     exit does not affect cache state or other concurrent users.
@@ -89,9 +83,7 @@ def idmap_userns(
             tuples are rejected; build entries with
             ``create_idmap_mapping``.
         ValueError: If uid_map or gid_map is empty.
-        OSError: If clone3, the /proc map writes, or the
-            ``PIDFD_GET_USER_NAMESPACE`` ioctl fail at the kernel
-            level.
+        OSError: On any kernel-level failure during namespace creation.
 
     Example:
         Idmapped bind-mount of a container rootfs::
