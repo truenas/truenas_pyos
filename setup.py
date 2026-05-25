@@ -16,6 +16,7 @@ truenas_os_ext = Extension(
         'src/cext/os/fsmount.c',
         'src/cext/os/umount2.c',
         'src/cext/os/userns.c',
+        'src/cext/os/acl_check.c',
         'src/cext/os/renameat2.c',
         'src/cext/os/fsiter.c',
         'src/cext/os/acl.c',
