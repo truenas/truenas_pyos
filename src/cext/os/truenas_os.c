@@ -17,6 +17,7 @@
 #include "renameat2.h"
 #include "truenas_os_state.h"
 #include "acl.h"
+#include "acl_check.h"
 #include "xattr.h"
 
 #define MODULE_DOC "TrueNAS OS module"
@@ -932,6 +933,101 @@ static PyObject *py_create_idmap_userns(PyObject *obj,
 	return do_create_idmap_userns(uid_seq, gid_seq);
 }
 
+PyDoc_STRVAR(py_create_cred_entry__doc__,
+"create_cred_entry(id_name, uid, gid, groups, /)\n"
+"--\n\n"
+"Construct a validated CredEntry for use with check_path_access().\n\n"
+"`uid`, `gid`, and every element of `groups` must fit in a 32-bit unsigned\n"
+"range.  `id_name` is a free-form label echoed back in AccessFailure records\n"
+"so the caller can map a failure back to its source.\n\n"
+"Parameters\n"
+"----------\n"
+"id_name : str\n"
+"    Human-readable label for the credential.\n"
+"uid : int\n"
+"    Effective UID to assume during the check.\n"
+"gid : int\n"
+"    Primary GID to assume during the check.\n"
+"groups : Sequence[int]\n"
+"    Supplementary group IDs.  May be empty.\n\n"
+"Returns\n"
+"-------\n"
+"CredEntry\n"
+);
+
+static PyObject *py_create_cred_entry(PyObject *obj, PyObject *args)
+{
+	PyObject *id_name;
+	unsigned long uid;
+	unsigned long gid;
+	PyObject *groups;
+
+	if (!PyArg_ParseTuple(args, "UkkO:create_cred_entry",
+	                      &id_name, &uid, &gid, &groups)) {
+		return NULL;
+	}
+
+	return do_create_cred_entry(id_name, uid, gid, groups);
+}
+
+PyDoc_STRVAR(py_check_path_access__doc__,
+"check_path_access(*, creds, components, path_must_exist=False)\n"
+"--\n\n"
+"Probe execute-access on a list of path components under each of several\n"
+"credential identities, returning the (credential, component) pairs that\n"
+"were denied.\n\n"
+"Caller must be running as root.  All parameters are keyword-only.\n\n"
+"Parameters\n"
+"----------\n"
+"creds : Sequence[CredEntry]\n"
+"    Non-empty sequence of credential identities to test against.  Construct\n"
+"    entries via truenas_os.create_cred_entry().\n"
+"components : Sequence[bytes]\n"
+"    Path-component byte strings to probe.  Empty list returns an empty\n"
+"    failure list.\n"
+"path_must_exist : bool, optional, default=False\n"
+"    When True, ENOENT on any component is reported as a failure.  When\n"
+"    False, missing components are silently skipped.\n\n"
+"Returns\n"
+"-------\n"
+"list of AccessFailure\n"
+"    One AccessFailure per (cred, component) pair that was denied.  Empty\n"
+"    list means every credential could traverse every component.\n\n"
+"Raises\n"
+"------\n"
+"OSError\n"
+"    On any infrastructure failure.\n"
+"TypeError\n"
+"    If creds elements are not CredEntry instances, or components elements\n"
+"    are not bytes.\n"
+"ValueError\n"
+"    If creds is empty.\n"
+);
+
+static PyObject *py_check_path_access(PyObject *obj,
+                                       PyObject *args,
+                                       PyObject *kwargs)
+{
+	PyObject *creds = NULL;
+	PyObject *components = NULL;
+	int path_must_exist = 0;
+	const char *kwnames[] = { "creds", "components", "path_must_exist", NULL };
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$OOp:check_path_access",
+	                                 discard_const_p(char *, kwnames),
+	                                 &creds, &components, &path_must_exist)) {
+		return NULL;
+	}
+	if (creds == NULL || components == NULL) {
+		PyErr_SetString(PyExc_TypeError,
+		                "check_path_access() missing required keyword-only "
+		                "arguments 'creds' and 'components'");
+		return NULL;
+	}
+
+	return do_check_path_access(creds, components, path_must_exist);
+}
+
 PyDoc_STRVAR(py_iter_filesystem_contents__doc__,
 "iter_filesystem_contents(mountpoint, filesystem_name, relative_path=None,\n"
 "                         btime_cutoff=0, cnt=0, cnt_bytes=0,\n"
@@ -1600,6 +1696,18 @@ static PyMethodDef truenas_os_methods[] = {
 		.ml_doc = py_create_idmap_userns__doc__
 	},
 	{
+		.ml_name = "create_cred_entry",
+		.ml_meth = (PyCFunction)py_create_cred_entry,
+		.ml_flags = METH_VARARGS,
+		.ml_doc = py_create_cred_entry__doc__
+	},
+	{
+		.ml_name = "check_path_access",
+		.ml_meth = (PyCFunction)py_check_path_access,
+		.ml_flags = METH_VARARGS|METH_KEYWORDS,
+		.ml_doc = py_check_path_access__doc__
+	},
+	{
 		.ml_name = "renameat2",
 		.ml_meth = (PyCFunction)py_renameat2,
 		.ml_flags = METH_VARARGS|METH_KEYWORDS,
@@ -1762,6 +1870,12 @@ PyObject* module_init(void)
 
 	// Initialize IdmapMappingEntry type (used by create_idmap_userns)
 	if (init_userns_type(m) < 0) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	// Initialize CredEntry / AccessFailure types (used by check_path_access)
+	if (init_acl_check_types(m) < 0) {
 		Py_DECREF(m);
 		return NULL;
 	}
