@@ -521,7 +521,8 @@ static void emit_fatal(int wpipe, uint32_t stage, int err)
 static void run_check_child(int wpipe,
                               const struct cred_arr *creds, size_t n_creds,
                               char *const *components, size_t n_components,
-                              int path_must_exist)
+                              int path_must_exist,
+                              int mode)
 {
 	size_t ci;
 	size_t pi;
@@ -552,7 +553,7 @@ static void run_check_child(int wpipe,
 			struct failure_rec rec;
 
 			r = (int)syscall(__NR_faccessat2, AT_FDCWD,
-			                 components[pi], X_OK, AT_EACCESS);
+			                 components[pi], mode, AT_EACCESS);
 			if (r == 0) {
 				continue;
 			}
@@ -654,6 +655,7 @@ static int spawn_check_child(int pipefd[2],
                               const struct cred_arr *creds, size_t n_creds,
                               char *const *components, size_t n_components,
                               int path_must_exist,
+                              int mode,
                               pid_t *pid_out, int *pidfd_out)
 {
 	int pidfd = -1;
@@ -677,7 +679,8 @@ static int spawn_check_child(int pipefd[2],
 		 * fresh address space. */
 		close(pipefd[0]);
 		run_check_child(pipefd[1], creds, n_creds,
-		                components, n_components, path_must_exist);
+		                components, n_components, path_must_exist,
+		                mode);
 		_exit(127); /* unreachable */
 	}
 
@@ -723,6 +726,7 @@ static int reap_child(pid_t pid, int *status_out)
 static int run_check(const struct cred_arr *creds, size_t n_creds,
                       char *const *components, size_t n_components,
                       int path_must_exist,
+                      int mode,
                       struct failure_rec **out_recs, size_t *out_n,
                       int *child_status_out,
                       const char **stage_out)
@@ -744,7 +748,7 @@ static int run_check(const struct cred_arr *creds, size_t n_creds,
 	}
 
 	if (spawn_check_child(pipefd, creds, n_creds, components, n_components,
-	                      path_must_exist, &pid, &pidfd) < 0) {
+	                      path_must_exist, mode, &pid, &pidfd) < 0) {
 		*stage_out = "clone3(CLONE_PIDFD|CLONE_CLEAR_SIGHAND)";
 		saved_errno = errno;
 		close(pipefd[0]);
@@ -923,7 +927,8 @@ static PyObject *build_failure_list(const struct failure_rec *recs,
 
 PyObject *do_check_path_access(PyObject *creds_seq,
                                  PyObject *components_seq,
-                                 int path_must_exist)
+                                 int path_must_exist,
+                                 int mode)
 {
 	struct cred_arr *creds = NULL;
 	size_t n_creds = 0;
@@ -939,6 +944,17 @@ PyObject *do_check_path_access(PyObject *creds_seq,
 	truenas_os_state_t *state;
 	PyTypeObject *failure_type;
 	PyObject *result = NULL;
+
+	/* `mode` is forwarded directly to faccessat2.  Reject 0 (F_OK probes
+	 * are existence checks, redundant with path_must_exist) and any bit
+	 * outside R_OK | W_OK | X_OK so caller bugs surface immediately rather
+	 * than as obscure EINVAL from the syscall. */
+	if (mode == 0 || (mode & ~(R_OK | W_OK | X_OK)) != 0) {
+		PyErr_Format(PyExc_ValueError,
+		             "mode must be a non-zero OR of R_OK | W_OK | X_OK "
+		             "(got 0x%x)", mode);
+		return NULL;
+	}
 
 	state = get_truenas_os_state(NULL);
 	if (state == NULL || state->AccessFailureType == NULL) {
@@ -964,7 +980,7 @@ PyObject *do_check_path_access(PyObject *creds_seq,
 
 	Py_BEGIN_ALLOW_THREADS
 	rc = run_check(creds, n_creds, components, n_components,
-	               path_must_exist, &recs, &n_recs,
+	               path_must_exist, mode, &recs, &n_recs,
 	               &child_status, &stage);
 	saved_errno = errno;
 	Py_END_ALLOW_THREADS
