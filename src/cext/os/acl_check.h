@@ -10,6 +10,7 @@ extern PyObject *do_create_cred_entry(PyObject *id_name,
                                        PyObject *groups);
 extern PyObject *do_check_path_access(PyObject *creds_seq,
                                        PyObject *components_seq,
-                                       int path_must_exist);
+                                       int path_must_exist,
+                                       int mode);
 
 #endif /* _ACL_CHECK_H_ */

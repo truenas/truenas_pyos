@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
 #include <Python.h>
+#include <unistd.h>
 #include "common/includes.h"
 #include "open.h"
 #include "fhandle.h"
@@ -971,11 +972,14 @@ static PyObject *py_create_cred_entry(PyObject *obj, PyObject *args)
 }
 
 PyDoc_STRVAR(py_check_path_access__doc__,
-"check_path_access(*, creds, components, path_must_exist=False)\n"
+"check_path_access(*, creds, components, path_must_exist=False, mode=X_OK)\n"
 "--\n\n"
-"Probe execute-access on a list of path components under each of several\n"
-"credential identities, returning the (credential, component) pairs that\n"
-"were denied.\n\n"
+"Probe access on a list of path components under each of several credential\n"
+"identities, returning the (credential, component) pairs that were denied.\n\n"
+"The default mode (X_OK) is the execute-traversal probe used to pre-flight\n"
+"ancestor directories before exposing a leaf path.  Pass R_OK / W_OK (or\n"
+"any OR of R_OK | W_OK | X_OK) to probe a single leaf path for read or\n"
+"write access instead.\n\n"
 "Caller must be running as root.  All parameters are keyword-only.\n\n"
 "Parameters\n"
 "----------\n"
@@ -987,12 +991,16 @@ PyDoc_STRVAR(py_check_path_access__doc__,
 "    failure list.\n"
 "path_must_exist : bool, optional, default=False\n"
 "    When True, ENOENT on any component is reported as a failure.  When\n"
-"    False, missing components are silently skipped.\n\n"
+"    False, missing components are silently skipped.\n"
+"mode : int, optional, default=X_OK\n"
+"    Bitmask forwarded to faccessat2(2).  Must be a non-zero subset of\n"
+"    R_OK | W_OK | X_OK.  F_OK (existence-only) is rejected because it is\n"
+"    redundant with path_must_exist.\n\n"
 "Returns\n"
 "-------\n"
 "list of AccessFailure\n"
 "    One AccessFailure per (cred, component) pair that was denied.  Empty\n"
-"    list means every credential could traverse every component.\n\n"
+"    list means every credential satisfied `mode` on every component.\n\n"
 "Raises\n"
 "------\n"
 "OSError\n"
@@ -1001,7 +1009,7 @@ PyDoc_STRVAR(py_check_path_access__doc__,
 "    If creds elements are not CredEntry instances, or components elements\n"
 "    are not bytes.\n"
 "ValueError\n"
-"    If creds is empty.\n"
+"    If creds is empty, or mode is 0 or contains bits outside R_OK|W_OK|X_OK.\n"
 );
 
 static PyObject *py_check_path_access(PyObject *obj,
@@ -1011,11 +1019,15 @@ static PyObject *py_check_path_access(PyObject *obj,
 	PyObject *creds = NULL;
 	PyObject *components = NULL;
 	int path_must_exist = 0;
-	const char *kwnames[] = { "creds", "components", "path_must_exist", NULL };
+	int mode = X_OK;
+	const char *kwnames[] = {
+		"creds", "components", "path_must_exist", "mode", NULL
+	};
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$OOp:check_path_access",
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$OOpi:check_path_access",
 	                                 discard_const_p(char *, kwnames),
-	                                 &creds, &components, &path_must_exist)) {
+	                                 &creds, &components,
+	                                 &path_must_exist, &mode)) {
 		return NULL;
 	}
 	if (creds == NULL || components == NULL) {
@@ -1025,7 +1037,7 @@ static PyObject *py_check_path_access(PyObject *obj,
 		return NULL;
 	}
 
-	return do_check_path_access(creds, components, path_must_exist);
+	return do_check_path_access(creds, components, path_must_exist, mode);
 }
 
 PyDoc_STRVAR(py_iter_filesystem_contents__doc__,

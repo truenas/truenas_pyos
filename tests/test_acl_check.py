@@ -307,3 +307,102 @@ def test_check_path_access_accepts_replay_inconsistent_iter():
     assert ids == ["first", "second"], f"got {failures!r}"
     for f in failures:
         assert f.errnum == errno.ENOENT
+
+
+# ── check_path_access: mode parameter validation ────────────────────────────
+
+def test_check_path_access_rejects_zero_mode():
+    """mode=0 (F_OK existence-only) is rejected at the Python boundary."""
+    cred = truenas_os.create_cred_entry("root", 0, 0, ())
+    with pytest.raises(ValueError, match=r"mode"):
+        truenas_os.check_path_access(
+            creds=[cred], components=[b"/tmp"], mode=0,
+        )
+
+
+def test_check_path_access_rejects_unknown_mode_bits():
+    """Bits outside R_OK | W_OK | X_OK are rejected, not silently dropped."""
+    cred = truenas_os.create_cred_entry("root", 0, 0, ())
+    with pytest.raises(ValueError, match=r"mode"):
+        # 0x10 is well outside the valid mask
+        truenas_os.check_path_access(
+            creds=[cred], components=[b"/tmp"], mode=0x10,
+        )
+
+
+# ── check_path_access: R/W single-path probes ──────────────────────────────
+
+@NEEDS_ROOT
+def test_check_path_access_read_mode_owner_granted():
+    """A chmod-0400 file is readable by its owner."""
+    owner = truenas_os.create_cred_entry(
+        "owner", NOBODY_UID, NOBODY_GID, ()
+    )
+    with tempfile.NamedTemporaryFile(delete=False) as tf:
+        path = tf.name
+    try:
+        os.chown(path, NOBODY_UID, NOBODY_GID)
+        os.chmod(path, 0o400)
+        failures = truenas_os.check_path_access(
+            creds=[owner], components=[path.encode()], mode=os.R_OK,
+        )
+        assert failures == [], f"owner should be able to read 0400, got {failures!r}"
+    finally:
+        os.unlink(path)
+
+
+@NEEDS_ROOT
+def test_check_path_access_write_mode_denied_when_readonly():
+    """A chmod-0400 file is not writable by its owner (no W bit)."""
+    owner = truenas_os.create_cred_entry(
+        "owner", NOBODY_UID, NOBODY_GID, ()
+    )
+    with tempfile.NamedTemporaryFile(delete=False) as tf:
+        path = tf.name
+    try:
+        os.chown(path, NOBODY_UID, NOBODY_GID)
+        os.chmod(path, 0o400)
+        failures = truenas_os.check_path_access(
+            creds=[owner], components=[path.encode()], mode=os.W_OK,
+        )
+        assert len(failures) == 1
+        assert failures[0].id_name == "owner"
+        assert failures[0].errnum == errno.EACCES
+    finally:
+        os.unlink(path)
+
+
+@NEEDS_ROOT
+def test_check_path_access_combined_mode_requires_all_bits():
+    """mode=R_OK|W_OK fails if any bit is denied (chmod 0400 has R but no W)."""
+    owner = truenas_os.create_cred_entry(
+        "owner", NOBODY_UID, NOBODY_GID, ()
+    )
+    with tempfile.NamedTemporaryFile(delete=False) as tf:
+        path = tf.name
+    try:
+        os.chown(path, NOBODY_UID, NOBODY_GID)
+        os.chmod(path, 0o400)
+        failures = truenas_os.check_path_access(
+            creds=[owner], components=[path.encode()],
+            mode=os.R_OK | os.W_OK,
+        )
+        # faccessat2 returns failure when any requested bit is denied.
+        assert len(failures) == 1
+        assert failures[0].errnum == errno.EACCES
+    finally:
+        os.unlink(path)
+
+
+@NEEDS_ROOT
+def test_check_path_access_default_mode_is_execute_traversal():
+    """Omitting mode preserves the original X_OK semantics."""
+    nobody = truenas_os.create_cred_entry("nobody", NOBODY_UID, NOBODY_GID, ())
+    with tempfile.TemporaryDirectory() as base:
+        # base is mode 700 by default — nobody can't traverse it
+        components = [base.encode()]
+        failures = truenas_os.check_path_access(
+            creds=[nobody], components=components,  # mode default = X_OK
+        )
+        assert len(failures) == 1
+        assert failures[0].errnum == errno.EACCES
