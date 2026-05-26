@@ -180,6 +180,47 @@ class IdmapMappingEntry(tuple[Any, ...]):  # PyStructSequence, not a true NamedT
     @property
     def length(self) -> int: ...
 
+# CredEntry type - PyStructSequence describing one credential identity to test
+@final
+class CredEntry(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
+    """A credential identity (uid + gid + supplementary groups) tagged with a
+    human-readable id_name, used as input to :func:`check_path_access`.
+
+    Construct via :func:`create_cred_entry`, which validates field ranges.
+    Tuple-style access (entry[0]..entry[3]) is also supported.
+    """
+    n_fields: ClassVar[int]
+    n_sequence_fields: ClassVar[int]
+    n_unnamed_fields: ClassVar[int]
+    __match_args__: ClassVar[tuple[str, ...]]
+    def __replace__(self, /, **changes: Any) -> CredEntry: ...
+    @property
+    def id_name(self) -> str: ...
+    @property
+    def uid(self) -> int: ...
+    @property
+    def gid(self) -> int: ...
+    @property
+    def groups(self) -> tuple[int, ...]: ...
+
+# AccessFailure type - PyStructSequence describing one denied (cred, component) probe
+@final
+class AccessFailure(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
+    """A single (credential, path-component) pair that failed an execute-access
+    probe, as returned by :func:`check_path_access`.
+    """
+    n_fields: ClassVar[int]
+    n_sequence_fields: ClassVar[int]
+    n_unnamed_fields: ClassVar[int]
+    __match_args__: ClassVar[tuple[str, ...]]
+    def __replace__(self, /, **changes: Any) -> AccessFailure: ...
+    @property
+    def id_name(self) -> str: ...
+    @property
+    def failing_component(self) -> bytes: ...
+    @property
+    def errnum(self) -> int: ...
+
 # statx function
 def statx(
     path: str | bytes,
@@ -607,6 +648,94 @@ def create_idmap_userns(
     1:1.
 
     Requires Linux >= 6.9 for the PIDFD_GET_USER_NAMESPACE ioctl.
+    """
+    ...
+
+# Per-credential path-access probe
+def create_cred_entry(
+    id_name: str, uid: int, gid: int, groups: Iterable[int], /
+) -> CredEntry:
+    """Construct a validated CredEntry for use with :func:`check_path_access`.
+
+    `id_name` is a free-form label echoed back in AccessFailure records so the
+    caller can map a denial back to its source.
+
+    Parameters
+    ----------
+    id_name : str
+        Human-readable label for the credential.
+    uid : int
+        Effective UID to assume for the check. Must be in [0, UINT32_MAX].
+    gid : int
+        Primary GID to assume for the check. Must be in [0, UINT32_MAX].
+    groups : Iterable[int]
+        Supplementary group IDs. Each must be in [0, UINT32_MAX].
+
+    Returns
+    -------
+    CredEntry
+
+    Raises
+    ------
+    ValueError
+        If any id is out of range.
+    TypeError
+        If id_name is not a str or groups elements are not int.
+    """
+    ...
+
+def check_path_access(
+    *,
+    creds: Iterable[CredEntry],
+    components: Iterable[bytes],
+    path_must_exist: bool = False,
+    mode: int = ...,  # Default: os.X_OK
+) -> list[AccessFailure]:
+    """Probe access on a list of path components under each of several
+    credential identities, returning the (credential, component) pairs that
+    were denied.
+
+    The default ``mode`` of ``X_OK`` performs the execute-traversal probe used
+    to pre-flight ancestor directories before exposing a leaf path.  Pass
+    ``os.R_OK`` / ``os.W_OK`` (or any OR of ``R_OK | W_OK | X_OK``) to probe a
+    single leaf path for read or write access instead.
+
+    Caller must be running as root.
+
+    Parameters
+    ----------
+    creds : Iterable[CredEntry]
+        Non-empty iterable of credential identities. Construct each entry via
+        :func:`create_cred_entry`.
+    components : Iterable[bytes]
+        Path-component byte strings to probe. Empty iterable returns an empty
+        failure list.
+    path_must_exist : bool, optional
+        When True, ENOENT on any component is reported as a failure with
+        errnum=ENOENT. When False (the default), missing components are
+        silently skipped.
+    mode : int, optional
+        Bitmask forwarded to ``faccessat2(2)``.  Must be a non-zero subset of
+        ``os.R_OK | os.W_OK | os.X_OK``.  ``F_OK`` (existence-only) is
+        rejected because it is redundant with ``path_must_exist``.
+        Defaults to ``os.X_OK``.
+
+    Returns
+    -------
+    list[AccessFailure]
+        One AccessFailure per (cred, component) denial. Empty list means
+        every credential satisfied ``mode`` on every component.
+
+    Raises
+    ------
+    OSError
+        On any infrastructure failure.
+    TypeError
+        If creds elements are not CredEntry instances, or components elements
+        are not bytes.
+    ValueError
+        If creds is empty, or ``mode`` is 0 or contains bits outside
+        ``R_OK | W_OK | X_OK``.
     """
     ...
 

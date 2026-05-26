@@ -973,6 +973,101 @@ print(names)  # ['user.foo', 'user.bar', ...]
 
 ---
 
+### Access Pre-flight
+
+Batch per-credential access probes against a list of path components.  Each
+credential is tested against each component, and only the denials are
+returned.  Access checks dispatch through the filesystem's own permission
+inode operation, so filesystem-native ACLs (e.g. ZFS NFSv4) are honored, not
+just mode bits.
+
+The default `mode` (`X_OK`) performs execute-traversal probes — pass a list
+of ancestor directories to pre-flight whether a principal could reach a
+leaf.  Pass `mode=R_OK` or `mode=W_OK` (or any OR of `R_OK | W_OK | X_OK`)
+together with a single-element `components` list to probe read or write
+access on a leaf instead.
+
+Caller must be running as root: temporarily assuming each credential's
+identity requires privileged uid/gid switching.
+
+#### `create_cred_entry(id_name, uid, gid, groups, /)`
+
+Construct a validated `CredEntry` describing a credential identity.
+
+```python
+import truenas_os
+
+alice = truenas_os.create_cred_entry("alice", 1000, 1000, (1000, 100))
+root  = truenas_os.create_cred_entry("root", 0, 0, ())
+```
+
+**Parameters:**
+- `id_name` (str): Human-readable label echoed back in failure records.
+- `uid` (int): Effective UID. Must fit in `uint32`.
+- `gid` (int): Primary GID. Must fit in `uint32`.
+- `groups` (Sequence[int]): Supplementary group IDs (may be empty).
+
+**Returns:** `CredEntry` — a `PyStructSequence` with `.id_name`, `.uid`,
+`.gid`, `.groups` fields.
+
+**Raises:** `ValueError` on out-of-range ids; `TypeError` on wrong argument
+types.
+
+---
+
+#### `check_path_access(*, creds, components, path_must_exist=False, mode=X_OK)`
+
+Probe each component under each credential; return only the denials.
+
+```python
+import os
+import truenas_os
+
+creds = [
+    truenas_os.create_cred_entry("alice", 1000, 1000, (1000,)),
+    truenas_os.create_cred_entry("bob",   1001, 1001, (1001,)),
+]
+
+# Execute-traversal pre-flight: can each cred walk to /mnt/tank/share/sub/file?
+ancestors = [b"/mnt", b"/mnt/tank", b"/mnt/tank/share", b"/mnt/tank/share/sub"]
+failures = truenas_os.check_path_access(creds=creds, components=ancestors)
+for f in failures:
+    print(f"{f.id_name} denied at {f.failing_component!r}: errno={f.errnum}")
+
+# Single-path read probe: can libvirt read this ISO?
+libvirt = truenas_os.create_cred_entry("libvirt-qemu", 64055, 64055, ())
+failures = truenas_os.check_path_access(
+    creds=[libvirt], components=[b"/mnt/tank/iso/debian.iso"],
+    mode=os.R_OK, path_must_exist=True,
+)
+```
+
+**Parameters:**
+- `creds` (Iterable[CredEntry]): Non-empty list of credentials to test.
+- `components` (Iterable[bytes]): Path-component byte strings to probe.
+  An empty list returns an empty failure list.
+- `path_must_exist` (bool, keyword-only, optional, default=`False`): When
+  `True`, `ENOENT` on any component is reported as a failure; when `False`,
+  `ENOENT` components are silently skipped (so callers can pre-flight paths
+  whose leaf datasets do not yet exist).
+- `mode` (int, keyword-only, optional, default=`X_OK`): Bitmask forwarded to
+  `faccessat2(2)`.  Must be a non-zero subset of `R_OK | W_OK | X_OK`.
+  `F_OK` (existence-only) is rejected — use `path_must_exist=True` instead.
+
+**Returns:** `list[AccessFailure]` — one entry per `(cred, component)`
+denial.  An `AccessFailure` is a `PyStructSequence` with `.id_name`,
+`.failing_component` (bytes), `.errnum` (int) fields.  Empty list means
+every credential satisfied `mode` on every component.
+
+**Raises:**
+- `OSError` on underlying syscall failure.
+- `TypeError` if `creds` elements aren't `CredEntry` instances or
+  `components` elements aren't `bytes`.
+- `ValueError` if `creds` is empty, or `mode` is 0 or contains bits outside
+  `R_OK | W_OK | X_OK`.
+
+---
+
 ## Complete Example
 
 ```python
