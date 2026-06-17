@@ -1134,8 +1134,6 @@ apply_op(const simple_filter_t *sf, PyObject *val, fl_state_t *state)
  * presence is used as the marker.  The (type -> verdict) result is memoised in
  * a single-entry inline cache on the module state, keyed by type identity, so
  * the attribute probe runs at most once per distinct type per filter run.
- * PyObject_HasAttr never raises (it swallows lookup errors), so this is safe to
- * call on the hot path.
  */
 static int
 fl_type_is_pydantic(PyTypeObject *tp, fl_state_t *state)
@@ -1143,8 +1141,13 @@ fl_type_is_pydantic(PyTypeObject *tp, fl_state_t *state)
     if (tp == state->pyd_cache_type)
         return state->pyd_cache_verdict;
 
-    state->pyd_cache_verdict = PyObject_HasAttr((PyObject *)tp,
-                                                state->pydantic_fields_str);
+    /*
+     * _PyType_Lookup walks the type's MRO directly (no instance-dict or
+     * descriptor machinery), returns a borrowed ref, and never raises, so it
+     * is both cheaper than PyObject_HasAttr and safe to call on the hot path.
+     */
+    state->pyd_cache_verdict =
+        (_PyType_Lookup(tp, state->pydantic_fields_str) != NULL);
     state->pyd_cache_type = tp;
     return state->pyd_cache_verdict;
 }
