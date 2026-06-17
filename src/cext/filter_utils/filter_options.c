@@ -131,6 +131,35 @@ error:
     return -1;
 }
 
+/*
+ * Join a key array back into a dotted path string ("a", "b" -> "a.b").
+ * Used to refresh an order spec's top_key after alias resolution rewrites the
+ * split keys.  Returns a new reference, or NULL on error (exception set).
+ */
+static PyObject *
+opt_join_keys(PyObject **keys, Py_ssize_t nkeys)
+{
+    PyObject *sep = NULL;
+    PyObject *seq = NULL;
+    PyObject *joined = NULL;
+    Py_ssize_t i;
+
+    sep = PyUnicode_FromString(".");
+    if (!sep)
+        return NULL;
+    seq = PyList_New(nkeys);
+    if (!seq) {
+        Py_DECREF(sep);
+        return NULL;
+    }
+    for (i = 0; i < nkeys; i++)
+        PyList_SET_ITEM(seq, i, Py_NewRef(keys[i]));
+    joined = PyUnicode_Join(sep, seq);
+    Py_DECREF(sep);
+    Py_DECREF(seq);
+    return joined;
+}
+
 /* ===========================================================================
  * Compile-time: build compiled_select_spec_t and compiled_order_spec_t arrays
  * =========================================================================== */
@@ -168,7 +197,7 @@ free_order_specs(compiled_order_spec_t *specs, Py_ssize_t n)
 }
 
 int
-compile_select_specs(PyObject *select_val,
+compile_select_specs(PyObject *select_val, PyObject *model, fl_state_t *state,
                      compiled_select_spec_t **out_specs, Py_ssize_t *out_n)
 {
     Py_ssize_t nspecs;
@@ -244,9 +273,23 @@ compile_select_specs(PyObject *select_val,
             goto error;
         }
 
+        /* Steal rename into the spec before resolving so specs[si] is a fully
+         * formed, freeable spec if alias resolution fails below. */
         specs[si].rename = rename; /* steal ref, or NULL */
         if (owned)
             Py_DECREF(target);
+
+        /* Resolve pydantic field aliases -> attribute names so the per-item
+         * select traversal reads the stored attribute. */
+        if (model != NULL && model != Py_None) {
+            if (resolve_alias_keys(specs[si].keys, specs[si].key_indices,
+                                   specs[si].nkeys, model, state) < 0) {
+                Py_DECREF(spec);
+                free_select_specs(specs, si + 1);
+                return -1;
+            }
+        }
+
         Py_DECREF(spec);
     }
 
@@ -265,7 +308,7 @@ error:
 #define NULLS_LAST_LEN   11
 
 int
-compile_order_specs(PyObject *order_by_val,
+compile_order_specs(PyObject *order_by_val, PyObject *model, fl_state_t *state,
                     compiled_order_spec_t **out_specs, Py_ssize_t *out_n)
 {
     Py_ssize_t nspecs;
@@ -332,9 +375,29 @@ compile_order_specs(PyObject *order_by_val,
             goto error;
         }
 
+        /* field_obj is stolen here so specs[di] is fully formed (and freeable)
+         * before alias resolution, which may fail below. */
         specs[di].top_key = field_obj; /* steal ref */
         specs[di].reverse = reverse;
         specs[di].nulls_mode = nulls_mode;
+
+        /* Resolve pydantic field aliases -> attribute names, and refresh
+         * top_key (used for null detection) to mirror the resolved path. */
+        if (model != NULL && model != Py_None) {
+            PyObject *resolved_top = NULL;
+
+            if (resolve_alias_keys(specs[di].keys, specs[di].key_indices,
+                                   specs[di].nkeys, model, state) < 0) {
+                free_order_specs(specs, di + 1);
+                return -1;
+            }
+            resolved_top = opt_join_keys(specs[di].keys, specs[di].nkeys);
+            if (!resolved_top) {
+                free_order_specs(specs, di + 1);
+                return -1;
+            }
+            Py_SETREF(specs[di].top_key, resolved_top);
+        }
     }
 
     *out_specs = specs;

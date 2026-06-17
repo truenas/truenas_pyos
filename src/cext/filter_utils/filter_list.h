@@ -14,9 +14,27 @@
  * allocations on hot code paths.
  */
 typedef struct {
-    PyObject *casefold_str;  /* interned "casefold" */
-    PyObject *re_compile;    /* re.compile callable  */
-    PyObject *empty_str;     /* cached ""            */
+    PyObject *casefold_str;       /* interned "casefold"           */
+    PyObject *re_compile;         /* re.compile callable           */
+    PyObject *empty_str;          /* cached ""                     */
+    PyObject *pydantic_fields_str; /* interned "__pydantic_fields__" */
+    /* interned attribute names used to resolve pydantic aliases at compile
+     * time (see resolve_alias_path()); cold path, but reused per term. */
+    PyObject *model_fields_str;   /* interned "model_fields"       */
+    PyObject *alias_str;          /* interned "alias"              */
+    PyObject *annotation_str;     /* interned "annotation"         */
+    PyObject *args_str;           /* interned "__args__"           */
+    /*
+     * Single-entry inline cache for the pydantic-model field fast path
+     * (see eval_simple_from()).  pyd_cache_type is a borrowed type pointer
+     * compared by identity; it is reset to NULL at the start of every
+     * filter_list_run()/match_item() so it never outlives a run (within a
+     * run the cached type is kept alive by the item being processed).
+     * Correctness never depends on the cache: each lookup re-validates by
+     * identity and recomputes on a miss.
+     */
+    PyTypeObject *pyd_cache_type; /* last type checked (borrowed)  */
+    int pyd_cache_verdict;        /* 1 = pydantic model, 0 = not   */
 } fl_state_t;
 
 /*
@@ -88,6 +106,7 @@ typedef struct {
     PyObject_HEAD
     compiled_filter_t **filters;
     Py_ssize_t nfilters;
+    bool has_model;       /* compiled with a pydantic model= (alias-resolved) */
     PyObject *repr_str;
 } CompiledFiltersObject;
 
@@ -127,21 +146,27 @@ extern PyTypeObject CompiledOptions_Type;
 
 /* -- internal functions used by truenas_pyfilter.c ----------------------- */
 
-compiled_filter_t *compile_filter(PyObject *f, fl_state_t *state, int depth);
+compiled_filter_t *compile_filter(PyObject *f, fl_state_t *state, int depth,
+                                  PyObject *model);
+int resolve_alias_keys(PyObject **keys, Py_ssize_t *key_indices,
+                       Py_ssize_t nkeys, PyObject *model, fl_state_t *state);
 void free_cf_array(compiled_filter_t **arr, Py_ssize_t n);
 PyObject *filter_list_run(PyObject *data,
                           compiled_filter_t * const *compiled,
                           Py_ssize_t nfilters, bool shortcircuit,
-                          fl_state_t *state);
+                          bool has_model, fl_state_t *state);
 bool match_item(PyObject *item, compiled_filter_t * const *compiled,
-                Py_ssize_t nfilters, fl_state_t *state, bool *matchp);
+                Py_ssize_t nfilters, bool has_model, fl_state_t *state,
+                bool *matchp);
 
 /* filter_options.c */
 void free_select_specs(compiled_select_spec_t *specs, Py_ssize_t n);
 void free_order_specs(compiled_order_spec_t *specs, Py_ssize_t n);
-int compile_select_specs(PyObject *select_val,
+int compile_select_specs(PyObject *select_val, PyObject *model,
+                         fl_state_t *state,
                          compiled_select_spec_t **out_specs, Py_ssize_t *out_n);
-int compile_order_specs(PyObject *order_by_val,
+int compile_order_specs(PyObject *order_by_val, PyObject *model,
+                        fl_state_t *state,
                         compiled_order_spec_t **out_specs, Py_ssize_t *out_n);
 PyObject *apply_select_item(PyObject *item,
                             compiled_select_spec_t *specs, Py_ssize_t nspecs);
