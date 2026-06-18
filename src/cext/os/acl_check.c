@@ -16,6 +16,14 @@
 #include <sys/syscall.h>     /* __NR_clone3, __NR_faccessat2 */
 #include <sys/wait.h>
 
+/*
+ * Fallback numbers for recent syscalls a build host's <sys/syscall.h> may
+ * predate.  These are arch-independent (asm-generic, identical on amd64 and
+ * arm64), so the literals are safe.  Do not add equivalents for the classic
+ * setresuid/setresgid/setgroups used in run_check_child(): those are always
+ * present in the header and their numbers are arch-specific, so a literal
+ * would be wrong on one architecture.
+ */
 #ifndef __NR_clone3
 #define __NR_clone3 435
 #endif
@@ -527,22 +535,31 @@ static void run_check_child(int wpipe,
 	size_t ci;
 	size_t pi;
 
+	/*
+	 * Use the raw syscalls rather than the glibc setresuid/setresgid/
+	 * setgroups wrappers.  This child came from a bare clone3() with no
+	 * glibc fork cleanup, so for a multithreaded parent the wrappers would
+	 * try to apply the credential change across glibc's stale (copied)
+	 * thread list and can deadlock.  We are single-threaded here and only
+	 * need to change this task's own credentials, which the raw syscalls do
+	 * directly.
+	 */
 	for (ci = 0; ci < n_creds; ci++) {
 		/* Restore to full root before swapping; first iteration is a
 		 * no-op, subsequent ones re-elevate. */
-		if (setresuid(0, 0, 0) < 0) {
+		if (syscall(__NR_setresuid, 0, 0, 0) < 0) {
 			emit_fatal(wpipe, FATAL_STAGE_SETRESUID_0, errno);
 			_exit(1);
 		}
-		if (setresgid(creds[ci].gid, creds[ci].gid, 0) < 0) {
+		if (syscall(__NR_setresgid, creds[ci].gid, creds[ci].gid, 0) < 0) {
 			emit_fatal(wpipe, FATAL_STAGE_SETRESGID, errno);
 			_exit(1);
 		}
-		if (setgroups(creds[ci].ngroups, creds[ci].groups) < 0) {
+		if (syscall(__NR_setgroups, creds[ci].ngroups, creds[ci].groups) < 0) {
 			emit_fatal(wpipe, FATAL_STAGE_SETGROUPS, errno);
 			_exit(1);
 		}
-		if (setresuid(creds[ci].uid, creds[ci].uid, 0) < 0) {
+		if (syscall(__NR_setresuid, creds[ci].uid, creds[ci].uid, 0) < 0) {
 			emit_fatal(wpipe, FATAL_STAGE_SETRESUID_N, errno);
 			_exit(1);
 		}
