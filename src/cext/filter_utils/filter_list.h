@@ -18,6 +18,7 @@ typedef struct {
     PyObject *re_compile;         /* re.compile callable           */
     PyObject *empty_str;          /* cached ""                     */
     PyObject *pydantic_fields_str; /* interned "__pydantic_fields__" */
+    PyObject *normalize_as_str;   /* interned "__normalize_as__"   */
     /* interned attribute names used to resolve pydantic aliases at compile
      * time (see resolve_alias_path()); cold path, but reused per term. */
     PyObject *model_fields_str;   /* interned "model_fields"       */

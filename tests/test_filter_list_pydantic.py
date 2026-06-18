@@ -193,6 +193,27 @@ def test_pydantic_correct_model_instance_is_accepted():
     assert match(item, filters=cf) is item
 
 
+def test_pydantic_normalize_as_model_is_accepted():
+    # A model's __normalize_as__ variant (itself a pydantic model) is accepted
+    # alongside the compiled model; unrelated pydantic classes are still refused.
+    class Norm(pydantic.BaseModel):
+        age: int
+
+    class M(pydantic.BaseModel):
+        age: int
+        __normalize_as__ = Norm
+
+    class Other(pydantic.BaseModel):
+        age: int
+
+    cf = compile_filters([["age", ">", 20]], model=M)
+    co = compile_options()
+    assert tnfilter([M(age=30), Norm(age=40)], filters=cf, options=co) == [M(age=30), Norm(age=40)]
+    assert match(Norm(age=40), filters=cf) == Norm(age=40)
+    with pytest.raises(TypeError, match="not the compiled model M"):
+        tnfilter([Other(age=30)], filters=cf, options=co)
+
+
 def test_pydantic_wrong_model_in_mixed_list_is_rejected():
     # A correct model instance followed by a wrong one: the wrong instance is
     # still caught mid-iteration.

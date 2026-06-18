@@ -1388,6 +1388,8 @@ static int
 check_item_model(PyObject *item, PyObject *model, Py_ssize_t nfilters,
                  fl_state_t *state, const char *fn)
 {
+    PyObject *norm = NULL;
+
     if (nfilters == 0)
         return 1;
 
@@ -1403,6 +1405,12 @@ check_item_model(PyObject *item, PyObject *model, Py_ssize_t nfilters,
 
     /* Must be exactly the compiled model class: one pointer compare. */
     if (Py_TYPE(item) == (PyTypeObject *)model)
+        return 1;
+
+    /* A query_result_item model points at its parent model via __normalize_as__
+     * (also a pydantic model); instances of that parent are accepted too. */
+    norm = _PyType_Lookup((PyTypeObject *)model, state->normalize_as_str);
+    if (norm != NULL && Py_TYPE(item) == (PyTypeObject *)norm)
         return 1;
 
     /* A different pydantic class (subclasses included) is the footgun we
