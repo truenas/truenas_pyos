@@ -1370,12 +1370,56 @@ eval_filter(PyObject *item, const compiled_filter_t *cf, fl_state_t *state,
  * =============================================================================== */
 
 /*
+ * Per-item model guard, shared by filter_list_run() and match_item().
+ *
+ * A filter's field paths are alias-resolved against the model= passed at
+ * compile time, so:
+ *   - model is None: a pydantic model instance can't be filtered safely
+ *     (paths were never alias-resolved) -> refuse it.
+ *   - model is a class: a pydantic instance must be of exactly that class
+ *     (a subclass may redefine aliases, so its paths could misresolve) ->
+ *     refuse any other pydantic class.
+ * Non-model items (dicts, dataclasses, plain objects) are always filterable;
+ * `model` only constrains pydantic instances.  `fn` names the caller for the
+ * error message.  Returns 1 if the item may be filtered, 0 with an exception
+ * set otherwise.
+ */
+static int
+check_item_model(PyObject *item, PyObject *model, fl_state_t *state,
+                 const char *fn)
+{
+    if (model == Py_None) {
+        if (fl_type_is_pydantic(Py_TYPE(item), state)) {
+            PyErr_Format(PyExc_TypeError,
+                "%s: filtering pydantic model instances requires a filter "
+                "compiled with model= (compile_filters(..., model=...))", fn);
+            return 0;
+        }
+        return 1;
+    }
+
+    /* Must be exactly the compiled model class: one pointer compare. */
+    if (Py_TYPE(item) == (PyTypeObject *)model)
+        return 1;
+
+    /* A different pydantic class (subclasses included) is the footgun we
+     * refuse; dicts/dataclasses/other remain filterable as-is. */
+    if (fl_type_is_pydantic(Py_TYPE(item), state)) {
+        PyErr_Format(PyExc_TypeError,
+            "%s: item of type %.200s is not the compiled model %.200s",
+            fn, Py_TYPE(item)->tp_name, ((PyTypeObject *)model)->tp_name);
+        return 0;
+    }
+    return 1;
+}
+
+/*
  * Pure evaluation loop: iterate `data`, append items matching all `compiled`
  * filters to a new list, and return it.  Does not own or free `compiled`.
  */
 PyObject *
 filter_list_run(PyObject *data, compiled_filter_t * const *compiled,
-                Py_ssize_t nfilters, bool shortcircuit, bool has_model,
+                Py_ssize_t nfilters, bool shortcircuit, PyObject *model,
                 fl_state_t *state)
 {
     PyObject *result = NULL;
@@ -1400,13 +1444,7 @@ filter_list_run(PyObject *data, compiled_filter_t * const *compiled,
     }
 
     while ((item = PyIter_Next(iter)) != NULL) {
-        /* A filter compiled without model= has not had its field paths
-         * resolved from pydantic aliases to attribute names, so silently
-         * mismatching against model instances would be a footgun.  Refuse. */
-        if (!has_model && fl_type_is_pydantic(Py_TYPE(item), state)) {
-            PyErr_SetString(PyExc_TypeError,
-                "tnfilter: filtering pydantic model instances requires a "
-                "filter compiled with model= (compile_filters(..., model=...))");
+        if (!check_item_model(item, model, state, "tnfilter")) {
             Py_DECREF(item);
             Py_DECREF(iter);
             Py_DECREF(result);
@@ -1461,7 +1499,7 @@ filter_list_run(PyObject *data, compiled_filter_t * const *compiled,
 
 bool
 match_item(PyObject *item, compiled_filter_t * const *compiled,
-           Py_ssize_t nfilters, bool has_model, fl_state_t *state,
+           Py_ssize_t nfilters, PyObject *model, fl_state_t *state,
            bool *matchp)
 {
     Py_ssize_t i;
@@ -1470,14 +1508,10 @@ match_item(PyObject *item, compiled_filter_t * const *compiled,
     /* Reset the pydantic inline cache (see fl_state_t). */
     state->pyd_cache_type = NULL;
 
-    /* See filter_list_run(): refuse pydantic model instances unless the
-     * filter was compiled with model= (so aliases are resolved). */
-    if (!has_model && fl_type_is_pydantic(Py_TYPE(item), state)) {
-        PyErr_SetString(PyExc_TypeError,
-            "match: matching a pydantic model instance requires a filter "
-            "compiled with model= (compile_filters(..., model=...))");
+    /* See check_item_model(): the item must be compatible with the compiled
+     * model (instance of it, or a non-model type). */
+    if (!check_item_model(item, model, state, "match"))
         return false;
-    }
 
     for (i = 0; i < nfilters; i++) {
         r = eval_filter(item, compiled[i], state, 0);
@@ -1500,7 +1534,8 @@ static void
 compiled_filters_dealloc(CompiledFiltersObject *self)
 {
     free_cf_array(self->filters, self->nfilters);
-    Py_XDECREF(self->repr_str);
+    Py_CLEAR(self->model);
+    Py_CLEAR(self->repr_str);
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -1529,7 +1564,10 @@ compiled_options_dealloc(CompiledOptionsObject *self)
 {
     free_select_specs(self->select_specs, self->nselect);
     free_order_specs(self->order_specs, self->norder);
-    Py_XDECREF(self->repr_str);
+    Py_CLEAR(self->repr_str);
+    Py_CLEAR(self->arg_select);
+    Py_CLEAR(self->arg_order_by);
+    Py_CLEAR(self->model);
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -1539,6 +1577,18 @@ compiled_options_repr(CompiledOptionsObject *self)
     return PyUnicode_FromFormat("CompiledOptions(%U)", self->repr_str);
 }
 
+/* The original arguments passed to compile_options(), exposed read-only. */
+static PyMemberDef compiled_options_members[] = {
+    {"get", Py_T_BOOL, offsetof(CompiledOptionsObject, get_flag), Py_READONLY},
+    {"count", Py_T_BOOL, offsetof(CompiledOptionsObject, count_flag), Py_READONLY},
+    {"select", Py_T_OBJECT_EX, offsetof(CompiledOptionsObject, arg_select), Py_READONLY},
+    {"order_by", Py_T_OBJECT_EX, offsetof(CompiledOptionsObject, arg_order_by), Py_READONLY},
+    {"offset", Py_T_PYSSIZET, offsetof(CompiledOptionsObject, offset), Py_READONLY},
+    {"limit", Py_T_PYSSIZET, offsetof(CompiledOptionsObject, limit), Py_READONLY},
+    {"model", Py_T_OBJECT_EX, offsetof(CompiledOptionsObject, model), Py_READONLY},
+    {NULL}
+};
+
 PyTypeObject CompiledOptions_Type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name = "truenas_pyfilter.CompiledOptions",
@@ -1547,4 +1597,5 @@ PyTypeObject CompiledOptions_Type = {
     .tp_repr = (reprfunc)compiled_options_repr,
     .tp_flags = Py_TPFLAGS_DEFAULT,
     .tp_doc = PyDoc_STR("Pre-compiled options for use with tnfilter()."),
+    .tp_members = compiled_options_members,
 };

@@ -138,6 +138,68 @@ def test_pydantic_filtering_without_model_is_rejected():
         match(data[0], filters=cf)
 
 
+def test_pydantic_wrong_model_instance_is_rejected():
+    # A filter compiled for model A, run over instances of a *different* model
+    # B, must refuse rather than silently misresolving A's alias paths against
+    # B. Both models share field names so the failure would otherwise be quiet.
+    class A(pydantic.BaseModel):
+        name: str = pydantic.Field(alias="nm")
+
+    class B(pydantic.BaseModel):
+        name: str = pydantic.Field(alias="nm")
+
+    cf = compile_filters([["nm", "=", "x"]], model=A)
+    co = compile_options()
+    with pytest.raises(TypeError, match="not the compiled model A"):
+        tnfilter([B(nm="x")], filters=cf, options=co)
+    with pytest.raises(TypeError, match="not the compiled model A"):
+        match(B(nm="x"), filters=cf)
+
+
+def test_pydantic_subclass_instance_is_rejected():
+    # Exact class only: a subclass may redefine aliases, so even an instance of
+    # a subclass of the compiled model is refused.
+    class A(pydantic.BaseModel):
+        name: str = pydantic.Field(alias="nm")
+
+    class ASub(A):
+        pass
+
+    cf = compile_filters([["nm", "=", "x"]], model=A)
+    co = compile_options()
+    with pytest.raises(TypeError, match="not the compiled model A"):
+        tnfilter([ASub(nm="x")], filters=cf, options=co)
+    with pytest.raises(TypeError, match="not the compiled model A"):
+        match(ASub(nm="x"), filters=cf)
+
+
+def test_pydantic_correct_model_instance_is_accepted():
+    # The exact compiled model (and a matching item) passes through unchanged.
+    class A(pydantic.BaseModel):
+        name: str = pydantic.Field(alias="nm")
+
+    cf = compile_filters([["nm", "=", "x"]], model=A)
+    co = compile_options()
+    item = A(nm="x")
+    assert tnfilter([item], filters=cf, options=co) == [item]
+    assert match(item, filters=cf) is item
+
+
+def test_pydantic_wrong_model_in_mixed_list_is_rejected():
+    # A correct model instance followed by a wrong one: the wrong instance is
+    # still caught mid-iteration.
+    class A(pydantic.BaseModel):
+        name: str = pydantic.Field(alias="nm")
+
+    class B(pydantic.BaseModel):
+        name: str = pydantic.Field(alias="nm")
+
+    cf = compile_filters([["nm", "=", "x"]], model=A)
+    co = compile_options()
+    with pytest.raises(TypeError, match="not the compiled model A"):
+        tnfilter([A(nm="x"), B(nm="x")], filters=cf, options=co)
+
+
 def test_pydantic_heterogeneous_list_cache_does_not_misfire():
     # dict, pydantic model and dataclass interleaved: the per-type inline
     # cache must recompute its verdict whenever the item type changes.

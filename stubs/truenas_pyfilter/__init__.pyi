@@ -35,6 +35,13 @@ class CompiledFilters:
 @final
 class CompiledOptions:
     """Pre-compiled options produced by compile_options()."""
+    get: bool
+    count: bool
+    select: list[str | list[Any]]
+    order_by: list[str]
+    offset: int
+    limit: int
+    model: type[Any] | None
     def __repr__(self) -> str: ...
 
 

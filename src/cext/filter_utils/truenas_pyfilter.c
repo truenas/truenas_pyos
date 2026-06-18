@@ -92,7 +92,7 @@ py_compile_filters(PyObject *self, PyObject *args, PyObject *kwargs)
     }
     obj->filters = compiled;
     obj->nfilters = nfilters;
-    obj->has_model = (model_obj != Py_None);
+    obj->model = Py_NewRef(model_obj); /* the class, or None */
     obj->repr_str = repr_str; /* steal ref */
 
     return (PyObject *)obj;
@@ -115,6 +115,8 @@ py_compile_options(PyObject *self, PyObject *args, PyObject *kwargs)
     Py_ssize_t nselect = 0;
     compiled_order_spec_t *order_specs = NULL;
     Py_ssize_t norder = 0;
+    PyObject *arg_select = NULL;
+    PyObject *arg_order_by = NULL;
     CompiledOptionsObject *obj = NULL;
 
     static const char *kwnames[] = {
@@ -199,13 +201,34 @@ py_compile_options(PyObject *self, PyObject *args, PyObject *kwargs)
         }
     }
 
-    obj = PyObject_New(CompiledOptionsObject, &CompiledOptions_Type);
-    if (!obj) {
+    /* The original select/order_by arguments are preserved for read-only
+     * introspection.  They are always lists in the query-options convention:
+     * an unsupplied (or None) value reads back as an empty list, not None.
+     * Build them before the object exists so every field assignment below is
+     * infallible. */
+    arg_select = (select_val && select_val != Py_None)
+               ? Py_NewRef(select_val) : PyList_New(0);
+    arg_order_by = (order_by_val && order_by_val != Py_None)
+                 ? Py_NewRef(order_by_val) : PyList_New(0);
+    if (!arg_select || !arg_order_by) {
+        Py_XDECREF(arg_select);
+        Py_XDECREF(arg_order_by);
         free_select_specs(select_specs, nselect);
         free_order_specs(order_specs, norder);
         Py_DECREF(repr_str);
         return NULL;
     }
+
+    obj = PyObject_New(CompiledOptionsObject, &CompiledOptions_Type);
+    if (!obj) {
+        Py_DECREF(arg_select);
+        Py_DECREF(arg_order_by);
+        free_select_specs(select_specs, nselect);
+        free_order_specs(order_specs, norder);
+        Py_DECREF(repr_str);
+        return NULL;
+    }
+    obj->get_flag = get_val;
     /* shortcircuit: get=True with no ordering means we stop at the first match */
     obj->shortcircuit = get_val && (norder == 0);
     obj->count_flag = count_val;
@@ -215,7 +238,10 @@ py_compile_options(PyObject *self, PyObject *args, PyObject *kwargs)
     obj->norder = norder;
     obj->offset = offset_val;
     obj->limit = limit_val;
-    obj->repr_str = repr_str;
+    obj->repr_str = repr_str;       /* steal ref */
+    obj->arg_select = arg_select;   /* steal ref */
+    obj->arg_order_by = arg_order_by; /* steal ref */
+    obj->model = Py_NewRef(model_obj);
 
     return (PyObject *)obj;
 }
@@ -254,7 +280,7 @@ py_tnfilter(PyObject *self, PyObject *args, PyObject *kwargs)
     co = (CompiledOptionsObject *)options_obj;
 
     filtered = filter_list_run(data, cf->filters, cf->nfilters,
-                               co->shortcircuit, cf->has_model, state);
+                               co->shortcircuit, cf->model, state);
     if (!filtered)
         return NULL;
 
@@ -315,16 +341,15 @@ py_match(PyObject *self, PyObject *args, PyObject *kwargs)
     }
 
     cf = (CompiledFiltersObject *)filters_obj;
+    co = (options_obj != Py_None) ? (CompiledOptionsObject *)options_obj : NULL;
 
-    if (!match_item(item, cf->filters, cf->nfilters, cf->has_model, state,
-                    &matched))
+    if (!match_item(item, cf->filters, cf->nfilters, cf->model, state, &matched))
         return NULL;
 
     if (!matched)
         Py_RETURN_NONE;
 
-    co = (CompiledOptionsObject *)options_obj;
-    if (options_obj != Py_None && co->nselect > 0)
+    if (co && co->nselect > 0)
         return apply_select_item(item, co->select_specs, co->nselect);
 
     return Py_NewRef(item);

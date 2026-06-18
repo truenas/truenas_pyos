@@ -99,6 +99,9 @@ typedef struct {
  * Created by compile_filters() and passed to tnfilter() / match().
  * Holds an array of top-level compiled_filter_t pointers; each may
  * itself be a subtree.  Multiple top-level filters are implicitly AND'd.
+ * model is the pydantic model= the paths were alias-resolved against, or
+ * None when compiled without one (tnfilter()/match() require it to match the
+ * options' model, and "compiled with a model" is just model != None).
  * repr_str caches the __repr__ result (computed lazily, NULL until first
  * use).
  */
@@ -106,7 +109,7 @@ typedef struct {
     PyObject_HEAD
     compiled_filter_t **filters;
     Py_ssize_t nfilters;
-    bool has_model;       /* compiled with a pydantic model= (alias-resolved) */
+    PyObject *model;      /* model= class (alias-resolved against), or None */
     PyObject *repr_str;
 } CompiledFiltersObject;
 
@@ -128,6 +131,7 @@ typedef struct {
  */
 typedef struct {
     PyObject_HEAD
+    bool get_flag;
     bool shortcircuit;
     bool count_flag;
     compiled_select_spec_t *select_specs;
@@ -137,6 +141,9 @@ typedef struct {
     Py_ssize_t offset;
     Py_ssize_t limit;
     PyObject *repr_str;
+    PyObject *arg_select;
+    PyObject *arg_order_by;
+    PyObject *model;
 } CompiledOptionsObject;
 
 /* -- pre-compiled type objects ----------------------------------------------- */
@@ -154,9 +161,9 @@ void free_cf_array(compiled_filter_t **arr, Py_ssize_t n);
 PyObject *filter_list_run(PyObject *data,
                           compiled_filter_t * const *compiled,
                           Py_ssize_t nfilters, bool shortcircuit,
-                          bool has_model, fl_state_t *state);
+                          PyObject *model, fl_state_t *state);
 bool match_item(PyObject *item, compiled_filter_t * const *compiled,
-                Py_ssize_t nfilters, bool has_model, fl_state_t *state,
+                Py_ssize_t nfilters, PyObject *model, fl_state_t *state,
                 bool *matchp);
 
 /* filter_options.c */
