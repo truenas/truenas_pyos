@@ -42,9 +42,9 @@ from truenas_pyfilter import (
 # ── Convenience wrapper ───────────────────────────────────────────────────────
 
 
-def fl(data, filters, **co_kwargs):
+def fl(data, filters, *, model=None, **co_kwargs):
     """Compile filters + options and run tnfilter. Returns the result list."""
-    cf = compile_filters(filters or [])
+    cf = compile_filters(filters or [], model=model)
     co = compile_options(**co_kwargs)
     return tnfilter(data, filters=cf, options=co)
 

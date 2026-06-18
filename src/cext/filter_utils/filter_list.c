@@ -338,11 +338,368 @@ free_cf_array(compiled_filter_t **arr, Py_ssize_t n)
 }
 
 /*
+ * Find a pydantic model class inside an annotation, descending through
+ * generic arguments (list[X], Optional[X] == Union[X, None], dict[K, V], ...).
+ *
+ * On success returns 0 and sets *out to a new reference to the model class, or
+ * to NULL if the annotation contains no model.  Returns -1 on error.
+ */
+static int
+unwrap_model_annotation(PyObject *ann, fl_state_t *state, int depth,
+                        PyObject **out)
+{
+    PyObject *args = NULL;
+    Py_ssize_t n;
+    Py_ssize_t i;
+
+    *out = NULL;
+    if (ann == NULL || ann == Py_None || depth > FILTER_MAX_DEPTH)
+        return 0;
+
+    if (PyType_Check(ann) &&
+        PyObject_HasAttr(ann, state->pydantic_fields_str)) {
+        *out = Py_NewRef(ann);
+        return 0;
+    }
+
+    /* Descend into typing generics via __args__ (e.g. list[Inner]). */
+    args = PyObject_GetAttr(ann, state->args_str);
+    if (!args) {
+        if (!PyErr_ExceptionMatches(PyExc_AttributeError))
+            return -1;
+        PyErr_Clear();
+        return 0;
+    }
+    if (!PyTuple_Check(args)) {
+        Py_DECREF(args);
+        return 0;
+    }
+
+    n = PyTuple_GET_SIZE(args);
+    for (i = 0; i < n; i++) {
+        if (unwrap_model_annotation(PyTuple_GET_ITEM(args, i), state,
+                                    depth + 1, out) < 0) {
+            Py_DECREF(args);
+            return -1;
+        }
+        if (*out) {
+            Py_DECREF(args);
+            return 0;
+        }
+    }
+    Py_DECREF(args);
+    return 0;
+}
+
+/*
+ * Locate the field of `fields` (a model_fields dict: name -> FieldInfo) whose
+ * alias equals `key`, or, failing that, whose name equals `key`.
+ *
+ * Returns 1 and sets *out_name / *out_fi to borrowed references (valid while
+ * `fields` is alive) on a match, 0 if no field matches, -1 on error.
+ */
+static int
+find_field_by_alias(PyObject *fields, PyObject *key, fl_state_t *state,
+                    PyObject **out_name, PyObject **out_fi)
+{
+    PyObject *fname = NULL;
+    PyObject *finfo = NULL;
+    PyObject *alias = NULL;
+    Py_ssize_t pos = 0;
+    int eq;
+
+    *out_name = NULL;
+    *out_fi = NULL;
+
+    while (PyDict_Next(fields, &pos, &fname, &finfo)) {
+        alias = PyObject_GetAttr(finfo, state->alias_str);
+        if (!alias)
+            return -1;
+        if (alias == Py_None) {
+            Py_DECREF(alias);
+            continue;
+        }
+        eq = PyObject_RichCompareBool(alias, key, Py_EQ);
+        Py_DECREF(alias);
+        if (eq < 0)
+            return -1;
+        if (eq) {
+            *out_name = fname;
+            *out_fi = finfo;
+            return 1;
+        }
+    }
+
+    /* No alias matched: accept a direct attribute-name match. */
+    finfo = PyDict_GetItemWithError(fields, key);
+    if (finfo) {
+        *out_name = key;
+        *out_fi = finfo;
+        return 1;
+    }
+    if (PyErr_Occurred())
+        return -1;
+    return 0;
+}
+
+/*
+ * Return 1 if `model`'s config sets extra='allow' (so instances may carry
+ * fields outside model_fields), 0 otherwise, -1 on error.
+ */
+static int
+model_allows_extra(PyObject *model)
+{
+    PyObject *config = NULL;
+    PyObject *extra = NULL; /* borrowed */
+    int result = 0;
+
+    config = PyObject_GetAttrString(model, "model_config");
+    if (!config) {
+        if (!PyErr_ExceptionMatches(PyExc_AttributeError))
+            return -1;
+        PyErr_Clear();
+        return 0;
+    }
+    if (PyDict_Check(config)) {
+        extra = PyDict_GetItemString(config, "extra"); /* borrowed, NULL if absent */
+        if (extra != NULL)
+            result = (PyUnicode_Check(extra) &&
+                      PyUnicode_CompareWithASCIIString(extra, "allow") == 0);
+    }
+    Py_DECREF(config);
+    return result;
+}
+
+/*
+ * Set a ValueError reporting that `key` is not a field or alias of `model`.
+ */
+static void
+raise_unknown_field(PyObject *key, PyObject *model)
+{
+    PyObject *name = PyObject_GetAttrString(model, "__name__");
+
+    if (!name) {
+        PyErr_Clear();
+        PyErr_Format(PyExc_ValueError,
+                     "%R is not a field or alias of the model", key);
+        return;
+    }
+    PyErr_Format(PyExc_ValueError,
+                 "%R is not a field or alias of model %U", key, name);
+    Py_DECREF(name);
+}
+
+/*
+ * Rewrite each path component of a just-split filter path from a pydantic
+ * field *alias* to the corresponding *attribute name*, descending into nested
+ * models as the path descends.  Runs once per filter term at compile time, so
+ * the per-item hot loop only ever sees resolved attribute names.
+ *
+ * A named component that does not resolve against a known model raises
+ * ValueError (it is almost certainly a typo), unless that model allows extra
+ * fields (extra='allow'), in which case it is left as-is and descent stops.
+ * Wildcards and list indices are left unchanged.  Once descent leaves the
+ * model graph (a field typed as a dict, Any, or other non-model) the remaining
+ * tail is also left as-is.  `model` must be a pydantic model class.  Returns 0
+ * on success, -1 on error (exception set).
+ */
+static int
+resolve_alias_path(path_part_t *parts, Py_ssize_t nparts, PyObject *model,
+                   fl_state_t *state)
+{
+    PyObject *cur_model = Py_NewRef(model);
+    Py_ssize_t i;
+    int rc = -1;
+
+    for (i = 0; i < nparts; i++) {
+        path_part_t *pp = &parts[i];
+        PyObject *fields = NULL;
+        PyObject *matched_name = NULL; /* borrowed from fields */
+        PyObject *matched_fi = NULL;   /* borrowed from fields */
+        PyObject *newkey = NULL;
+        PyObject *ann = NULL;
+        PyObject *next_model = NULL;
+        int found;
+
+        if (cur_model == NULL)
+            break; /* cannot descend further; leave the tail untouched */
+
+        /* Wildcards and list indices keep their key and the current model
+         * (which is already the element model for list[...] fields). */
+        if (pp->is_wildcard || pp->is_digit)
+            continue;
+
+        fields = PyObject_GetAttr(cur_model, state->model_fields_str);
+        if (!fields)
+            goto done;
+        if (!PyDict_Check(fields)) {
+            Py_DECREF(fields);
+            Py_CLEAR(cur_model);
+            break;
+        }
+
+        found = find_field_by_alias(fields, pp->key, state,
+                                    &matched_name, &matched_fi);
+        if (found < 0) {
+            Py_DECREF(fields);
+            goto done;
+        }
+        if (!found) {
+            int allow_extra = model_allows_extra(cur_model);
+
+            Py_DECREF(fields);
+            if (allow_extra < 0)
+                goto done;
+            if (!allow_extra) {
+                /* Strict model: an unknown alias/field is a bug -> raise. */
+                raise_unknown_field(pp->key, cur_model);
+                goto done;
+            }
+            /* extra='allow': may be a runtime extra field; cannot validate or
+             * descend, so leave this component and the tail untouched. */
+            Py_CLEAR(cur_model);
+            break;
+        }
+
+        /* Take owned references out of `fields` before releasing it. */
+        newkey = Py_NewRef(matched_name);
+        ann = PyObject_GetAttr(matched_fi, state->annotation_str);
+        Py_DECREF(fields);
+        if (!ann) {
+            Py_DECREF(newkey);
+            goto done;
+        }
+
+        /* Rewrite the component to the attribute name (re-init normalises
+         * key_c and the wildcard/digit flags). */
+        Py_DECREF(pp->key);
+        if (init_path_part(pp, newkey) < 0) { /* steals newkey on success */
+            Py_DECREF(newkey);
+            Py_DECREF(ann);
+            /* pp->key is now stale; point it at the empty string so later
+             * cleanup (free_cf) has a valid object to DECREF. */
+            pp->key = Py_NewRef(state->empty_str);
+            pp->key_c = "";
+            goto done;
+        }
+
+        /* Descend into the field's (possibly nested) model for the next part. */
+        if (unwrap_model_annotation(ann, state, 0, &next_model) < 0) {
+            Py_DECREF(ann);
+            goto done;
+        }
+        Py_DECREF(ann);
+        Py_SETREF(cur_model, next_model); /* next_model may be NULL */
+    }
+
+    rc = 0;
+done:
+    Py_XDECREF(cur_model);
+    return rc;
+}
+
+/*
+ * Alias-resolution variant for the select/order_by key representation
+ * (parallel keys[]/key_indices[] arrays produced by opt_split_keys in
+ * filter_options.c).  Each named component is rewritten in place from a
+ * pydantic field *alias* to its attribute name, descending into nested
+ * models as the path descends — the same semantics as resolve_alias_path():
+ * numeric list indices (key_indices[i] >= 0) and wildcards keep their key and
+ * the current model; an unknown component raises ValueError unless the model
+ * allows extra fields, in which case it (and the tail) are left unchanged;
+ * once descent leaves the model graph the tail is left unchanged.  A rewritten
+ * component is never a numeric index, so its key_indices entry becomes -1.
+ * `model` must be a pydantic model class.  Returns 0 on success, -1 on error.
+ */
+int
+resolve_alias_keys(PyObject **keys, Py_ssize_t *key_indices, Py_ssize_t nkeys,
+                   PyObject *model, fl_state_t *state)
+{
+    PyObject *cur_model = Py_NewRef(model);
+    Py_ssize_t i;
+    int rc = -1;
+
+    for (i = 0; i < nkeys; i++) {
+        PyObject *fields = NULL;
+        PyObject *matched_name = NULL; /* borrowed from fields */
+        PyObject *matched_fi = NULL;   /* borrowed from fields */
+        PyObject *ann = NULL;
+        PyObject *next_model = NULL;
+        int found;
+
+        if (cur_model == NULL)
+            break; /* cannot descend further; leave the tail untouched */
+
+        /* Numeric list index or wildcard: keep the key and the current model
+         * (already the element model for list[...] fields). */
+        if (key_indices[i] >= 0 ||
+            PyUnicode_CompareWithASCIIString(keys[i], "*") == 0)
+            continue;
+
+        fields = PyObject_GetAttr(cur_model, state->model_fields_str);
+        if (!fields)
+            goto done;
+        if (!PyDict_Check(fields)) {
+            Py_DECREF(fields);
+            Py_CLEAR(cur_model);
+            break;
+        }
+
+        found = find_field_by_alias(fields, keys[i], state,
+                                    &matched_name, &matched_fi);
+        if (found < 0) {
+            Py_DECREF(fields);
+            goto done;
+        }
+        if (!found) {
+            int allow_extra = model_allows_extra(cur_model);
+
+            Py_DECREF(fields);
+            if (allow_extra < 0)
+                goto done;
+            if (!allow_extra) {
+                /* Strict model: an unknown alias/field is a bug -> raise. */
+                raise_unknown_field(keys[i], cur_model);
+                goto done;
+            }
+            /* extra='allow': cannot validate or descend; leave the tail. */
+            Py_CLEAR(cur_model);
+            break;
+        }
+
+        /* Take owned references out of `fields` before releasing it. */
+        ann = PyObject_GetAttr(matched_fi, state->annotation_str);
+        if (!ann) {
+            Py_DECREF(fields);
+            goto done;
+        }
+        Py_SETREF(keys[i], Py_NewRef(matched_name)); /* new ref while alive */
+        key_indices[i] = -1;
+        Py_DECREF(fields);
+
+        /* Descend into the field's (possibly nested) model for the next part. */
+        if (unwrap_model_annotation(ann, state, 0, &next_model) < 0) {
+            Py_DECREF(ann);
+            goto done;
+        }
+        Py_DECREF(ann);
+        Py_SETREF(cur_model, next_model); /* next_model may be NULL */
+    }
+
+    rc = 0;
+done:
+    Py_XDECREF(cur_model);
+    return rc;
+}
+
+/*
  * Compile a simple [name, op, value] filter into a simple_filter_t.
- * `f` may be a list or tuple of length 3.
+ * `f` may be a list or tuple of length 3.  When `model` is non-NULL it is a
+ * pydantic model class used to resolve alias path components to attribute
+ * names at compile time.
  */
 static compiled_filter_t *
-compile_simple(PyObject *f, fl_state_t *state)
+compile_simple(PyObject *f, fl_state_t *state, PyObject *model)
 {
     PyObject *name_obj = NULL;
     PyObject *op_obj = NULL;
@@ -404,6 +761,15 @@ compile_simple(PyObject *f, fl_state_t *state)
         return NULL;
     }
 
+    /* Resolve pydantic field aliases -> attribute names once, here, so the
+     * per-item loop only ever traverses attribute names. */
+    if (model != NULL && model != Py_None) {
+        if (resolve_alias_path(sf->parts, sf->nparts, model, state) < 0) {
+            free_cf(cf);
+            return NULL;
+        }
+    }
+
     /* Pre-fold comparison value for CI operators */
     if (ci) {
         sf->value_ci = c_casefold(sf->value, state->casefold_str);
@@ -441,7 +807,8 @@ compile_simple(PyObject *f, fl_state_t *state)
  * Returns a new CF_AND node, or NULL on error (exception set).
  */
 static compiled_filter_t *
-compile_and_branch(PyObject *branch, fl_state_t *state, int depth)
+compile_and_branch(PyObject *branch, fl_state_t *state, int depth,
+                   PyObject *model)
 {
     Py_ssize_t nsubs;
     compiled_filter_t *and_cf = NULL;
@@ -472,7 +839,7 @@ compile_and_branch(PyObject *branch, fl_state_t *state, int depth)
             free_cf(and_cf);
             return NULL;
         }
-        and_cf->compound.ch[j] = compile_filter(sub, state, depth + 1);
+        and_cf->compound.ch[j] = compile_filter(sub, state, depth + 1, model);
         Py_DECREF(sub);
         if (!and_cf->compound.ch[j]) {
             /* Record how many children were compiled so free_cf releases them. */
@@ -498,7 +865,7 @@ compile_and_branch(PyObject *branch, fl_state_t *state, int depth)
  *   - a conjunction (AND) when branch[0] is a list/tuple (delegate to compile_and_branch)
  */
 compiled_filter_t *
-compile_filter(PyObject *f, fl_state_t *state, int depth)
+compile_filter(PyObject *f, fl_state_t *state, int depth, PyObject *model)
 {
     Py_ssize_t flen;
     PyObject *tag = NULL;
@@ -523,7 +890,7 @@ compile_filter(PyObject *f, fl_state_t *state, int depth)
 
     /* len-3 -> simple leaf */
     if (flen == 3)
-        return compile_simple(f, state);
+        return compile_simple(f, state, model);
 
     if (flen != 2) {
         PyErr_Format(PyExc_ValueError,
@@ -588,9 +955,9 @@ compile_filter(PyObject *f, fl_state_t *state, int depth)
         Py_DECREF(branch0);
 
         if (is_conjunction)
-            child = compile_and_branch(branch, state, depth);
+            child = compile_and_branch(branch, state, depth, model);
         else
-            child = compile_filter(branch, state, depth + 1);
+            child = compile_filter(branch, state, depth + 1, model);
 
         Py_DECREF(branch);
 
@@ -761,6 +1128,31 @@ apply_op(const simple_filter_t *sf, PyObject *val, fl_state_t *state)
 }
 
 /*
+ * Return 1 if `tp` is a pydantic v2 model class, 0 otherwise.
+ *
+ * pydantic v2 model classes carry a __pydantic_fields__ class attribute; its
+ * presence is used as the marker.  The (type -> verdict) result is memoised in
+ * a single-entry inline cache on the module state, keyed by type identity, so
+ * the attribute probe runs at most once per distinct type per filter run.
+ */
+static int
+fl_type_is_pydantic(PyTypeObject *tp, fl_state_t *state)
+{
+    if (tp == state->pyd_cache_type)
+        return state->pyd_cache_verdict;
+
+    /*
+     * _PyType_Lookup walks the type's MRO directly (no instance-dict or
+     * descriptor machinery), returns a borrowed ref, and never raises, so it
+     * is both cheaper than PyObject_HasAttr and safe to call on the hot path.
+     */
+    state->pyd_cache_verdict =
+        (_PyType_Lookup(tp, state->pydantic_fields_str) != NULL);
+    state->pyd_cache_type = tp;
+    return state->pyd_cache_verdict;
+}
+
+/*
  * Evaluate a simple filter against `item`, starting path traversal at
  * parts[start].
  *
@@ -791,6 +1183,7 @@ eval_simple_from(PyObject *item, const simple_filter_t *sf,
     int result;
     Py_ssize_t slen;
     PyObject *v = NULL;
+    PyObject **dictptr = NULL;
 
     /* -- ultra-fast path: single-level exact-dict lookup ---------------------- */
     if (start == 0 && nparts == 1 && PyDict_CheckExact(item)) {
@@ -871,7 +1264,39 @@ eval_simple_from(PyObject *item, const simple_filter_t *sf,
 
         } else {
             /*
-             * Non-dict, non-list: try getattr for custom objects (NamedTuple,
+             * Non-dict, non-list object.
+             *
+             * Pydantic fast path: pydantic v2 stores field values in the
+             * instance __dict__ under the attribute name, does not override
+             * __getattribute__, and does not expose stored fields as data
+             * descriptors -- so a present __dict__ entry is identical to the
+             * getattr result.  Reading it directly avoids the per-access
+             * __getattr__-hook wrapper pydantic installs as tp_getattro
+             * (measured ~2.4x cheaper than getattr).  A miss (computed_field,
+             * model_extra, private or unset field) falls through to the
+             * getattr path below, which stays fully correct for any object.
+             */
+            if (fl_type_is_pydantic(Py_TYPE(cur), state)) {
+                dictptr = _PyObject_GetDictPtr(cur);
+                if (dictptr && *dictptr) {
+                    v = PyDict_GetItemWithError(*dictptr, pp->key);
+                    if (v) {
+                        /* v borrowed from cur's __dict__; same ownership
+                         * dance as the exact-dict branch above. */
+                        if (cur_owned)
+                            Py_SETREF(cur_owned, Py_NewRef(v));
+                        cur = v;
+                        continue;
+                    }
+                    if (PyErr_Occurred()) {
+                        Py_XDECREF(cur_owned);
+                        return -1;
+                    }
+                }
+            }
+
+            /*
+             * General fallback: try getattr for custom objects (NamedTuple,
              * dataclass, etc.).  If the attribute does not exist, mirror
              * Python get_impl semantics: treat the current value as the leaf
              * and apply the operator directly, ignoring remaining path parts.
@@ -945,12 +1370,57 @@ eval_filter(PyObject *item, const compiled_filter_t *cf, fl_state_t *state,
  * =============================================================================== */
 
 /*
+ * Per-item model guard, shared by filter_list_run() and match_item().
+ *
+ * A filter's field paths are alias-resolved against the model= passed at
+ * compile time, so:
+ *   - model is None: a pydantic model instance can't be filtered safely
+ *     (paths were never alias-resolved) -> refuse it.
+ *   - model is a class: a pydantic instance must be of exactly that class
+ *     (a subclass may redefine aliases, so its paths could misresolve) ->
+ *     refuse any other pydantic class.
+ * Non-model items (dicts, dataclasses, plain objects) are always filterable;
+ * `model` only constrains pydantic instances.  `fn` names the caller for the
+ * error message.  Returns 1 if the item may be filtered, 0 with an exception
+ * set otherwise.
+ */
+static int
+check_item_model(PyObject *item, PyObject *model, fl_state_t *state,
+                 const char *fn)
+{
+    if (model == Py_None) {
+        if (fl_type_is_pydantic(Py_TYPE(item), state)) {
+            PyErr_Format(PyExc_TypeError,
+                "%s: filtering pydantic model instances requires a filter "
+                "compiled with model= (compile_filters(..., model=...))", fn);
+            return 0;
+        }
+        return 1;
+    }
+
+    /* Must be exactly the compiled model class: one pointer compare. */
+    if (Py_TYPE(item) == (PyTypeObject *)model)
+        return 1;
+
+    /* A different pydantic class (subclasses included) is the footgun we
+     * refuse; dicts/dataclasses/other remain filterable as-is. */
+    if (fl_type_is_pydantic(Py_TYPE(item), state)) {
+        PyErr_Format(PyExc_TypeError,
+            "%s: item of type %.200s is not the compiled model %.200s",
+            fn, Py_TYPE(item)->tp_name, ((PyTypeObject *)model)->tp_name);
+        return 0;
+    }
+    return 1;
+}
+
+/*
  * Pure evaluation loop: iterate `data`, append items matching all `compiled`
  * filters to a new list, and return it.  Does not own or free `compiled`.
  */
 PyObject *
 filter_list_run(PyObject *data, compiled_filter_t * const *compiled,
-                Py_ssize_t nfilters, bool shortcircuit, fl_state_t *state)
+                Py_ssize_t nfilters, bool shortcircuit, PyObject *model,
+                fl_state_t *state)
 {
     PyObject *result = NULL;
     PyObject *iter = NULL;
@@ -958,6 +1428,10 @@ filter_list_run(PyObject *data, compiled_filter_t * const *compiled,
     Py_ssize_t i;
     int match;
     int r;
+
+    /* Reset the pydantic inline cache: borrowed type pointers must not
+     * survive across runs (see fl_state_t). */
+    state->pyd_cache_type = NULL;
 
     result = PyList_New(0);
     if (!result)
@@ -970,6 +1444,13 @@ filter_list_run(PyObject *data, compiled_filter_t * const *compiled,
     }
 
     while ((item = PyIter_Next(iter)) != NULL) {
+        if (!check_item_model(item, model, state, "tnfilter")) {
+            Py_DECREF(item);
+            Py_DECREF(iter);
+            Py_DECREF(result);
+            return NULL;
+        }
+
         match = 1;
 
         for (i = 0; i < nfilters; i++) {
@@ -1018,10 +1499,19 @@ filter_list_run(PyObject *data, compiled_filter_t * const *compiled,
 
 bool
 match_item(PyObject *item, compiled_filter_t * const *compiled,
-           Py_ssize_t nfilters, fl_state_t *state, bool *matchp)
+           Py_ssize_t nfilters, PyObject *model, fl_state_t *state,
+           bool *matchp)
 {
     Py_ssize_t i;
     int r;
+
+    /* Reset the pydantic inline cache (see fl_state_t). */
+    state->pyd_cache_type = NULL;
+
+    /* See check_item_model(): the item must be compatible with the compiled
+     * model (instance of it, or a non-model type). */
+    if (!check_item_model(item, model, state, "match"))
+        return false;
 
     for (i = 0; i < nfilters; i++) {
         r = eval_filter(item, compiled[i], state, 0);
@@ -1044,7 +1534,8 @@ static void
 compiled_filters_dealloc(CompiledFiltersObject *self)
 {
     free_cf_array(self->filters, self->nfilters);
-    Py_XDECREF(self->repr_str);
+    Py_CLEAR(self->model);
+    Py_CLEAR(self->repr_str);
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -1073,7 +1564,10 @@ compiled_options_dealloc(CompiledOptionsObject *self)
 {
     free_select_specs(self->select_specs, self->nselect);
     free_order_specs(self->order_specs, self->norder);
-    Py_XDECREF(self->repr_str);
+    Py_CLEAR(self->repr_str);
+    Py_CLEAR(self->arg_select);
+    Py_CLEAR(self->arg_order_by);
+    Py_CLEAR(self->model);
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -1083,6 +1577,18 @@ compiled_options_repr(CompiledOptionsObject *self)
     return PyUnicode_FromFormat("CompiledOptions(%U)", self->repr_str);
 }
 
+/* The original arguments passed to compile_options(), exposed read-only. */
+static PyMemberDef compiled_options_members[] = {
+    {"get", Py_T_BOOL, offsetof(CompiledOptionsObject, get_flag), Py_READONLY},
+    {"count", Py_T_BOOL, offsetof(CompiledOptionsObject, count_flag), Py_READONLY},
+    {"select", Py_T_OBJECT_EX, offsetof(CompiledOptionsObject, arg_select), Py_READONLY},
+    {"order_by", Py_T_OBJECT_EX, offsetof(CompiledOptionsObject, arg_order_by), Py_READONLY},
+    {"offset", Py_T_PYSSIZET, offsetof(CompiledOptionsObject, offset), Py_READONLY},
+    {"limit", Py_T_PYSSIZET, offsetof(CompiledOptionsObject, limit), Py_READONLY},
+    {"model", Py_T_OBJECT_EX, offsetof(CompiledOptionsObject, model), Py_READONLY},
+    {NULL}
+};
+
 PyTypeObject CompiledOptions_Type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name = "truenas_pyfilter.CompiledOptions",
@@ -1091,4 +1597,5 @@ PyTypeObject CompiledOptions_Type = {
     .tp_repr = (reprfunc)compiled_options_repr,
     .tp_flags = Py_TPFLAGS_DEFAULT,
     .tp_doc = PyDoc_STR("Pre-compiled options for use with tnfilter()."),
+    .tp_members = compiled_options_members,
 };

@@ -35,6 +35,13 @@ class CompiledFilters:
 @final
 class CompiledOptions:
     """Pre-compiled options produced by compile_options()."""
+    get: bool
+    count: bool
+    select: list[str | list[Any]]
+    order_by: list[str]
+    offset: int
+    limit: int
+    model: type[Any] | None
     def __repr__(self) -> str: ...
 
 
@@ -67,8 +74,19 @@ def tnfilter(
     ...
 
 
-def compile_filters(filters: list[Any]) -> CompiledFilters:
-    """Pre-compile a query-filters list into a CompiledFilters object."""
+def compile_filters(
+    filters: list[Any],
+    *,
+    model: type[Any] | None = None,
+) -> CompiledFilters:
+    """Pre-compile a query-filters list into a CompiledFilters object.
+
+    Pass ``model`` (the pydantic model class) when the compiled filter will be
+    run against instances of that model. It is required to filter pydantic
+    models: a filter compiled without ``model`` raises ``TypeError`` if handed
+    a model instance. Field aliases are resolved to attribute names at compile
+    time.
+    """
     ...
 
 
@@ -80,6 +98,13 @@ def compile_options(
     order_by: list[str] | None = None,
     offset: int = 0,
     limit: int = 0,
+    model: type[Any] | None = None,
 ) -> CompiledOptions:
-    """Pre-parse query-options into a CompiledOptions object."""
+    """Pre-parse query-options into a CompiledOptions object.
+
+    Pass ``model`` (the pydantic model class) when the options will be applied
+    to instances of that model: ``select``/``order_by`` field aliases are
+    resolved to attribute names at compile time, the same way
+    ``compile_filters`` resolves filter paths.
+    """
     ...

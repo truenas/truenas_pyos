@@ -42,7 +42,7 @@ tf.FILTER_ORDER_REVERSE_PREFIX      # "-"
 
 ---
 
-## `compile_filters(filters)`
+## `compile_filters(filters, *, model=None)`
 
 Pre-compile a query-filters list into a `CompiledFilters` object.
 
@@ -106,6 +106,14 @@ filters = truenas_pyfilter.compile_filters([
   ])
   ```
 
+- `model` (type | None): Pass the pydantic model class here when the compiled
+  filter will be run (via `tnfilter`/`match`) against instances of that model.
+  **Keyword-only.** This is **required** to filter pydantic models: a compiled
+  filter without `model` raises `TypeError` if handed a model instance. Filter
+  field paths written as aliases are resolved to attribute names. Must be a
+  pydantic model class, else `TypeError`. Resolves **filter** paths only — pass
+  the same `model=` to `compile_options` to resolve `order_by`/`select` aliases.
+
 **Returns:** `CompiledFilters` — opaque compiled tree, pass directly to
 `tnfilter()`. `repr()` shows the original filters list.
 
@@ -147,6 +155,13 @@ options = truenas_pyfilter.compile_options(
   Use the `FILTER_ORDER_*` module constants instead of raw prefix strings.
 - `offset` (int): Skip the first N matched items. Default: `0`.
 - `limit` (int): Cap results at N items (`0` = no limit). Default: `0`.
+- `model` (type | None): Pass the pydantic model class when the options will
+  be applied to instances of that model. **Keyword-only.** The `select` and
+  `order_by` field paths are then resolved from field **alias** to attribute
+  name at compile time — the same contract `compile_filters` applies to filter
+  paths (unknown field on a strict model raises `ValueError`; `extra='allow'`
+  leaves it unchanged). Must be a pydantic model class, else `TypeError`.
+  Default: `None`.
 
 **Returns:** `CompiledOptions` — opaque options object, pass directly to
 `tnfilter()`. `repr()` shows the kwargs as passed.
@@ -230,3 +245,23 @@ Dotted notation traverses nested dicts: `"a.b.c"`. Escape a literal dot
 with a backslash: `"a\\.b"`. Use integer strings for list indexing:
 `"items.0.name"`. Use `*` as a wildcard to match any key or list element:
 `"tags.*.value"`.
+
+### Item types and field access
+
+Each path component is resolved against the current value by type:
+
+- **dict** — `dict[key]`.
+- **list / tuple** — integer index or `*` wildcard; a non-numeric component
+  falls back to `getattr` (supports `NamedTuple` fields).
+- **any other object** — `getattr(obj, name)`. This makes dataclasses,
+  `NamedTuple`s and arbitrary objects filterable with no per-item conversion.
+
+A missing dict key or attribute means "no match" for that filter.
+
+**Pydantic models** are filtered directly, including `computed_field`
+properties, `extra='allow'` fields, `PrivateAttr`s, and unset fields. The
+filter **must** have been compiled with `model=` (see
+`compile_filters`); passing a model instance to a filter compiled without it
+raises `TypeError`. To filter by field **alias** pass `model=` to
+`compile_filters` (which resolves aliases at compile time); pass the same
+`model=` to `compile_options` to resolve `order_by`/`select` aliases.
