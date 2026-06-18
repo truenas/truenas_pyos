@@ -138,6 +138,14 @@ def test_pydantic_filtering_without_model_is_rejected():
         match(data[0], filters=cf)
 
 
+def test_pydantic_empty_filter_list_bypasses_model_guard():
+    data = _models()
+    cf = compile_filters([])
+    co = compile_options(model=type(data[0]))
+    assert tnfilter(data, filters=cf, options=co) == data
+    assert match(data[0], filters=cf) is data[0]
+
+
 def test_pydantic_wrong_model_instance_is_rejected():
     # A filter compiled for model A, run over instances of a *different* model
     # B, must refuse rather than silently misresolving A's alias paths against
