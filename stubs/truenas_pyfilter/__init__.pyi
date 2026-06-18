@@ -54,8 +54,9 @@ def match(
     """Test whether a single item matches all compiled filters.
 
     Returns None if the item does not match. If it matches and options
-    contains a select spec, returns a new projected dict. Otherwise
-    returns the original item unchanged.
+    contains a select spec, returns a new projected dict -- or a model
+    instance built via ``model_construct`` when the options carry a
+    ``model``. Otherwise returns the original item unchanged.
     """
     ...
 
@@ -105,6 +106,7 @@ def compile_options(
     Pass ``model`` (the pydantic model class) when the options will be applied
     to instances of that model: ``select``/``order_by`` field aliases are
     resolved to attribute names at compile time, the same way
-    ``compile_filters`` resolves filter paths.
+    ``compile_filters`` resolves filter paths. With a ``model``, ``select``
+    projections are returned as ``model_construct`` instances instead of dicts.
     """
     ...

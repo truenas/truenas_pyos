@@ -140,8 +140,10 @@ options = truenas_pyfilter.compile_options(
 - `select` (list[str | list] | None): Fields to project from each result
   entry. Each element is a dotted field path or `[src_path, dest_name]`
   for renaming. Default: `None` (return full items). When `select` is
-  specified the output list always contains `dict` items, regardless of
-  the input item type.
+  specified the output list contains `dict` items, regardless of the input
+  item type — unless `model` is also given, in which case each projected dict
+  is passed to `model.model_construct()` and the output contains (partial)
+  model instances instead.
 - `order_by` (list[str] | None): Ordering directives. Prefixes may be
   combined in the order shown:
   - `nulls_first:` — place `None`/absent values before non-`None` values.
@@ -160,8 +162,9 @@ options = truenas_pyfilter.compile_options(
   `order_by` field paths are then resolved from field **alias** to attribute
   name at compile time — the same contract `compile_filters` applies to filter
   paths (unknown field on a strict model raises `ValueError`; `extra='allow'`
-  leaves it unchanged). Must be a pydantic model class, else `TypeError`.
-  Default: `None`.
+  leaves it unchanged). It also turns `select` projections into model instances
+  via `model.model_construct()` (see `select`). Must be a pydantic model class,
+  else `TypeError`. Default: `None`.
 
 **Returns:** `CompiledOptions` — opaque options object, pass directly to
 `tnfilter()`. `repr()` shows the kwargs as passed.
@@ -205,7 +208,7 @@ truenas_pyfilter.match({"uid": 1000, "name": "alice"}, filters=filters, options=
 |---|---|
 | Item does not match | `None` |
 | Item matches, no `select` in options | Original `item` (unchanged) |
-| Item matches, `select` in options | New projected `dict` |
+| Item matches, `select` in options | New projected `dict` (or a `model_construct` instance when `options` carry a `model`) |
 
 ---
 
