@@ -631,13 +631,43 @@ done:
 }
 
 /*
- * Apply select projection to a single item.
- * Returns a new dict, or NULL on error (exception set).
+ * Build model.model_construct(**entry), stealing nothing.  The select keys were
+ * alias-resolved to field names at compile time, which is exactly what
+ * model_construct expects, so no re-keying is needed.  Returns a new model
+ * instance, or NULL on error (exception set).
+ */
+static PyObject *
+opt_select_build_model(PyObject *entry, PyObject *model, fl_state_t *state)
+{
+    PyObject *method = NULL;
+    PyObject *empty = NULL;
+    PyObject *result = NULL;
+
+    method = PyObject_GetAttr(model, state->model_construct_str);
+    if (!method)
+        return NULL;
+    empty = PyTuple_New(0);
+    if (!empty) {
+        Py_DECREF(method);
+        return NULL;
+    }
+    result = PyObject_Call(method, empty, entry);
+    Py_DECREF(method);
+    Py_DECREF(empty);
+    return result;
+}
+
+/*
+ * Apply select projection to a single item.  With a model, the projected dict
+ * is passed to model.model_construct() and the resulting instance is returned;
+ * otherwise the dict itself is returned.  NULL on error (exception set).
  */
 PyObject *
-apply_select_item(PyObject *item, compiled_select_spec_t *specs, Py_ssize_t nspecs)
+apply_select_item(PyObject *item, compiled_select_spec_t *specs, Py_ssize_t nspecs,
+                  PyObject *model, fl_state_t *state)
 {
-    PyObject *entry;
+    PyObject *entry = NULL;
+    PyObject *obj = NULL;
     Py_ssize_t si;
 
     entry = PyDict_New();
@@ -651,15 +681,22 @@ apply_select_item(PyObject *item, compiled_select_spec_t *specs, Py_ssize_t nspe
         }
     }
 
+    if (model != NULL && model != Py_None) {
+        obj = opt_select_build_model(entry, model, state);
+        Py_DECREF(entry);
+        return obj;
+    }
+
     return entry;
 }
 
 /*
- * Apply select to every item in list.
- * Returns a new list of projected dicts, or NULL on error (exception set).
+ * Apply select to every item in list.  Returns a new list of projected dicts
+ * (or model instances when a model is set), or NULL on error (exception set).
  */
 PyObject *
-apply_select(PyObject *list, compiled_select_spec_t *specs, Py_ssize_t nspecs)
+apply_select(PyObject *list, compiled_select_spec_t *specs, Py_ssize_t nspecs,
+             PyObject *model, fl_state_t *state)
 {
     Py_ssize_t n = PyList_GET_SIZE(list);
     PyObject *result = NULL;
@@ -671,7 +708,8 @@ apply_select(PyObject *list, compiled_select_spec_t *specs, Py_ssize_t nspecs)
         return NULL;
 
     for (i = 0; i < n; i++) {
-        projected = apply_select_item(PyList_GET_ITEM(list, i), specs, nspecs);
+        projected = apply_select_item(PyList_GET_ITEM(list, i), specs, nspecs,
+                                      model, state);
         if (!projected) {
             Py_DECREF(result);
             return NULL;
@@ -908,14 +946,15 @@ apply_order(PyObject *list, compiled_order_spec_t *specs, Py_ssize_t nspecs)
  * =========================================================================== */
 
 PyObject *
-apply_options(PyObject *filtered, CompiledOptionsObject *co)
+apply_options(PyObject *filtered, CompiledOptionsObject *co, fl_state_t *state)
 {
     PyObject *rv = NULL;
     PyObject *tmp = NULL;
     Py_ssize_t n, start, end;
 
     if (co->nselect > 0) {
-        rv = apply_select(filtered, co->select_specs, co->nselect);
+        rv = apply_select(filtered, co->select_specs, co->nselect,
+                          co->model, state);
         if (!rv)
             return NULL;
     } else {

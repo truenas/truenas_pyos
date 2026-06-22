@@ -138,6 +138,14 @@ def test_pydantic_filtering_without_model_is_rejected():
         match(data[0], filters=cf)
 
 
+def test_pydantic_empty_filter_list_bypasses_model_guard():
+    data = _models()
+    cf = compile_filters([])
+    co = compile_options(model=type(data[0]))
+    assert tnfilter(data, filters=cf, options=co) == data
+    assert match(data[0], filters=cf) is data[0]
+
+
 def test_pydantic_wrong_model_instance_is_rejected():
     # A filter compiled for model A, run over instances of a *different* model
     # B, must refuse rather than silently misresolving A's alias paths against
@@ -183,6 +191,27 @@ def test_pydantic_correct_model_instance_is_accepted():
     item = A(nm="x")
     assert tnfilter([item], filters=cf, options=co) == [item]
     assert match(item, filters=cf) is item
+
+
+def test_pydantic_normalize_as_model_is_accepted():
+    # A model's __normalize_as__ variant (itself a pydantic model) is accepted
+    # alongside the compiled model; unrelated pydantic classes are still refused.
+    class Norm(pydantic.BaseModel):
+        age: int
+
+    class M(pydantic.BaseModel):
+        age: int
+        __normalize_as__ = Norm
+
+    class Other(pydantic.BaseModel):
+        age: int
+
+    cf = compile_filters([["age", ">", 20]], model=M)
+    co = compile_options()
+    assert tnfilter([M(age=30), Norm(age=40)], filters=cf, options=co) == [M(age=30), Norm(age=40)]
+    assert match(Norm(age=40), filters=cf) == Norm(age=40)
+    with pytest.raises(TypeError, match="not the compiled model M"):
+        tnfilter([Other(age=30)], filters=cf, options=co)
 
 
 def test_pydantic_wrong_model_in_mixed_list_is_rejected():
@@ -346,19 +375,23 @@ def test_options_model_order_by_reverse_nested_alias():
     assert [o.name for o in out] == ["bob", "alice"]
 
 
-def test_options_model_select_alias_projects_attribute_names():
+def test_options_model_select_alias_builds_model_instances():
+    # With a model, select builds model_construct() instances rather than dicts;
+    # only the projected fields are set (partial), the rest stay unset.
     Item, data = _aliased_models()
     out = _opts_run(Item, data, select=["userName", "years"])
-    assert out == [
-        {"name": "alice", "age": 30},
-        {"name": "bob", "age": 20},
-    ]
+    assert all(isinstance(o, Item) for o in out)
+    assert [(o.name, o.age) for o in out] == [("alice", 30), ("bob", 20)]
+    assert all(o.model_fields_set == {"name", "age"} for o in out)
 
 
 def test_options_model_select_nested_alias():
+    # model_construct does not coerce, so the nested projection is set as a plain
+    # dict on the (otherwise unset) model instance.
     Item, data = _aliased_models()
     out = _opts_run(Item, data, select=["nested.theVal"])
-    assert out == [{"inner": {"val": 1}}, {"inner": {"val": 2}}]
+    assert all(isinstance(o, Item) for o in out)
+    assert [o.inner for o in out] == [{"val": 1}, {"val": 2}]
 
 
 def test_options_model_unknown_order_by_alias_raises():
@@ -376,6 +409,27 @@ def test_options_model_unknown_select_alias_raises():
 def test_options_model_rejects_non_model():
     with pytest.raises(TypeError, match="pydantic model"):
         compile_options(order_by=["x"], model=int)
+
+
+def test_options_model_select_without_model_returns_dict():
+    # No model on the options: no alias resolution, so select reads the literal
+    # attribute name and projects to a plain dict.
+    Item, data = _aliased_models()
+    cf = compile_filters([], model=Item)
+    co = compile_options(select=["name"])
+    out = tnfilter(data, filters=cf, options=co)
+    assert out == [{"name": "alice"}, {"name": "bob"}]
+
+
+def test_match_model_select_builds_model_instance():
+    # match() with select + model returns a model instance, mirroring tnfilter.
+    Item, data = _aliased_models()
+    cf = compile_filters([["years", "=", 30]], model=Item)
+    co = compile_options(select=["userName"], model=Item)
+    out = match(data[0], filters=cf, options=co)
+    assert isinstance(out, Item)
+    assert out.name == "alice"
+    assert out.model_fields_set == {"name"}
 
 
 def test_options_model_none_is_noop():

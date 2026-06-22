@@ -284,7 +284,7 @@ py_tnfilter(PyObject *self, PyObject *args, PyObject *kwargs)
     if (!filtered)
         return NULL;
 
-    result = apply_options(filtered, co);
+    result = apply_options(filtered, co, state);
     Py_DECREF(filtered);
     return result;
 }
@@ -350,7 +350,8 @@ py_match(PyObject *self, PyObject *args, PyObject *kwargs)
         Py_RETURN_NONE;
 
     if (co && co->nselect > 0)
-        return apply_select_item(item, co->select_specs, co->nselect);
+        return apply_select_item(item, co->select_specs, co->nselect,
+                                 co->model, state);
 
     return Py_NewRef(item);
 }
@@ -495,6 +496,8 @@ truenas_pyfilter_traverse(PyObject *m, visitproc visit, void *arg)
     Py_VISIT(state->re_compile);
     Py_VISIT(state->empty_str);
     Py_VISIT(state->pydantic_fields_str);
+    Py_VISIT(state->normalize_as_str);
+    Py_VISIT(state->model_construct_str);
     Py_VISIT(state->model_fields_str);
     Py_VISIT(state->alias_str);
     Py_VISIT(state->annotation_str);
@@ -511,6 +514,8 @@ truenas_pyfilter_clear(PyObject *m)
     Py_CLEAR(state->re_compile);
     Py_CLEAR(state->empty_str);
     Py_CLEAR(state->pydantic_fields_str);
+    Py_CLEAR(state->normalize_as_str);
+    Py_CLEAR(state->model_construct_str);
     Py_CLEAR(state->model_fields_str);
     Py_CLEAR(state->alias_str);
     Py_CLEAR(state->annotation_str);
@@ -574,6 +579,12 @@ PyInit_truenas_pyfilter(void)
     /* Cache interned "__pydantic_fields__" for pydantic-model detection */
     state->pydantic_fields_str = PyUnicode_InternFromString("__pydantic_fields__");
     if (!state->pydantic_fields_str)
+        goto fail;
+    state->normalize_as_str = PyUnicode_InternFromString("__normalize_as__");
+    if (!state->normalize_as_str)
+        goto fail;
+    state->model_construct_str = PyUnicode_InternFromString("model_construct");
+    if (!state->model_construct_str)
         goto fail;
 
     /* Cache interned attribute names used for compile-time alias resolution */

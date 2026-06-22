@@ -1385,9 +1385,14 @@ eval_filter(PyObject *item, const compiled_filter_t *cf, fl_state_t *state,
  * set otherwise.
  */
 static int
-check_item_model(PyObject *item, PyObject *model, fl_state_t *state,
-                 const char *fn)
+check_item_model(PyObject *item, PyObject *model, Py_ssize_t nfilters,
+                 fl_state_t *state, const char *fn)
 {
+    PyObject *norm = NULL;
+
+    if (nfilters == 0)
+        return 1;
+
     if (model == Py_None) {
         if (fl_type_is_pydantic(Py_TYPE(item), state)) {
             PyErr_Format(PyExc_TypeError,
@@ -1400,6 +1405,12 @@ check_item_model(PyObject *item, PyObject *model, fl_state_t *state,
 
     /* Must be exactly the compiled model class: one pointer compare. */
     if (Py_TYPE(item) == (PyTypeObject *)model)
+        return 1;
+
+    /* A query_result_item model points at its parent model via __normalize_as__
+     * (also a pydantic model); instances of that parent are accepted too. */
+    norm = _PyType_Lookup((PyTypeObject *)model, state->normalize_as_str);
+    if (norm != NULL && Py_TYPE(item) == (PyTypeObject *)norm)
         return 1;
 
     /* A different pydantic class (subclasses included) is the footgun we
@@ -1444,7 +1455,7 @@ filter_list_run(PyObject *data, compiled_filter_t * const *compiled,
     }
 
     while ((item = PyIter_Next(iter)) != NULL) {
-        if (!check_item_model(item, model, state, "tnfilter")) {
+        if (!check_item_model(item, model, nfilters, state, "tnfilter")) {
             Py_DECREF(item);
             Py_DECREF(iter);
             Py_DECREF(result);
@@ -1510,7 +1521,7 @@ match_item(PyObject *item, compiled_filter_t * const *compiled,
 
     /* See check_item_model(): the item must be compatible with the compiled
      * model (instance of it, or a non-model type). */
-    if (!check_item_model(item, model, state, "match"))
+    if (!check_item_model(item, model, nfilters, state, "match"))
         return false;
 
     for (i = 0; i < nfilters; i++) {

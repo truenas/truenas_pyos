@@ -18,6 +18,8 @@ typedef struct {
     PyObject *re_compile;         /* re.compile callable           */
     PyObject *empty_str;          /* cached ""                     */
     PyObject *pydantic_fields_str; /* interned "__pydantic_fields__" */
+    PyObject *normalize_as_str;   /* interned "__normalize_as__"   */
+    PyObject *model_construct_str; /* interned "model_construct"    */
     /* interned attribute names used to resolve pydantic aliases at compile
      * time (see resolve_alias_path()); cold path, but reused per term. */
     PyObject *model_fields_str;   /* interned "model_fields"       */
@@ -176,11 +178,14 @@ int compile_order_specs(PyObject *order_by_val, PyObject *model,
                         fl_state_t *state,
                         compiled_order_spec_t **out_specs, Py_ssize_t *out_n);
 PyObject *apply_select_item(PyObject *item,
-                            compiled_select_spec_t *specs, Py_ssize_t nspecs);
+                            compiled_select_spec_t *specs, Py_ssize_t nspecs,
+                            PyObject *model, fl_state_t *state);
 PyObject *apply_select(PyObject *list,
-                       compiled_select_spec_t *specs, Py_ssize_t nspecs);
+                       compiled_select_spec_t *specs, Py_ssize_t nspecs,
+                       PyObject *model, fl_state_t *state);
 PyObject *apply_order(PyObject *list,
                       compiled_order_spec_t *specs, Py_ssize_t nspecs);
-PyObject *apply_options(PyObject *filtered, CompiledOptionsObject *co);
+PyObject *apply_options(PyObject *filtered, CompiledOptionsObject *co,
+                        fl_state_t *state);
 
 #endif /* FILTER_LIST_H */
