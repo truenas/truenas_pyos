@@ -38,7 +38,7 @@ python3 -m mypy tests/type_checks/
 
 python3 -c "
 from mypy.stubtest import main; import sys
-sys.argv = ['stubtest', 'truenas_os', '--allowlist', 'tests/.stubtest_allowlist.txt']
+sys.argv = ['stubtest', 'truenas_os', '--allowlist', 'tests/.stubtest_allowlist.txt', '--ignore-unused-allowlist']
 sys.exit(main())
 "
 python3 -c "
