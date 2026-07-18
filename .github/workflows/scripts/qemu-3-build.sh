@@ -6,6 +6,9 @@
 
 set -eu
 
+: "${KERNEL_APT_SNAPSHOT:?set by qemu-test.yml}"
+: "${KERNEL_DEB_VERSION:?set by qemu-test.yml}"
+
 echo "Building and installing truenas_pyos..."
 
 # Load VM info
@@ -39,19 +42,34 @@ rsync -az --exclude='.git' --exclude='debian/.debhelper' \
 
 # Install dependencies
 echo "Installing dependencies in VM..."
-ssh debian@$VM_IP bash -s <<'REMOTE_DEPS'
+ssh debian@$VM_IP \
+  "KERNEL_APT_SNAPSHOT='$KERNEL_APT_SNAPSHOT' KERNEL_DEB_VERSION='$KERNEL_DEB_VERSION' bash -s" <<'REMOTE_DEPS'
 set -eu
+: "${KERNEL_APT_SNAPSHOT:?}"
+: "${KERNEL_DEB_VERSION:?}"
 
-sudo apt-get update
-
-# 6.18 UAPI headers so the C extension compiles the full statmount() interface
-# (sb_source, uid/gid maps, ...) and the newer statx flags. Debian trixie ships
-# 6.12 UAPI; the runtime kernel may stay 6.12, in which case the extra fields
-# degrade to None at runtime.
-echo 'deb http://deb.debian.org/debian trixie-backports main' \
+# Pin the VM kernel to the last 6.18 that trixie-backports shipped: TrueNAS
+# runs 6.18 and OpenZFS 2.4 is undefined on a 7.x kernel, and 6.18 is what
+# populates the statmount sb_source / uid-gid-map fields the fs tests need.
+# Live trixie-backports now carries only 7.0.x, so pull 6.18 from a pinned
+# snapshot.debian.org view — its Release file has expired, so
+# [check-valid-until=no] accepts it; package integrity still comes from the
+# archive signatures.
+#
+# The cloud image already ships live trixie-backports in its default
+# debian.sources; two sources for one release make apt take the newest across
+# both (how live 7.0.x could beat the pin). Strip that suite so the snapshot is
+# the only trixie-backports source, and fail loudly if any other file has it.
+sudo sed -i 's/ trixie-backports\b//g' /etc/apt/sources.list.d/debian.sources
+echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/${KERNEL_APT_SNAPSHOT}/ trixie-backports main" \
   | sudo tee /etc/apt/sources.list.d/backports.list
+stray=$(grep -rl 'trixie-backports' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null \
+  | grep -v '/backports.list$' || true)
+if [ -n "$stray" ]; then
+  echo "ERROR: live trixie-backports still configured in: $stray"
+  exit 1
+fi
 sudo apt-get update
-sudo apt-get install -y -t trixie-backports linux-libc-dev
 
 sudo apt-get install -y \
   build-essential \
@@ -83,10 +101,30 @@ sudo apt-get install -y \
   python3-pydantic \
   python3-mypy \
   pybuild-plugin-pyproject \
-  linux-headers-amd64 \
   dkms \
   git \
   gdb
+
+# The pinned 6.18 kernel image + matching build headers (for the ZFS kmod).
+# GRUB boots the highest version on the reboot below. Install by EXACT version
+# — not `-t trixie-backports`, which selects by release name — and assert dpkg
+# agrees, so a drifted snapshot fails here rather than as a later ZFS or
+# statmount surprise.
+sudo apt-get install -y \
+  "linux-image-amd64=$KERNEL_DEB_VERSION" \
+  "linux-headers-amd64=$KERNEL_DEB_VERSION"
+got=$(dpkg-query -W -f='${Version}' linux-image-amd64)
+if [ "$got" != "$KERNEL_DEB_VERSION" ]; then
+  echo "ERROR: pinned kernel $KERNEL_DEB_VERSION but apt installed '$got'"
+  exit 1
+fi
+echo "Installed pinned kernel $got"
+
+# Matching 6.18 UAPI headers from the same (now sole) trixie-backports source,
+# so the C extension compiles the full statmount()/statx interface. `-t` avoids
+# hardcoding the linux-libc-dev version string; the snapshot is the only
+# backports source, so it resolves to the pinned release.
+sudo apt-get install -y -t trixie-backports linux-libc-dev
 REMOTE_DEPS
 
 # Reboot VM to boot into the newly installed kernel
@@ -129,9 +167,16 @@ for i in {1..60}; do
   sleep 5
 done
 
-# Verify VM is accessible and check kernel version
+# Verify VM is accessible and booted the pinned 6.18 kernel — fail loudly here
+# rather than silently testing on the cloud image's 6.12 kernel (where the
+# statmount sb_source / uid-gid-map fields are not populated).
 echo "Verifying new kernel is running..."
-ssh debian@$VM_IP "uname -r"
+booted=$(ssh debian@$VM_IP "uname -r")
+echo "Booted kernel: $booted"
+case "$booted" in
+  6.18.*) : ;;
+  *) echo "ERROR: expected a 6.18 kernel, got '$booted'"; exit 1 ;;
+esac
 
 # Now build ZFS and truenas_pyos
 echo "Building OpenZFS and truenas_pyos..."

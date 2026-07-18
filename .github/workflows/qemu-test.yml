@@ -13,6 +13,16 @@ jobs:
   qemu-test:
     name: Debian Trixie QEMU Test
     runs-on: ubuntu-24.04
+    env:
+      # TrueNAS ships the 6.18 kernel series and OpenZFS 2.4 is undefined on a
+      # 7.x kernel, so the VM is pinned to the last 6.18 that Debian
+      # trixie-backports ever shipped, taken from an immutable
+      # snapshot.debian.org view (live backports now carries only 7.0.x). This
+      # kernel populates the statmount sb_source / uid-gid-map fields the fs
+      # tests exercise. The two values are coupled: the snapshot serves exactly
+      # that version (asserted in qemu-3-build.sh).
+      KERNEL_APT_SNAPSHOT: "20260317T000000Z"
+      KERNEL_DEB_VERSION: "6.18.15-1~bpo13+1"
     steps:
     - uses: actions/checkout@v4
       with:
@@ -34,7 +44,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: /tmp/zfs-debs
-        key: zfs-debs-debian-trixie-${{ steps.zfs-hash.outputs.hash }}
+        key: zfs-debs-debian-trixie-${{ steps.zfs-hash.outputs.hash }}-${{ env.KERNEL_DEB_VERSION }}
 
     - name: Start Debian Trixie VM
       timeout-minutes: 10
