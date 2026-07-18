@@ -44,6 +44,15 @@ set -eu
 
 sudo apt-get update
 
+# 6.18 UAPI headers so the C extension compiles the full statmount() interface
+# (sb_source, uid/gid maps, ...) and the newer statx flags. Debian trixie ships
+# 6.12 UAPI; the runtime kernel may stay 6.12, in which case the extra fields
+# degrade to None at runtime.
+echo 'deb http://deb.debian.org/debian trixie-backports main' \
+  | sudo tee /etc/apt/sources.list.d/backports.list
+sudo apt-get update
+sudo apt-get install -y -t trixie-backports linux-libc-dev
+
 sudo apt-get install -y \
   build-essential \
   devscripts \

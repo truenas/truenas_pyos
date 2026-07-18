@@ -22,6 +22,18 @@ jobs:
         apt install -y dh-python pybuild-plugin-pyproject python3-pytest python3-all-dev
         apt install -y python3-setuptools
 
+    - name: Install 6.18 UAPI headers
+      # Debian trixie ships 6.12 kernel UAPI headers, which lack the full
+      # statmount() field set (sb_source, uid/gid maps, ...) and the newer statx
+      # flags. Build against the 6.18 backport headers so the extension exposes
+      # the complete interface (fields still populate at runtime only when the
+      # running kernel reports them).
+      run: |
+        echo 'deb http://deb.debian.org/debian trixie-backports main' \
+          > /etc/apt/sources.list.d/backports.list
+        apt update
+        apt install -y -t trixie-backports linux-libc-dev
+
     - name: Test Debian package build
       run: |
         dpkg-buildpackage -us -uc -b

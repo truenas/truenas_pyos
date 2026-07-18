@@ -323,6 +323,7 @@ process_next_entry(FilesystemIteratorObject *self,
 	struct statx st;
 	bool is_dir = false;
 	bool is_lnk = false;
+	bool is_special = false;
 	int open_flags = 0;
 
 	/* Store directory entry name */
@@ -333,6 +334,8 @@ process_next_entry(FilesystemIteratorObject *self,
 
 	is_dir = (entry->d_type == DT_DIR);
 	is_lnk = (entry->d_type == DT_LNK);
+	is_special = (entry->d_type == DT_FIFO || entry->d_type == DT_SOCK ||
+		      entry->d_type == DT_BLK || entry->d_type == DT_CHR);
 
 	/*
 	 * Symlinks are dropped silently by default — they otherwise fail
@@ -350,12 +353,27 @@ process_next_entry(FilesystemIteratorObject *self,
 	if (is_lnk && !self->state.include_symlinks)
 		return FSITER_CONTINUE;
 
-	if (is_dir)
+	if (is_dir) {
 		open_flags = OFLAGS_DIR_ITER;
-	else if (is_lnk)
+	} else if (is_lnk || is_special) {
+		/*
+		 * O_PATH grabs a handle to a symlink or a special file (FIFO,
+		 * socket, device) without following it, without blocking, and
+		 * without running a device's open method.  A read-open of a
+		 * writer-less FIFO would otherwise block the walk forever.
+		 */
 		open_flags = O_PATH | O_NOFOLLOW;
-	else
-		open_flags = self->state.file_open_flags;
+	} else {
+		/*
+		 * A regular file, or an entry whose type readdir did not report
+		 * (DT_UNKNOWN).  Add O_NONBLOCK so that if it is really a FIFO —
+		 * a filesystem that does not fill d_type, or an entry swapped
+		 * under us — the open returns immediately instead of blocking on
+		 * an absent writer.  O_NONBLOCK has no effect on regular-file
+		 * reads, so a regular file's fd behaves normally.
+		 */
+		open_flags = self->state.file_open_flags | O_NONBLOCK;
+	}
 
 	fd = openat2_impl(dirfd(cur_dir->dirp), entry->d_name, open_flags, RESOLVE_FLAGS_ITER);
 	if (fd < 0) {
@@ -404,6 +422,20 @@ process_next_entry(FilesystemIteratorObject *self,
 			return FSITER_YIELD_FILE;
 		}
 		/*
+		 * ENXIO: a socket cannot be opened through the filesystem, and
+		 * readdir did not flag it (DT_UNKNOWN).  Re-open with O_PATH so
+		 * the walk yields it as a special file instead of aborting.
+		 */
+		if (!is_dir && !is_lnk && errno == ENXIO) {
+			fd = openat2_impl(dirfd(cur_dir->dirp), entry->d_name,
+					  O_PATH | O_NOFOLLOW, RESOLVE_FLAGS_ITER);
+			if (fd < 0) {
+				if (errno == ELOOP || errno == ENOENT)
+					return FSITER_CONTINUE;
+				SET_ERROR_ERRNO(err, "openat2(%s) [special]", entry->d_name);
+				return FSITER_ERROR;
+			}
+		/*
 		 * EPERM/EACCES: per-file access denial (e.g. immutable flag, ACL).
 		 * Fall back to O_RDONLY so the caller receives a valid fd and can
 		 * handle the entry as a non-fatal failure. statx and
@@ -412,11 +444,12 @@ process_next_entry(FilesystemIteratorObject *self,
 		 * EROFS means the filesystem went read-only — that is fatal.
 		 *
 		 * Symlinks skip the O_RDONLY fallback — opening a symlink
-		 * O_RDONLY|O_NOFOLLOW always ELOOPs anyway.
+		 * O_RDONLY|O_NOFOLLOW always ELOOPs anyway.  O_NONBLOCK keeps a
+		 * raced-in FIFO from blocking, as on the primary open above.
 		 */
-		if (!is_dir && !is_lnk && (errno == EPERM || errno == EACCES)) {
+		} else if (!is_dir && !is_lnk && (errno == EPERM || errno == EACCES)) {
 			fd = openat2_impl(dirfd(cur_dir->dirp), entry->d_name,
-					  O_RDONLY | O_NOFOLLOW, RESOLVE_FLAGS_ITER);
+					  O_RDONLY | O_NOFOLLOW | O_NONBLOCK, RESOLVE_FLAGS_ITER);
 			if (fd < 0)
 				return FSITER_CONTINUE;
 		} else {
@@ -1250,15 +1283,23 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 		return NULL;
 	}
 
-	sb_source = sm->str + sm->sb_source;
-	if (strcmp(sb_source, filesystem_name) != 0) {
-		PyMem_RawFree(sm);
-		close(root_fd);
-		PyMem_RawFree(cookies);
-		PyErr_Format(PyExc_RuntimeError,
-				     "%s: filesystem source mismatch (expected %s, got %s)",
-				     root_path, filesystem_name, sb_source);
-		return NULL;
+	/*
+	 * Only validate when the kernel actually reported sb_source (its mask
+	 * bit is set).  A kernel that does not report it leaves sm->sb_source
+	 * unset, so reading sm->str + sm->sb_source there would compare against
+	 * garbage; skip the check and accept the mount, as callers expect.
+	 */
+	if (sm->mask & STATMOUNT_SB_SOURCE) {
+		sb_source = sm->str + sm->sb_source;
+		if (strcmp(sb_source, filesystem_name) != 0) {
+			PyMem_RawFree(sm);
+			close(root_fd);
+			PyMem_RawFree(cookies);
+			PyErr_Format(PyExc_RuntimeError,
+					     "%s: filesystem source mismatch (expected %s, got %s)",
+					     root_path, filesystem_name, sb_source);
+			return NULL;
+		}
 	}
 
 	PyMem_RawFree(sm);

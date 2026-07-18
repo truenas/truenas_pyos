@@ -1840,3 +1840,26 @@ def test_iter_mountpoint_fd_is_o_path(temp_mount_tree_with_submount):
             list(os.scandir(item.fd))
         return
     pytest.fail("no mountpoint yielded")
+
+
+def test_special_files_classify_without_hanging(tmp_path):
+    """A writer-less FIFO (and a socket) classify as special files and do not
+    block the walk on a read-open.
+
+    Regression: a non-dir/non-symlink entry was opened O_RDONLY, so a
+    writer-less FIFO blocked forever and a socket aborted the walk with ENXIO.
+    """
+    (tmp_path / "regular").write_bytes(b"hi")
+    os.mkfifo(tmp_path / "pipe", 0o644)
+    os.mknod(tmp_path / "sock", stat.S_IFSOCK | 0o600)
+
+    kinds = {}
+    for item in truenas_os.iter_filesystem_contents(
+        str(tmp_path), get_filesystem_name(tmp_path)
+    ):
+        kinds[item.name] = (item.isdir, item.islnk, item.isreg, item.ismount)
+
+    assert kinds["regular"] == (False, False, True, False)
+    # FIFO and socket: not dir / link / regular / mount -> special.
+    assert kinds["pipe"] == (False, False, False, False)
+    assert kinds["sock"] == (False, False, False, False)
