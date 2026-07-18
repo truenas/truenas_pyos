@@ -13,6 +13,8 @@ truenas_os\.STATMOUNT_SUPPORTED_MASK
 truenas_os\.STATMOUNT_MNT_UIDMAP
 truenas_os\.STATMOUNT_MNT_GIDMAP
 truenas_os\.STATX_DIO_READ_ALIGN
+truenas_os\.StatxResult\.stx_dio_read_offset_align
+truenas_os\.StatxResult\.stx_atomic_write_unit_max_opt
 truenas_os\.StatmountResult\.fs_subtype
 truenas_os\.StatmountResult\.sb_source
 truenas_os\.StatmountResult\.opt_array
