@@ -6,11 +6,11 @@ on:
     branches: [ master ]
   workflow_dispatch:
     inputs:
-      kernel_train:
+      train:
         type: string
         required: false
         default: ""
-        description: "(optional) TrueNAS kernel train to test ('master' or '26'; default: master)"
+        description: "(optional) TrueNAS train to test against ('master' or '26'; default: derived from branch)"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
@@ -20,61 +20,43 @@ jobs:
   qemu-test:
     name: Debian Trixie QEMU Test
     runs-on: ubuntu-24.04
-    env:
-      # The VM boots the TrueNAS production kernel published by the
-      # truenas/linux rolling releases (<train>-nightly), consumed the same
-      # way the truenas/zfs CI does. That is the kernel TrueNAS actually
-      # ships, and it populates the statmount sb_source / uid-gid-map fields
-      # the fs tests exercise; its libc-dev package provides the matching
-      # UAPI headers the C extension builds against.
-      KERNEL_TRAIN: ${{ github.event.inputs.kernel_train || 'master' }}
     steps:
     - uses: actions/checkout@v4
       with:
         ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
+    - name: Determine TrueNAS train
+      id: train
+      run: |
+        # The VM boots the TrueNAS production kernel (truenas/linux) and
+        # installs the matching prebuilt OpenZFS kmod + userland (truenas/zfs),
+        # both taken from the rolling <train>-nightly GitHub releases -- the
+        # tests need the real kernel and a live ZFS pool (e.g. the ACL tests
+        # run against posixacl / nfsv4 datasets).  One train selects both: an
+        # explicit dispatch input wins, otherwise the branch (the PR base on
+        # PRs, else the triggering ref) maps to its train.
+        if [ -n "${{ github.event.inputs.train }}" ]; then
+          TRAIN="${{ github.event.inputs.train }}"
+        elif [ "${{ github.event_name }}" = "pull_request" ]; then
+          TRAIN="$(.github/workflows/scripts/train-for-ref.sh "${{ github.base_ref }}")"
+        else
+          TRAIN="$(.github/workflows/scripts/train-for-ref.sh "${{ github.ref_name }}")"
+        fi
+        echo "train=$TRAIN" >> "$GITHUB_OUTPUT"
+        echo "Using TrueNAS train: $TRAIN"
+
     - name: Setup QEMU
       timeout-minutes: 10
       run: bash .github/workflows/scripts/qemu-1-setup.sh
-
-    - name: Get OpenZFS commit hash
-      id: zfs-hash
-      run: |
-        ZFS_COMMIT=$(git ls-remote https://github.com/truenas/zfs.git refs/heads/truenas/zfs-2.4-release | cut -f1)
-        echo "hash=$ZFS_COMMIT" >> $GITHUB_OUTPUT
-        echo "OpenZFS commit: $ZFS_COMMIT"
-
-    - name: Get TrueNAS kernel release
-      id: tn-kernel
-      run: |
-        # Fetch the current nightly release name up front so the ZFS package
-        # cache can be keyed on it (the kmods must match the kernel) and the
-        # build step can verify the VM installed and booted that release.
-        url="https://github.com/truenas/linux/releases/download/${KERNEL_TRAIN}-nightly"
-        if ! curl --fail -LSs "$url/manifest.json" -o /tmp/tn-manifest.json; then
-          echo "ERROR: no ${KERNEL_TRAIN}-nightly kernel release published at $url yet"
-          exit 1
-        fi
-        release=$(jq -r '.release' /tmp/tn-manifest.json)
-        echo "release=$release" >> $GITHUB_OUTPUT
-        echo "TrueNAS $KERNEL_TRAIN kernel: $release"
-
-    - name: Cache OpenZFS packages
-      id: cache-zfs
-      uses: actions/cache@v4
-      with:
-        path: /tmp/zfs-debs
-        key: zfs-debs-debian-trixie-${{ steps.zfs-hash.outputs.hash }}-${{ steps.tn-kernel.outputs.release }}
 
     - name: Start Debian Trixie VM
       timeout-minutes: 10
       run: bash .github/workflows/scripts/qemu-2-start.sh
 
     - name: Build and install truenas_pyos
-      timeout-minutes: 60
+      timeout-minutes: 30
       env:
-        ZFS_CACHE_HIT: ${{ steps.cache-zfs.outputs.cache-hit }}
-        KERNEL_RELEASE: ${{ steps.tn-kernel.outputs.release }}
+        TRAIN: ${{ steps.train.outputs.train }}
       run: bash .github/workflows/scripts/qemu-3-build.sh
 
     - name: Restart VM to load kernel modules
