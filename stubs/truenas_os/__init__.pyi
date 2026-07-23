@@ -275,27 +275,32 @@ def statmount(
 
 # listmount function
 def listmount(
-    *,
-    mnt_id: int | None = None,
+    mnt_id: int = ...,  # Default: LSMT_ROOT
+    last_mnt_id: int = 0,
+    reverse: bool = False,
 ) -> list[int]:
-    """List mount IDs.
+    """List mount IDs under a given mount point.
 
     Parameters
     ----------
-    mnt_id : int | None, optional
-        Mount ID to list children of (None for all mounts)
+    mnt_id : int, optional
+        Mount ID to list children of. Defaults to the root mount (LSMT_ROOT).
+    last_mnt_id : int, optional
+        Last mount ID returned, for pagination (default: 0).
+    reverse : bool, optional
+        List mounts in reverse order, newest first (default: False).
 
     Returns
     -------
     list[int]
-        List of mount IDs
+        List of mount IDs. Empty list if no child mounts.
     """
     ...
 
 # iter_mount function
 def iter_mount(
-    *,
-    mnt_id: int | None = None,
+    mnt_id: int = ...,  # Default: LSMT_ROOT
+    last_mnt_id: int = 0,
     reverse: bool = False,
     statmount_flags: int = ...,  # Default: STATMOUNT_MNT_BASIC | STATMOUNT_SB_BASIC
 ) -> Iterator[StatmountResult]:
@@ -303,12 +308,15 @@ def iter_mount(
 
     Parameters
     ----------
-    mnt_id : int | None, optional
-        Mount ID to list children of (None for root)
+    mnt_id : int, optional
+        Mount ID to list children of. Defaults to the root mount (LSMT_ROOT).
+    last_mnt_id : int, optional
+        Last mount ID returned, for pagination (default: 0).
     reverse : bool, optional
-        List mounts in reverse order
+        List mounts in reverse order, newest first (default: False).
     statmount_flags : int, optional
-        Mask of fields to retrieve for each mount
+        Mask of fields to retrieve for each mount (STATMOUNT_* constants).
+        Default is STATMOUNT_MNT_BASIC | STATMOUNT_SB_BASIC.
 
     Returns
     -------
