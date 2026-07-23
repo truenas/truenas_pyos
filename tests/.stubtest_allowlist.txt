@@ -1,6 +1,10 @@
-# The following are conditionally compiled based on kernel support.
-# They are present on Linux 6.18 (TrueNAS target) but absent on older kernels
-# used in CI (6.12). Stubs are correct for the target kernel.
+# These entries are conditionally compiled based on the build machine's kernel
+# UAPI headers (<linux/mount.h>, <linux/stat.h>). CI installs the 6.18 UAPI
+# headers (linux-libc-dev from trixie-backports), so on CI they are all present
+# and these entries go unused; the allowlist covers a build against older
+# headers (e.g. a local checkout on an older distro). stubtest is run with
+# --ignore-unused-allowlist, so the unused entries on a 6.18-header build are
+# not treated as errors.
 truenas_os\.STATMOUNT_FS_SUBTYPE
 truenas_os\.STATMOUNT_SB_SOURCE
 truenas_os\.STATMOUNT_OPT_ARRAY
@@ -9,6 +13,8 @@ truenas_os\.STATMOUNT_SUPPORTED_MASK
 truenas_os\.STATMOUNT_MNT_UIDMAP
 truenas_os\.STATMOUNT_MNT_GIDMAP
 truenas_os\.STATX_DIO_READ_ALIGN
+truenas_os\.StatxResult\.stx_dio_read_offset_align
+truenas_os\.StatxResult\.stx_atomic_write_unit_max_opt
 truenas_os\.StatmountResult\.fs_subtype
 truenas_os\.StatmountResult\.sb_source
 truenas_os\.StatmountResult\.opt_array
