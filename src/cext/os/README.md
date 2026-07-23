@@ -9,7 +9,11 @@ Direct Python access to Linux syscalls not available in the standard library:
 
 - Python 3.13+
 - Linux kernel 6.8+ (`statmount(2)`, `listmount(2)`, `openat2(2)`)
-- Linux kernel 6.18+ for `STATMOUNT_SB_SOURCE` (mount source field, ZFS snapshot detection)
+- Build against Linux 6.18 UAPI headers (`linux-libc-dev`) for the full
+  `statmount()` field set — `sb_source` (ZFS snapshot detection), the option
+  arrays, `supported_mask`, and the uid/gid maps. Older build headers omit
+  those fields (they compile out via `#ifdef`); each present field is populated
+  at runtime only when the running kernel reports it (`None`/absent otherwise)
 - GCC
 - libbsd-dev
 
@@ -107,6 +111,8 @@ print(f"Filesystem: {info.fs_type}")
 - `mnt_peer_group`, `mnt_master`, `propagate_from`
 - `fs_type`, `mnt_ns_id`, `mnt_opts`
 - `sb_dev_major`, `sb_dev_minor`, `sb_magic`, `sb_flags`
+- `fs_subtype`, `sb_source`, `opt_array`, `opt_sec_array`, `supported_mask`,
+  `mnt_uidmap`, `mnt_gidmap` (populated on kernels that report them, else `None`)
 - `mask`
 
 **STATMOUNT_* Constants:**
@@ -118,6 +124,12 @@ print(f"Filesystem: {info.fs_type}")
 - `STATMOUNT_FS_TYPE` - Filesystem type
 - `STATMOUNT_MNT_NS_ID` - Mount namespace ID
 - `STATMOUNT_MNT_OPTS` - Mount options
+- `STATMOUNT_FS_SUBTYPE` - Filesystem subtype
+- `STATMOUNT_SB_SOURCE` - Mount source string (ZFS snapshot detection)
+- `STATMOUNT_OPT_ARRAY` / `STATMOUNT_OPT_SEC_ARRAY` - Per-mount / security option arrays
+- `STATMOUNT_SUPPORTED_MASK` - Mask of the flags the running kernel supports
+- `STATMOUNT_MNT_UIDMAP` / `STATMOUNT_MNT_GIDMAP` - idmapped-mount uid/gid maps
+- `STATMOUNT_ALL` - All of the above except the uid/gid maps
 
 ---
 
@@ -583,6 +595,13 @@ for item in truenas_os.iter_filesystem_contents("/mnt/tank", "tank/dataset"):
   never descends into these entries regardless of `skip()` state — its
   single-filesystem guarantee is preserved.  When `False` (default),
   child mountpoints are silently skipped.
+
+Special files — FIFOs, sockets, and block/character devices — are always
+yielded, with an `O_PATH` fd; they are never opened for data I/O (a read-open
+of a writer-less FIFO would block the walk forever, and a socket cannot be
+opened that way).  Identify one as an entry that is none of `isdir` / `islnk` /
+`isreg` / `ismount`, and read its type and device number from `statxinfo`
+(`stx_mode`, `stx_rdev_major`, `stx_rdev_minor`).
 
 **Returns:** FilesystemIterator yielding IterInstance objects
 
