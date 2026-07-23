@@ -23,11 +23,14 @@ from os import (
     O_RDONLY,
     O_RDWR,
     O_TRUNC,
+    chmod,
+    chown,
     close,
     fchown,
     fstat,
     makedev,
     mkdir,
+    mknod,
     readlink,
     stat_result,
     symlink,
@@ -171,6 +174,8 @@ class CopyTreeStats:
         Number of regular files copied.
     symlinks : int
         Number of symlinks recreated.
+    specials : int
+        Number of special files (FIFOs, sockets, devices) recreated by type.
     bytes : int
         Total bytes written across all regular-file copies.
     """
@@ -178,6 +183,7 @@ class CopyTreeStats:
     dirs: int = 0
     files: int = 0
     symlinks: int = 0
+    specials: int = 0
     bytes: int = 0
 
 
@@ -449,6 +455,49 @@ class _CopyTreeRunner:
             if not self.config.exist_ok:
                 raise
 
+    def _handle_special(
+        self, item: truenas_os.IterInstance, dst_dir_fd: int
+    ) -> None:
+        """Recreate a special file (FIFO, socket, or device) by type.
+
+        ``item.fd`` is an ``O_PATH`` fd from fsiter — a special file has no
+        data to copy, and opening one for I/O would block (FIFO) or run a
+        device's open method.  Recreate the node with ``mknodat`` and restore
+        mode / owner / timestamps on it, each gated on its copy flag.
+        """
+        st = item.statxinfo
+        dev = makedev(st.stx_rdev_major, st.stx_rdev_minor)
+        try:
+            mknod(item.name, mode=st.stx_mode, device=dev, dir_fd=dst_dir_fd)
+        except FileExistsError:
+            if not self.config.exist_ok:
+                raise
+            return
+
+        flags = self.config.flags
+        # mknod's mode is umask-masked, so restore the exact permission bits.
+        if flags & CopyFlags.PERMISSIONS:
+            try:
+                chmod(item.name, st.stx_mode & 0o7777, dir_fd=dst_dir_fd)
+            except Exception:
+                if self.config.raise_error:
+                    raise
+        if flags & CopyFlags.OWNER:
+            chown(
+                item.name, st.stx_uid, st.stx_gid,
+                dir_fd=dst_dir_fd, follow_symlinks=False,
+            )
+        if flags & CopyFlags.TIMESTAMPS:
+            try:
+                utime(
+                    item.name,
+                    ns=(st.stx_atime_ns, st.stx_mtime_ns),
+                    dir_fd=dst_dir_fd, follow_symlinks=False,
+                )
+            except Exception:
+                if self.config.raise_error:
+                    raise
+
     # ── frame stack ──────────────────────────────────────────────────────
 
     def _pop_frame(self) -> None:
@@ -580,8 +629,11 @@ class _CopyTreeRunner:
                         self._handle_symlink(item, dst_dir_fd)
                         self.stats.symlinks += 1
 
-                    # Other irregular types (sockets, fifos, devices)
-                    # are intentionally not copied.
+                    elif not item.ismount:
+                        # A FIFO, socket, or device: recreate the node by
+                        # type rather than copying contents (it has none).
+                        self._handle_special(item, dst_dir_fd)
+                        self.stats.specials += 1
 
             # Normal path: drain runner-owned child frames (with
             # timestamp + close).  The remaining bottom frame holds

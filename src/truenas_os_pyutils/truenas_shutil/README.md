@@ -57,7 +57,7 @@ Tree-level orchestration on top of `copy.py` and
 | `CopyTreeOp` | enum | Per-file copy strategy: `DEFAULT` (clone, falling back to sendfile and userspace), `CLONE`, `SENDFILE`, `USERSPACE`. |
 | `ReportingCallback` | type alias | Same shape as fsiter's `reporting_callback`: `Callable[[dir_stack, FilesystemIterState, private_data], Any]`. |
 | `CopyTreeConfig` | dataclass | Immutable copy configuration: `reporting_callback`, `reporting_private_data`, `reporting_increment`, `raise_error`, `exist_ok`, `traverse`, `op`, `flags`. |
-| `CopyTreeStats` | dataclass | Mutable counters returned from `copytree`: `dirs`, `files`, `symlinks`, `bytes`. |
+| `CopyTreeStats` | dataclass | Mutable counters returned from `copytree`: `dirs`, `files`, `symlinks`, `specials`, `bytes`. |
 | `DEF_CP_FLAGS` | `CopyFlags` | Default flag combination — all four metadata bits. |
 | `copytree(src, dst, config)` | function | Recursively copy `src` into `dst`. |
 
@@ -100,6 +100,15 @@ the destination root and call `it.skip()` on that subtree.
 directory it visits, recreating any symlinks in the destination.  This
 adds one `scandir` per visited directory; symlink targets are preserved
 verbatim (no path translation).
+
+### Special files
+
+FIFOs, sockets, and block/character devices are yielded by fsiter with an
+`O_PATH` fd — a read-open of a writer-less FIFO would otherwise block the walk
+forever, and a socket cannot be opened for I/O at all.  `copytree` recreates
+each such node by type with `mknodat`, restoring mode / owner / timestamps
+(each gated on its copy flag), and counts it in `CopyTreeStats.specials`; it
+never reads the node's fd.
 
 ### Directory timestamps on ascent
 

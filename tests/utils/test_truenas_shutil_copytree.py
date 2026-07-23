@@ -595,3 +595,21 @@ def test_copytree_into_itself_deeper(rich_source_tree):
     # Everything up to (but not into) the destination should exist.
     assert (dst / "FOO" / "BAR").exists()
     assert not (dst / "FOO" / "BAR" / "DEST").exists()
+
+
+def test_copytree_recreates_special_files_by_type(tmp_path):
+    """A FIFO in the source is recreated by type, not read as a regular file
+    (which would block the copy on a writer-less FIFO)."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "f").write_bytes(b"data")
+    os.mkfifo(src / "pipe", 0o600)
+
+    dst = tmp_path / "dst"
+    stats = copytree(str(src), str(dst), CopyTreeConfig())
+
+    assert stats.files == 1
+    assert stats.specials == 1
+    md = os.lstat(dst / "pipe")
+    assert stat.S_ISFIFO(md.st_mode)
+    assert stat.S_IMODE(md.st_mode) == 0o600

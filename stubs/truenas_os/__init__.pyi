@@ -84,6 +84,10 @@ class StatxResult(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
     def stx_atomic_write_unit_max(self) -> int: ...
     @property
     def stx_atomic_write_segments_max(self) -> int: ...
+    @property
+    def stx_dio_read_offset_align(self) -> int: ...  # kernels with STATX_DIO_READ_ALIGN
+    @property
+    def stx_atomic_write_unit_max_opt(self) -> int: ...  # kernels with STATX_DIO_READ_ALIGN
 
 # StatmountResult type - PyStructSequence from statmount(2)
 @final
