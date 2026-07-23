@@ -4,6 +4,13 @@ on:
   pull_request:
   push:
     branches: [ master ]
+  workflow_dispatch:
+    inputs:
+      kernel_train:
+        type: string
+        required: false
+        default: ""
+        description: "(optional) TrueNAS kernel train to test ('master' or '26'; default: master)"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
@@ -14,15 +21,13 @@ jobs:
     name: Debian Trixie QEMU Test
     runs-on: ubuntu-24.04
     env:
-      # TrueNAS ships the 6.18 kernel series and OpenZFS 2.4 is undefined on a
-      # 7.x kernel, so the VM is pinned to the last 6.18 that Debian
-      # trixie-backports ever shipped, taken from an immutable
-      # snapshot.debian.org view (live backports now carries only 7.0.x). This
-      # kernel populates the statmount sb_source / uid-gid-map fields the fs
-      # tests exercise. The two values are coupled: the snapshot serves exactly
-      # that version (asserted in qemu-3-build.sh).
-      KERNEL_APT_SNAPSHOT: "20260317T000000Z"
-      KERNEL_DEB_VERSION: "6.18.15-1~bpo13+1"
+      # The VM boots the TrueNAS production kernel published by the
+      # truenas/linux rolling releases (<train>-nightly), consumed the same
+      # way the truenas/zfs CI does. That is the kernel TrueNAS actually
+      # ships, and it populates the statmount sb_source / uid-gid-map fields
+      # the fs tests exercise; its libc-dev package provides the matching
+      # UAPI headers the C extension builds against.
+      KERNEL_TRAIN: ${{ github.event.inputs.kernel_train || 'master' }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -39,12 +44,27 @@ jobs:
         echo "hash=$ZFS_COMMIT" >> $GITHUB_OUTPUT
         echo "OpenZFS commit: $ZFS_COMMIT"
 
+    - name: Get TrueNAS kernel release
+      id: tn-kernel
+      run: |
+        # Fetch the current nightly release name up front so the ZFS package
+        # cache can be keyed on it (the kmods must match the kernel) and the
+        # build step can verify the VM installed and booted that release.
+        url="https://github.com/truenas/linux/releases/download/${KERNEL_TRAIN}-nightly"
+        if ! curl --fail -LSs "$url/manifest.json" -o /tmp/tn-manifest.json; then
+          echo "ERROR: no ${KERNEL_TRAIN}-nightly kernel release published at $url yet"
+          exit 1
+        fi
+        release=$(jq -r '.release' /tmp/tn-manifest.json)
+        echo "release=$release" >> $GITHUB_OUTPUT
+        echo "TrueNAS $KERNEL_TRAIN kernel: $release"
+
     - name: Cache OpenZFS packages
       id: cache-zfs
       uses: actions/cache@v4
       with:
         path: /tmp/zfs-debs
-        key: zfs-debs-debian-trixie-${{ steps.zfs-hash.outputs.hash }}-${{ env.KERNEL_DEB_VERSION }}
+        key: zfs-debs-debian-trixie-${{ steps.zfs-hash.outputs.hash }}-${{ steps.tn-kernel.outputs.release }}
 
     - name: Start Debian Trixie VM
       timeout-minutes: 10
@@ -54,6 +74,7 @@ jobs:
       timeout-minutes: 60
       env:
         ZFS_CACHE_HIT: ${{ steps.cache-zfs.outputs.cache-hit }}
+        KERNEL_RELEASE: ${{ steps.tn-kernel.outputs.release }}
       run: bash .github/workflows/scripts/qemu-3-build.sh
 
     - name: Restart VM to load kernel modules
