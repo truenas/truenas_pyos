@@ -5,7 +5,6 @@
 #include <sys/stat.h>
 #include <sys/xattr.h>
 #include <errno.h>
-#include <stdlib.h>
 #include <string.h>
 #include "acl.h"
 
@@ -221,7 +220,7 @@ do_fgetacl(int fd, acl_xattr_t *out)
 	         !(async_err = PyErr_CheckSignals()));
 
 	if (async_err) {
-		free(out->data.posix.access_data);
+		PyMem_RawFree(out->data.posix.access_data);
 		return -1;
 	}
 
@@ -230,14 +229,14 @@ do_fgetacl(int fd, acl_xattr_t *out)
 		out->data.posix.default_data = NULL;
 		out->data.posix.default_len = 0;
 	} else if (dsz == -1) {
-		free(out->data.posix.access_data);
+		PyMem_RawFree(out->data.posix.access_data);
 		PyErr_SetFromErrno(PyExc_OSError);
 		return -1;
 	} else if (dsz > 0) {
 		out->data.posix.default_data = read_xattr_raw(fd, POSIX_DEFAULT_XATTR, dsz,
 		                                              &out->data.posix.default_len);
 		if (out->data.posix.default_data == NULL) {
-			free(out->data.posix.access_data);
+			PyMem_RawFree(out->data.posix.access_data);
 			return -1;
 		}
 	} else {
