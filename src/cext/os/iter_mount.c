@@ -16,6 +16,7 @@ typedef struct {
 	ssize_t batch_count;            // Number of IDs in current batch
 	ssize_t current_idx;            // Current position in batch
 	uint64_t statmount_flags;       // statmount mask for what fields to retrieve
+	int reverse;                    // LISTMOUNT_REVERSE direction, kept across batches
 } MountIterator;
 
 static int
@@ -41,11 +42,12 @@ mount_iter_init(MountIterator *self, PyObject *args, PyObject *kwargs)
 
 	self->current_idx = 0;
 	self->statmount_flags = statmount_flags;
+	self->reverse = reverse;
 
 	// Fetch the first batch
 	Py_BEGIN_ALLOW_THREADS
 	count = syscall(__NR_listmount, &self->req, self->mnt_ids,
-			LISTMOUNT_BATCH_SIZE, reverse ? LISTMOUNT_REVERSE : 0);
+			LISTMOUNT_BATCH_SIZE, self->reverse ? LISTMOUNT_REVERSE : 0);
 	Py_END_ALLOW_THREADS
 
 	if (count < 0) {
@@ -75,16 +77,16 @@ mount_iter_next(MountIterator *self)
 	if (self->current_idx >= self->batch_count) {
 		// Only fetch more if the previous batch was full
 		if (self->batch_count == LISTMOUNT_BATCH_SIZE) {
-			// Update the request to continue from the last mount ID
+			// Continue from the last mount id of the previous batch.
+			// The kernel takes direction from the flags argument, so
+			// req.param carries only the cursor (a mount id), never
+			// the reverse flag.
 			self->req.param = self->mnt_ids[self->batch_count - 1];
-			if (self->req.param & LISTMOUNT_REVERSE) {
-				// Preserve the reverse flag
-				self->req.param = self->mnt_ids[self->batch_count - 1] | LISTMOUNT_REVERSE;
-			}
 
 			Py_BEGIN_ALLOW_THREADS
 			count = syscall(__NR_listmount, &self->req, self->mnt_ids,
-					LISTMOUNT_BATCH_SIZE, 0);
+					LISTMOUNT_BATCH_SIZE,
+					self->reverse ? LISTMOUNT_REVERSE : 0);
 			Py_END_ALLOW_THREADS
 
 			if (count < 0) {

@@ -95,7 +95,10 @@ sudo sh -c "ulimit -c unlimited && ulimit -c"
 
 echo ""
 echo "Now running full test suite..."
-sudo sh -c "ulimit -c unlimited && cd /home/debian/truenas_pyos && python3 -m pytest tests/ -v --tb=short" 2>&1 | tee /home/debian/test-output.txt
+# TRUENAS_POS_REQUIRE_PRIVILEGED=1 makes privileged tests that would otherwise
+# skip when mounts cannot be created (unprivileged sandbox) fail instead: this
+# VM is privileged, so a skip here means the test lost its coverage.
+sudo sh -c "ulimit -c unlimited && cd /home/debian/truenas_pyos && TRUENAS_POS_REQUIRE_PRIVILEGED=1 python3 -m pytest tests/ -v --tb=short" 2>&1 | tee /home/debian/test-output.txt
 TEST_EXIT_CODE=${PIPESTATUS[0]}
 
 echo ""

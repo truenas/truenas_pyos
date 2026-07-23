@@ -204,11 +204,10 @@ PyObject *do_listmount(uint64_t mnt_id, uint64_t last_mnt_id, int reverse)
 			break;
 		}
 
-		// Set last_mnt_id for next iteration
+		// Set last_mnt_id for next iteration.  Direction is carried by
+		// the flags argument; req.param holds only the cursor, so never
+		// OR the reverse flag into it (it is a mount id, not flags).
 		req.param = mnt_ids[count - 1];
-		if (reverse) {
-			req.param |= LISTMOUNT_REVERSE;
-		}
 	}
 
 	return result;
