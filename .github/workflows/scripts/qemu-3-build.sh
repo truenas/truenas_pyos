@@ -6,8 +6,8 @@
 
 set -eu
 
-: "${KERNEL_APT_SNAPSHOT:?set by qemu-test.yml}"
-: "${KERNEL_DEB_VERSION:?set by qemu-test.yml}"
+: "${KERNEL_TRAIN:?set by qemu-test.yml}"
+: "${KERNEL_RELEASE:?set by qemu-test.yml}"
 
 echo "Building and installing truenas_pyos..."
 
@@ -43,35 +43,19 @@ rsync -az --exclude='.git' --exclude='debian/.debhelper' \
 # Install dependencies
 echo "Installing dependencies in VM..."
 ssh debian@$VM_IP \
-  "KERNEL_APT_SNAPSHOT='$KERNEL_APT_SNAPSHOT' KERNEL_DEB_VERSION='$KERNEL_DEB_VERSION' bash -s" <<'REMOTE_DEPS'
+  "KERNEL_TRAIN='$KERNEL_TRAIN' KERNEL_RELEASE='$KERNEL_RELEASE' bash -s" <<'REMOTE_DEPS'
 set -eu
-: "${KERNEL_APT_SNAPSHOT:?}"
-: "${KERNEL_DEB_VERSION:?}"
+: "${KERNEL_TRAIN:?}"
+: "${KERNEL_RELEASE:?}"
 
-# Pin the VM kernel to the last 6.18 that trixie-backports shipped: TrueNAS
-# runs 6.18 and OpenZFS 2.4 is undefined on a 7.x kernel, and 6.18 is what
-# populates the statmount sb_source / uid-gid-map fields the fs tests need.
-# Live trixie-backports now carries only 7.0.x, so pull 6.18 from a pinned
-# snapshot.debian.org view — its Release file has expired, so
-# [check-valid-until=no] accepts it; package integrity still comes from the
-# archive signatures.
-#
-# The cloud image already ships live trixie-backports in its default
-# debian.sources; two sources for one release make apt take the newest across
-# both (how live 7.0.x could beat the pin). Strip that suite so the snapshot is
-# the only trixie-backports source, and fail loudly if any other file has it.
-sudo sed -i 's/ trixie-backports\b//g' /etc/apt/sources.list.d/debian.sources
-echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/${KERNEL_APT_SNAPSHOT}/ trixie-backports main" \
-  | sudo tee /etc/apt/sources.list.d/backports.list
-stray=$(grep -rl 'trixie-backports' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null \
-  | grep -v '/backports.list$' || true)
-if [ -n "$stray" ]; then
-  echo "ERROR: live trixie-backports still configured in: $stray"
-  exit 1
-fi
+export DEBIAN_FRONTEND="noninteractive"
+
 sudo apt-get update
 
 sudo apt-get install -y \
+  ca-certificates \
+  curl \
+  jq \
   build-essential \
   devscripts \
   debhelper \
@@ -105,26 +89,69 @@ sudo apt-get install -y \
   git \
   gdb
 
-# The pinned 6.18 kernel image + matching build headers (for the ZFS kmod).
-# GRUB boots the highest version on the reboot below. Install by EXACT version
-# — not `-t trixie-backports`, which selects by release name — and assert dpkg
-# agrees, so a drifted snapshot fails here rather than as a later ZFS or
-# statmount surprise.
-sudo apt-get install -y \
-  "linux-image-amd64=$KERNEL_DEB_VERSION" \
-  "linux-headers-amd64=$KERNEL_DEB_VERSION"
-got=$(dpkg-query -W -f='${Version}' linux-image-amd64)
-if [ "$got" != "$KERNEL_DEB_VERSION" ]; then
-  echo "ERROR: pinned kernel $KERNEL_DEB_VERSION but apt installed '$got'"
+# TrueNAS production kernel, consumed the same way the truenas/zfs CI does:
+# download the debs published by the truenas/linux CI as the rolling
+# <TRAIN>-nightly GitHub release and verify them against SHA256SUMS. The
+# image and headers boot the VM and back the ZFS kmod build; unlike
+# truenas/zfs we also install the release's UAPI headers package
+# (linux-truenas-production-libc-dev, which Provides/Conflicts the stock
+# linux-libc-dev), so the C extension compiles the full statmount()/statx
+# interface against UAPI headers matching the running kernel.
+URL="https://github.com/truenas/linux/releases/download/${KERNEL_TRAIN}-nightly"
+mkdir -p /tmp/tn-kernel
+cd /tmp/tn-kernel
+if ! curl --fail -LSs -O "$URL/manifest.json"; then
+  echo "ERROR: no ${KERNEL_TRAIN}-nightly kernel release published at $URL yet"
   exit 1
 fi
-echo "Installed pinned kernel $got"
+curl --fail -LSs -O "$URL/SHA256SUMS"
+RELEASE=$(jq -r '.release' manifest.json)
+echo "Kernel release: $RELEASE" \
+  "($(jq -r '.branch' manifest.json) @ $(jq -r '.commit' manifest.json))"
 
-# Matching 6.18 UAPI headers from the same (now sole) trixie-backports source,
-# so the C extension compiles the full statmount()/statx interface. `-t` avoids
-# hardcoding the linux-libc-dev version string; the snapshot is the only
-# backports source, so it resolves to the pinned release.
-sudo apt-get install -y -t trixie-backports linux-libc-dev
+# The workflow keyed the ZFS package cache on the release it saw; fail loudly
+# if the nightly release rolled between that fetch and this one.
+if [ "$RELEASE" != "$KERNEL_RELEASE" ]; then
+  echo "ERROR: nightly release rolled mid-run: expected $KERNEL_RELEASE, got $RELEASE"
+  exit 1
+fi
+
+DEBS=""
+for deb in $(jq -r '.debs[]' manifest.json); do
+  case "$deb" in
+    linux-image-*-dbg_*)
+      ;;
+    linux-image-*|linux-headers-*|linux-*libc-dev_*)
+      echo "Downloading $deb"
+      curl --fail -LSs -O "$URL/$deb"
+      DEBS="$DEBS ./$deb"
+      ;;
+  esac
+done
+sha256sum -c --ignore-missing SHA256SUMS
+
+sudo -E apt-get install -y $DEBS
+
+# Remove the distribution kernels so the reboot below can only pick the
+# TrueNAS kernel. Let apt remove the running kernel without aborting; the
+# TrueNAS kernel packages carry version-free names
+# (linux-{image,headers}-truenas-production-amd64), so tell them apart from
+# the distribution kernels by name.
+echo 'linux-base linux-base/removing-running-kernel boolean false' | \
+  sudo debconf-set-selections
+STOCK=$(dpkg-query -W -f '${Package}\n' 'linux-image-*' 'linux-headers-*' | \
+  grep -v -- truenas || true)
+if [ -n "$STOCK" ]; then
+  sudo -E apt-get purge -y $STOCK
+fi
+sudo update-grub
+
+# The TrueNAS kernel must now be the one and only installed kernel, and the
+# ZFS kmod build must resolve to its development headers.
+test -e "/boot/vmlinuz-$RELEASE"
+test "$(ls /boot/vmlinuz-* | wc -l)" -eq 1
+test -f "$(readlink -f "/lib/modules/$RELEASE/build")/Module.symvers"
+rm -rf /tmp/tn-kernel
 REMOTE_DEPS
 
 # Reboot VM to boot into the newly installed kernel
@@ -167,16 +194,16 @@ for i in {1..60}; do
   sleep 5
 done
 
-# Verify VM is accessible and booted the pinned 6.18 kernel — fail loudly here
-# rather than silently testing on the cloud image's 6.12 kernel (where the
-# statmount sb_source / uid-gid-map fields are not populated).
+# Verify VM is accessible and booted the TrueNAS production kernel — fail
+# loudly here rather than silently testing on the cloud image's stock kernel
+# (where the statmount sb_source / uid-gid-map fields are not populated).
 echo "Verifying new kernel is running..."
 booted=$(ssh debian@$VM_IP "uname -r")
 echo "Booted kernel: $booted"
-case "$booted" in
-  6.18.*) : ;;
-  *) echo "ERROR: expected a 6.18 kernel, got '$booted'"; exit 1 ;;
-esac
+if [ "$booted" != "$KERNEL_RELEASE" ]; then
+  echo "ERROR: expected TrueNAS kernel $KERNEL_RELEASE, got '$booted'"
+  exit 1
+fi
 
 # Now build ZFS and truenas_pyos
 echo "Building OpenZFS and truenas_pyos..."
