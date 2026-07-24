@@ -27,10 +27,13 @@ from truenas_os_pyutils.truenas_shutil.copy import (
 
 
 def test_max_rw_sz_value():
-    # Ported verbatim from middleware: ``2147483647 & ~4096`` — clears bit
-    # 12 of INT_MAX so sendfile/copy_file_range stay below the kernel's
-    # MAX_RW_COUNT limit.  Value is just over 2 GiB.
-    assert MAX_RW_SZ == 2147483647 & ~4096
+    # INT_MAX rounded down to a page boundary, matching the kernel's
+    # MAX_RW_COUNT (INT_MAX & PAGE_MASK) cap on a single
+    # read/write/sendfile/copy_file_range.  ``& ~(4096 - 1)`` clears the low
+    # 12 bits; ``& ~4096`` would clear only bit 12 and leave it unaligned.
+    assert MAX_RW_SZ == 2147483647 & ~(4096 - 1)
+    assert MAX_RW_SZ == 0x7FFFF000
+    assert MAX_RW_SZ % 4096 == 0
     assert MAX_RW_SZ > 0
 
 

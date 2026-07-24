@@ -12,6 +12,7 @@ from operator import eq, ne
 
 import pytest
 
+import truenas_os
 from truenas_os_pyutils.truenas_shutil import (
     DEF_CP_FLAGS,
     CopyFlags,
@@ -613,3 +614,100 @@ def test_copytree_recreates_special_files_by_type(tmp_path):
     md = os.lstat(dst / "pipe")
     assert stat.S_ISFIFO(md.st_mode)
     assert stat.S_IMODE(md.st_mode) == 0o600
+
+
+# ── traverse=True across a child mount (privileged) ─────────────────────────────
+
+
+def _mount_tmpfs(target):
+    """Mount a fresh tmpfs at ``target`` using truenas_os' fsopen/fsmount API."""
+    fs_fd = truenas_os.fsopen(fs_name="tmpfs")
+    try:
+        truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_CMD_CREATE)
+        mnt_fd = truenas_os.fsmount(fs_fd=fs_fd)
+    finally:
+        os.close(fs_fd)
+    try:
+        truenas_os.move_mount(
+            from_path="", to_path=str(target),
+            from_dirfd=mnt_fd, flags=truenas_os.MOVE_MOUNT_F_EMPTY_PATH,
+        )
+    finally:
+        os.close(mnt_fd)
+
+
+def _traverse_child_body(src, dst):
+    """Build a parent mount with one child mount, copy with ``traverse=True``,
+    and verify the child mount's contents land in the destination."""
+    truenas_os.mount_setattr(
+        path="/", propagation=truenas_os.MS_PRIVATE, flags=truenas_os.AT_RECURSIVE,
+    )
+    _mount_tmpfs(src)
+    _mount_tmpfs(dst)
+    (src / "root.txt").write_text("root")
+    child = src / "child"
+    child.mkdir()
+    _mount_tmpfs(child)
+    (child / "inside.txt").write_text("inside")
+
+    copytree(str(src), str(dst), CopyTreeConfig(traverse=True))
+
+    assert (dst / "root.txt").read_text() == "root"
+    # The child mountpoint directory is skipped by the root pass; traverse must
+    # create it in the destination and copy the child mount into it.
+    assert (dst / "child").is_dir()
+    assert (dst / "child" / "inside.txt").read_text() == "inside"
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="requires root to create mounts in a private namespace")
+def test_copytree_traverse_copies_child_mount(tmp_path):
+    """copytree(traverse=True) descends into a child mount and creates its
+    destination directory (which the root pass skips).
+
+    Builds the mounts in a throwaway namespace, so it needs root.  Where mounts
+    cannot be created it skips, unless TRUENAS_POS_REQUIRE_PRIVILEGED is set (the
+    CI VM), in which case it fails rather than dropping the coverage.
+    """
+    src = tmp_path / "src"
+    src.mkdir()
+    dst = tmp_path / "dst"
+    dst.mkdir()
+
+    read_fd, write_fd = os.pipe()
+    pid = os.fork()
+    if pid == 0:  # child: its own mount namespace, torn down when it exits
+        os.close(read_fd)
+        try:
+            os.unshare(os.CLONE_NEWNS)
+            _traverse_child_body(src, dst)
+            payload = b"OK"
+        except OSError as exc:
+            if exc.errno in (errno.EPERM, errno.EACCES, errno.ENOSYS):
+                payload = b"NOPRIV\n" + f"cannot create mounts here: {exc}".encode()
+            else:
+                import traceback
+                payload = b"ERR\n" + traceback.format_exc().encode()
+        except BaseException:
+            import traceback
+            payload = b"ERR\n" + traceback.format_exc().encode()
+        try:
+            os.write(write_fd, payload)
+        finally:
+            os._exit(0)
+
+    os.close(write_fd)
+    chunks = []
+    while True:
+        buf = os.read(read_fd, 65536)
+        if not buf:
+            break
+        chunks.append(buf)
+    os.close(read_fd)
+    os.waitpid(pid, 0)
+    result = b"".join(chunks).decode(errors="replace")
+    if result.startswith("NOPRIV"):
+        reason = result.split("\n", 1)[-1] or "mount creation not permitted"
+        if os.environ.get("TRUENAS_POS_REQUIRE_PRIVILEGED"):
+            pytest.fail(f"privileged traverse test could not run where required: {reason}")
+        pytest.skip(reason)
+    assert result == "OK", result

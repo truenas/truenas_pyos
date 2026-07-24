@@ -33,7 +33,7 @@ already have open fds.
 | `copyfile(src_fd, dst_fd)` | function | Try `clonefile`; on `EXDEV` fall back to `copysendfile`. |
 | `copysendfile(src_fd, dst_fd)` | function | Zero-copy via `sendfile(2)` with userspace fallback. |
 | `copyuserspace(src_fd, dst_fd)` | function | Pure userspace copy via `shutil.copyfileobj`. |
-| `MAX_RW_SZ` | int | Maximum kernel read/write size (`INT_MAX & ~4096`). |
+| `MAX_RW_SZ` | int | Maximum kernel read/write size (`INT_MAX & ~(4096 - 1)`, page-aligned). |
 | `ACL_XATTRS`, `ACCESS_ACL_XATTRS` | frozenset | xattr names that hold ACL data. |
 
 `copy_permissions` skips `fchmod` if the source advertises an access ACL

@@ -715,9 +715,44 @@ class _CopyTreeRunner:
 
         return self.stats
 
+    def _open_child_dst(self, rel: str) -> int:
+        """Open the destination directory for a child mount.
+
+        The child mountpoint directory is skipped during the root pass
+        (fsiter does not cross into child mounts), so create it here when
+        missing; ``_process_mount`` then stamps the child root's metadata
+        onto it.  Ancestors already exist: normal directories from the root
+        pass, and an ancestor child mount is always processed first (a child
+        cannot be mounted before its parent).
+        """
+        try:
+            return openat2(
+                rel, O_RDONLY | O_DIRECTORY,
+                dir_fd=self.dst_fd, resolve=RESOLVE_NO_SYMLINKS,
+            )
+        except FileNotFoundError:
+            head, _, tail = rel.rpartition("/")
+            parent_fd = self.dst_fd
+            if head:
+                parent_fd = openat2(
+                    head, O_RDONLY | O_DIRECTORY,
+                    dir_fd=self.dst_fd, resolve=RESOLVE_NO_SYMLINKS,
+                )
+            try:
+                mkdir(tail, dir_fd=parent_fd)
+            finally:
+                if parent_fd != self.dst_fd:
+                    close(parent_fd)
+            return openat2(
+                rel, O_RDONLY | O_DIRECTORY,
+                dir_fd=self.dst_fd, resolve=RESOLVE_NO_SYMLINKS,
+            )
+
     def _traverse_child_mounts(self, root_mnt_id: int) -> None:
         """Run ``_process_mount`` for each child mount under the source root."""
-        prefix = self.src_root_real + "/"
+        # rstrip so a source root of "/" yields prefix "/", not "//" (which
+        # nothing starts with, silently skipping every child mount).
+        prefix = self.src_root_real.rstrip("/") + "/"
         for entry in truenas_os.iter_mount(
             mnt_id=root_mnt_id, statmount_flags=_STATMOUNT_TRAVERSE_FLAGS
         ):
@@ -745,12 +780,7 @@ class _CopyTreeRunner:
                 resolve=RESOLVE_NO_SYMLINKS,
             )
             try:
-                child_dst_fd = openat2(
-                    rel,
-                    O_RDONLY | O_DIRECTORY,
-                    dir_fd=self.dst_fd,
-                    resolve=RESOLVE_NO_SYMLINKS,
-                )
+                child_dst_fd = self._open_child_dst(rel)
                 try:
                     self._process_mount(
                         child_src_fd,
