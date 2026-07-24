@@ -35,7 +35,7 @@ __all__ = [
 
 # Maximum size of a single read/write in the kernel.  Aligning to a page
 # boundary keeps copy_file_range / sendfile at their best throughput.
-MAX_RW_SZ = 2147483647 & ~4096
+MAX_RW_SZ = 2147483647 & ~(4096 - 1)
 
 
 _POSIX_ACCESS_XATTR = "system.posix_acl_access"
