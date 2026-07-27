@@ -7,7 +7,7 @@
 # Tests are in tests/utils/test_truenas_shutil_copy.py.
 from __future__ import annotations
 
-from errno import EXDEV
+from errno import EINVAL, EXDEV
 from os import (
     SEEK_CUR,
     copy_file_range,
@@ -15,6 +15,7 @@ from os import (
     fstat,
     lseek,
     sendfile,
+    splice,
 )
 from shutil import copyfileobj
 from stat import S_IMODE
@@ -29,6 +30,7 @@ __all__ = [
     "copy_xattrs",
     "copyfile",
     "copysendfile",
+    "copysplice",
     "copyuserspace",
 ]
 
@@ -152,6 +154,44 @@ def copysendfile(src_fd: int, dst_fd: int) -> int:
     if offset == 0 and lseek(dst_fd, 0, SEEK_CUR) == 0:
         return copyuserspace(src_fd, dst_fd)
 
+    return offset
+
+
+def copysplice(src_fd: int, dst_fd: int) -> int:
+    """Zero-copy pipe<->file transfer using ``splice(2)``.
+
+    ``splice`` moves data between two descriptors without a userspace bounce
+    buffer, but requires that at least one of them refer to a pipe.  That
+    makes it the primitive for streaming a pipe into a regular file (an
+    upload) or a regular file into a pipe (a download) — the case
+    ``copysendfile`` and ``clonefile`` cannot serve, since ``sendfile(2)``
+    cannot read from a pipe and ``copy_file_range(2)`` needs two regular
+    files.
+
+    Args:
+        src_fd: Source file descriptor.
+        dst_fd: Destination file descriptor.
+
+    Returns:
+        Number of bytes written.
+
+    Raises:
+        OSError: As documented in the ``splice(2)`` manpage.
+
+    Note:
+        Falls back to ``copyuserspace`` when the kernel rejects the pair
+        with ``EINVAL`` before any bytes move — neither fd is a pipe, or the
+        filesystem lacks splice support.  A mid-stream failure is left to
+        propagate: a pipe source cannot be rewound once partially drained.
+    """
+    offset = 0
+    try:
+        while (moved := splice(src_fd, dst_fd, MAX_RW_SZ)) > 0:
+            offset += moved
+    except OSError as err:
+        if err.errno == EINVAL and offset == 0:
+            return copyuserspace(src_fd, dst_fd)
+        raise
     return offset
 
 
