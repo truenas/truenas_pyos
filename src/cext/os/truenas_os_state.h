@@ -24,6 +24,9 @@ typedef struct {
 	/* POSIX ACL enum types */
 	PyObject *POSIXTag_enum;
 	PyObject *POSIXPerm_enum;
+	/* truenas_os.uring submodule */
+	PyObject *uring_module;
+	PyObject *QueryResultType;
 } truenas_os_state_t;
 
 /* Get module state */
