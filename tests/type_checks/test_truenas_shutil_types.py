@@ -16,6 +16,7 @@ from truenas_os_pyutils.truenas_shutil import (
     clonefile,
     copyfile,
     copysendfile,
+    copysplice,
     copytree,
     copyuserspace,
 )
@@ -69,6 +70,21 @@ def test_copy_helpers_return_int(tmp_path: Path) -> None:
     finally:
         _os.close(src_fd)
         _os.close(dst2_fd)
+    # copysplice needs a pipe on one end; splice a regular file into the
+    # write end of a pipe and drain it so the write side does not block.
+    src_fd = _os.open(str(src), _os.O_RDONLY)
+    r_fd, w_fd = _os.pipe()
+    try:
+        assert_type(copysplice(src_fd, w_fd), int)
+        _os.close(w_fd)
+        w_fd = -1
+        while _os.read(r_fd, 65536):
+            pass
+    finally:
+        _os.close(src_fd)
+        _os.close(r_fd)
+        if w_fd != -1:
+            _os.close(w_fd)
     src_fd = _os.open(str(src), _os.O_RDONLY)
     dst3 = tmp_path / "d"
     dst3.write_bytes(b"")

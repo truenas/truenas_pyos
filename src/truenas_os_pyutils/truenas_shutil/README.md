@@ -32,6 +32,7 @@ already have open fds.
 | `clonefile(src_fd, dst_fd)` | function | Block-level clone via `copy_file_range(2)` (raises `EXDEV` across filesystems). |
 | `copyfile(src_fd, dst_fd)` | function | Try `clonefile`; on `EXDEV` fall back to `copysendfile`. |
 | `copysendfile(src_fd, dst_fd)` | function | Zero-copy via `sendfile(2)` with userspace fallback. |
+| `copysplice(src_fd, dst_fd)` | function | Zero-copy pipe↔file via `splice(2)`, with userspace fallback. |
 | `copyuserspace(src_fd, dst_fd)` | function | Pure userspace copy via `shutil.copyfileobj`. |
 | `MAX_RW_SZ` | int | Maximum kernel read/write size (`INT_MAX & ~(4096 - 1)`, page-aligned). |
 | `ACL_XATTRS`, `ACCESS_ACL_XATTRS` | frozenset | xattr names that hold ACL data. |
@@ -43,6 +44,13 @@ destination already inherited an ACL; callers should be prepared for that.
 
 `copy_xattrs` skips `system.*` xattrs (filesystem-specific handlers that
 do not round-trip).
+
+`copysplice` is the counterpart to `copysendfile` for the pipe case:
+`sendfile(2)` cannot read from a pipe and `copy_file_range(2)` needs two
+regular files, so neither serves a pipe→file upload or a file→pipe
+download.  `splice(2)` requires exactly one end to be a pipe; when the fd
+pair is not splice-able the kernel returns `EINVAL` before any bytes move
+and `copysplice` falls back to `copyuserspace`.
 
 ---
 
