@@ -19,6 +19,7 @@ from truenas_os_pyutils.truenas_shutil.copy import (
     copy_xattrs,
     copyfile,
     copysendfile,
+    copysplice,
     copyuserspace,
 )
 
@@ -128,6 +129,100 @@ def test_copysendfile_falls_back_when_sendfile_returns_zero(tmp_path, monkeypatc
 
     assert n == len(b"fallback")
     assert dst.read_bytes() == b"fallback"
+
+
+# ── copysplice ────────────────────────────────────────────────────────────────
+
+
+def test_copysplice_pipe_to_file(tmp_path):
+    # Stream a pipe (upload direction) into a regular file.
+    dst = tmp_path / "dst.bin"
+    dst.write_bytes(b"")
+    payload = b"splice upload\n" * 100  # well under the 64 KiB pipe buffer
+
+    r_fd, w_fd = os.pipe()
+    os.write(w_fd, payload)
+    os.close(w_fd)  # EOF so splice's loop terminates
+
+    dst_fd = os.open(str(dst), os.O_RDWR)
+    try:
+        n = copysplice(r_fd, dst_fd)
+    finally:
+        os.close(r_fd)
+        os.close(dst_fd)
+
+    assert n == len(payload)
+    assert dst.read_bytes() == payload
+
+
+def test_copysplice_file_to_pipe(tmp_path):
+    # Stream a regular file (download direction) into a pipe.
+    src = tmp_path / "src.bin"
+    payload = b"splice download\n" * 100
+    src.write_bytes(payload)
+
+    r_fd, w_fd = os.pipe()
+    src_fd = os.open(str(src), os.O_RDONLY)
+    try:
+        n = copysplice(src_fd, w_fd)
+        os.close(w_fd)  # flush EOF to the reader before draining
+        w_fd = -1
+        read_back = b""
+        while chunk := os.read(r_fd, 65536):
+            read_back += chunk
+    finally:
+        os.close(src_fd)
+        os.close(r_fd)
+        if w_fd != -1:
+            os.close(w_fd)
+
+    assert n == len(payload)
+    assert read_back == payload
+
+
+def test_copysplice_falls_back_for_two_regular_files(tmp_path):
+    # Neither fd is a pipe, so the kernel rejects splice with EINVAL and
+    # copysplice must transparently fall back to a userspace copy.
+    src = tmp_path / "src.bin"
+    dst = tmp_path / "dst.bin"
+    payload = b"regular-to-regular\n" * 50
+    src.write_bytes(payload)
+    dst.write_bytes(b"")
+
+    src_fd = os.open(str(src), os.O_RDONLY)
+    dst_fd = os.open(str(dst), os.O_RDWR)
+    try:
+        n = copysplice(src_fd, dst_fd)
+    finally:
+        os.close(src_fd)
+        os.close(dst_fd)
+
+    assert n == len(payload)
+    assert dst.read_bytes() == payload
+
+
+def test_copysplice_reraises_non_einval(tmp_path, monkeypatch):
+    # A non-EINVAL splice failure is unrecoverable and must propagate.
+    dst = tmp_path / "dst.bin"
+    dst.write_bytes(b"")
+
+    import truenas_os_pyutils.truenas_shutil.copy as mod
+
+    def fake_splice(*a, **kw):
+        raise OSError(errno.EIO, "I/O error")
+
+    monkeypatch.setattr(mod, "splice", fake_splice)
+
+    r_fd, w_fd = os.pipe()
+    dst_fd = os.open(str(dst), os.O_RDWR)
+    try:
+        with pytest.raises(OSError) as exc_info:
+            copysplice(r_fd, dst_fd)
+        assert exc_info.value.errno == errno.EIO
+    finally:
+        os.close(r_fd)
+        os.close(w_fd)
+        os.close(dst_fd)
 
 
 # ── clonefile / copyfile ───────────────────────────────────────────

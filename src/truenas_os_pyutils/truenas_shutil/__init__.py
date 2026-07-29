@@ -13,6 +13,7 @@ from .copy import (
     copy_xattrs,
     copyfile,
     copysendfile,
+    copysplice,
     copyuserspace,
 )
 from .copytree import (
@@ -40,6 +41,7 @@ __all__ = [
     "copy_xattrs",
     "copyfile",
     "copysendfile",
+    "copysplice",
     "copytree",
     "copyuserspace",
 ]
