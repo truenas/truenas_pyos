@@ -5,6 +5,9 @@ Direct Python access to Linux syscalls not available in the standard library:
 `mount_setattr(2)`, `move_mount(2)`, `fsmount(2)`/`fsopen(2)`/`fsconfig(2)`,
 `name_to_handle_at(2)`/`open_by_handle_at(2)`, and NFS4/POSIX1E ACL xattr I/O.
 
+The module also exposes the io_uring binding as the top-level `truenas_os.Uring`
+/ `truenas_os.UringOp` types.
+
 ## Requirements
 
 - Python 3.13+

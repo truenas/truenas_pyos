@@ -4,8 +4,91 @@ This module provides Python bindings to Linux kernel system calls for
 advanced filesystem and mount operations, plus ACL support.
 """
 
+import os
 from typing import Any, Callable, ClassVar, Iterable, Iterator, Literal, NamedTuple, final, type_check_only
 from enum import IntEnum, IntFlag
+
+_PathLike = str | bytes | os.PathLike[str] | os.PathLike[bytes]
+
+@final
+class UringOp:
+    """An opaque handle for one prepared io_uring operation.
+
+    Returned by Uring.prep_openat2/prep_close/prep_pread/prep_pwrite/prep_statx
+    and consumed by Uring.submit(). Not constructible from Python; exposes no
+    members.
+    Dropping a prepared handle before it is submitted reclaims its op slot and
+    releases any pinned buffer; a submitted handle is inert.
+    """
+
+@final
+class Uring:
+    """A minimal async file ring over io_uring: prep_* handles, submit() a batch, reap()."""
+    def __new__(
+        cls,
+        *,
+        entries: int = 256,
+        files: int = 1024,
+        cq_entries: int = 0,
+        iowq_max_bounded: int = 0,
+        iowq_max_unbounded: int = 0,
+    ) -> Uring: ...
+    def prep_openat2(
+        self,
+        dirfd: int,
+        path: _PathLike,
+        flags: int = ...,
+        mode: int = 0,
+        resolve: int = ...,
+        callback: Callable[..., object] | None = None,
+        private_data: object = None,
+    ) -> UringOp:
+        """Prepare an openat2 that installs a file into the registered table.
+
+        An optional completion `callback` is invoked at reap() with the
+        `(token, res, result)` tuple (and `private_data` if given); the op is
+        then consumed -- not returned by reap()."""
+        ...
+    def prep_close(self, file_slot: int, callback: Callable[..., object] | None = None, private_data: object = None, /) -> UringOp:
+        """Prepare a close of a registered file slot, freeing it."""
+        ...
+    def prep_pread(self, file_slot: int, buf: Any, offset: int = 0, callback: Callable[..., object] | None = None, private_data: object = None, /) -> UringOp:
+        """Prepare a positional read of a registered file into a buffer."""
+        ...
+    def prep_pwrite(self, file_slot: int, buf: Any, offset: int = 0, callback: Callable[..., object] | None = None, private_data: object = None, /) -> UringOp:
+        """Prepare a positional write of a buffer to a registered file."""
+        ...
+    def prep_statx(
+        self,
+        dirfd: int,
+        path: _PathLike,
+        flags: int = 0,
+        mask: int = ...,
+        callback: Callable[..., object] | None = None,
+        private_data: object = None,
+    ) -> UringOp:
+        """Prepare a statx of path relative to dirfd; the completion result is a
+        truenas_os StatxResult."""
+        ...
+    def prep_fixed_fd_install(self, file_slot: int, cloexec: bool = True, callback: Callable[..., object] | None = None, private_data: object = None, /) -> UringOp:
+        """Prepare installing a registered file slot as a regular process fd; the
+        completion result is the new int fd (O_CLOEXEC unless cloexec=False)."""
+        ...
+    def submit(self, handles: Iterable[object], /, linked: bool = False) -> tuple[int, ...]:
+        """Submit prepared handles as one batch; return their tokens."""
+        ...
+    def reap(self, max: int = 0, /) -> list[tuple[int, int, object]]:
+        """Drain the completion queue into (token, res, result) tuples."""
+        ...
+    def cancel(self, token: int, /) -> None:
+        """Ask the kernel to cancel the operation with this token."""
+        ...
+    def close(self) -> None: ...
+    def ringfd(self) -> int: ...
+    @property
+    def inflight(self) -> int: ...
+    @property
+    def closed(self) -> bool: ...
 
 # StatxResult type - PyStructSequence from statx(2)
 @final

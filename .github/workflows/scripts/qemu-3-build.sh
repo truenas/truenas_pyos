@@ -64,6 +64,7 @@ sudo apt-get install -y \
   build-essential \
   debhelper \
   dh-python \
+  git \
   pybuild-plugin-pyproject \
   python3-all-dev \
   python3-setuptools \

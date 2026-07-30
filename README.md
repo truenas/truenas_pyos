@@ -13,6 +13,15 @@ Direct Python access to Linux syscalls not available in the standard library:
 `name_to_handle_at(2)`/`open_by_handle_at(2)`, and NFS4/POSIX1E ACL xattr I/O.
 See [`src/cext/os/README.md`](src/cext/os/README.md).
 
+### `truenas_os.Uring` (io_uring binding)
+
+A minimal async file ring over io_uring: five operations (open, close, pread,
+pwrite, statx) with no event-loop policy. Prepare operations into a pre-allocated slot
+pool (`prep_*` returns an opaque `UringOp` handle), submit a batch as one
+`io_uring_submit`, and reap the completions as plain tuples. Files are int slots
+in the ring's registered file table, not process fds. `Uring` and `UringOp` are
+top-level types on `truenas_os`, not a submodule.
+
 ### `truenas_os_pyutils` (pure Python)
 
 Higher-level utilities built on the C extension: symlink-safe file I/O
@@ -74,5 +83,5 @@ LGPL-3.0-or-later
 - All tests pass: `python3 -m pytest tests/`
 - SPDX license identifiers present on new files
 - Type stubs kept in sync when a C extension API changes:
-  - `truenas_os`: `stubs/truenas_os/__init__.pyi`
+  - `truenas_os` (incl. `Uring`/`UringOp`): `stubs/truenas_os/__init__.pyi`
   - `truenas_pyfilter`: `stubs/truenas_pyfilter/__init__.pyi`

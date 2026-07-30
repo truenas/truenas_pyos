@@ -20,7 +20,7 @@ jobs:
         apt update
         apt install -y python3-dev build-essential devscripts debhelper
         apt install -y dh-python pybuild-plugin-pyproject python3-pytest python3-all-dev
-        apt install -y python3-setuptools
+        apt install -y python3-setuptools git ca-certificates
 
     - name: Test Debian package build
       run: |
