@@ -15,6 +15,18 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # The Debian package build runs with no network egress, so setup.py's
+    # build-time liburing clone cannot reach github here. Check the pinned
+    # liburing 2.15 out up front (actions/checkout does have access) and point
+    # the build at it via TRUENAS_PYOS_LIBURING_SRC; the build-time clone stays
+    # the default for ordinary networked builds.
+    - name: Fetch pinned liburing
+      uses: actions/checkout@v4
+      with:
+        repository: axboe/liburing
+        ref: liburing-2.15
+        path: liburing
+
     - name: Install system dependencies
       run: |
         apt update
@@ -24,4 +36,5 @@ jobs:
 
     - name: Test Debian package build
       run: |
+        export TRUENAS_PYOS_LIBURING_SRC="$GITHUB_WORKSPACE/liburing"
         dpkg-buildpackage -us -uc -b

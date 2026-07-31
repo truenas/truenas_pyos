@@ -25,6 +25,17 @@ jobs:
       with:
         ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
+    # The package build (in the VM, below) has no network egress, so setup.py's
+    # build-time liburing clone fails there. Check the pinned liburing 2.15 out
+    # here; qemu-3-build.sh rsyncs it into the VM and points the build at it via
+    # TRUENAS_PYOS_LIBURING_SRC.
+    - name: Fetch pinned liburing
+      uses: actions/checkout@v4
+      with:
+        repository: axboe/liburing
+        ref: liburing-2.15
+        path: liburing
+
     - name: Determine TrueNAS train
       id: train
       run: |
