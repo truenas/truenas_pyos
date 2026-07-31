@@ -180,7 +180,7 @@ class StatmountResult(tuple[Any, ...]):  # PyStructSequence, not a true NamedTup
     A struct-sequence containing mount metadata.
     Fields not requested will be None.
 
-    Note: optional fields (fs_subtype, sb_source, opt_array, opt_sec_array,
+    Note: optional fields (fs_subtype, opt_array, opt_sec_array,
     supported_mask, mnt_uidmap, mnt_gidmap) are only present when the kernel
     supports the corresponding STATMOUNT_* constant.  They are absent from
     this build.
@@ -229,7 +229,7 @@ class StatmountResult(tuple[Any, ...]):  # PyStructSequence, not a true NamedTup
     @property
     def fs_subtype(self) -> str | None: ...  # Present on kernels with STATMOUNT_FS_SUBTYPE
     @property
-    def sb_source(self) -> str | None: ...   # Present on kernels with STATMOUNT_SB_SOURCE
+    def sb_source(self) -> str | None: ...   # None if the mount reports no source
     @property
     def opt_array(self) -> list[str] | None: ...     # Present on kernels with STATMOUNT_OPT_ARRAY
     @property

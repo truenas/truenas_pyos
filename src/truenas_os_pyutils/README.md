@@ -1,10 +1,10 @@
 # truenas_os_pyutils
 
 Pure-Python utilities that build on the `truenas_os` C extension. Requires
-Linux kernel 6.8 or later for `statmount(2)`/`listmount(2)`/`openat2(2)`
-support; kernel 6.9 or later for `PIDFD_GET_USER_NAMESPACE` (used by
-`namespace.py`); kernel 6.18 or later for `STATMOUNT_SB_SOURCE`
-(`mount_source` field and ZFS snapshot detection in `mount.py`).
+Linux kernel 6.18 or later (the `truenas_os` floor): the extension is built
+against 6.18 UAPI and uses `STATMOUNT_SB_SOURCE` (the `mount_source` field
+and ZFS snapshot detection in `mount.py`) unconditionally -- it will not
+build against older headers.
 
 ---
 
@@ -39,10 +39,6 @@ Mount point enumeration and unmounting via `statmount(2)`.
 Symlinks in `path` raise `SymlinkInPathError`. ZFS snapshot mounts are excluded
 from `iter_mountinfo` by default; pass `include_snapshot_mounts=True` to
 include them.
-
-A `RuntimeWarning` is emitted at import time if the package was built without
-`STATMOUNT_SB_SOURCE` support (kernel < 6.18); `mount_source` will be `None`
-and ZFS snapshot detection will be disabled in that case.
 
 ---
 

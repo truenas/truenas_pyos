@@ -206,10 +206,11 @@ PyDoc_STRVAR(py_uring_ring_prep_openat2__doc__,
 
 /*
  * FSConvert a path argument (str/bytes/PathLike; embedded NUL rejected) into
- * *path_bytes and point *path/*path_len at its bytes. The CALLER must Py_DECREF
- * *path_bytes once the op worker has copied the path. Shared by the prep_openat2
- * and prep_statx stubs so the decode and its cleanup cannot drift apart. Returns
- * 0 on success, or -1 with an exception set (and *path_bytes cleared).
+ * *path_bytes and point *path and *path_len at its bytes. The CALLER must
+ * Py_DECREF *path_bytes once the op worker has copied the path. Shared by the
+ * prep_openat2 and prep_statx stubs so the decode and its cleanup cannot drift
+ * apart. Returns 0 on success, or -1 with an exception set (and *path_bytes
+ * cleared).
  */
 static int
 prep_fsconvert_path(PyObject *a_path, PyObject **path_bytes, const char **path,

@@ -132,11 +132,9 @@ echo "Found zfs.ko at: $ZFS_KO"
 
 # Build and install truenas_pyos.  The build is userland-only (it compiles
 # against the UAPI headers, not the kernel build tree), so it runs fine
-# while the stock kernel is still booted.  The build has no network egress, so
-# setup.py's build-time liburing clone would fail here; point it at the pinned
-# liburing the workflow checked out and rsync'd in via the offline override.
+# while the stock kernel is still booted.  debian/rules fetches the pinned
+# liburing in its configure step (the sandboxed wheel-build phase can't).
 echo "Building truenas_pyos..."
-export TRUENAS_PYOS_LIBURING_SRC="$HOME/truenas_pyos/liburing"
 dpkg-buildpackage -us -uc -b
 echo "Installing truenas_pyos..."
 sudo dpkg -i ../python3-truenas-pyos_*.deb

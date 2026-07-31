@@ -268,6 +268,15 @@ truenas_pyfilter_ext = Extension(
     extra_compile_args=['-O2', '-Wall', '-Wextra', '-Wno-unused-parameter'],
 )
 
+# 'python3 setup.py fetch-liburing' materialises the pinned liburing tree and
+# exits, without running the build. A Debian build calls this from an earlier,
+# network-enabled phase (debian/rules override_dh_auto_configure); the sandboxed
+# wheel-build phase then reuses the tree -- build_ext's fetch_liburing() finds
+# build/liburing at the pinned commit and skips the clone.
+if sys.argv[1:] == ['fetch-liburing']:
+    fetch_liburing()
+    sys.exit(0)
+
 setup(
     cmdclass={'build_ext': build_ext_with_liburing},
     ext_modules=[truenas_os_ext, truenas_pyfilter_ext],
