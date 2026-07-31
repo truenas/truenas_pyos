@@ -15,12 +15,15 @@ See [`src/cext/os/README.md`](src/cext/os/README.md).
 
 ### `truenas_os.Uring` (io_uring binding)
 
-A minimal async file ring over io_uring: five operations (open, close, pread,
-pwrite, statx) with no event-loop policy. Prepare operations into a pre-allocated slot
-pool (`prep_*` returns an opaque `UringOp` handle), submit a batch as one
-`io_uring_submit`, and reap the completions as plain tuples. Files are int slots
-in the ring's registered file table, not process fds. `Uring` and `UringOp` are
-top-level types on `truenas_os`, not a submodule.
+A minimal async file ring over io_uring: six operations (open, close, pread,
+pwrite, statx, fixed-fd install) with no event-loop policy. Prepare operations
+into a pre-allocated slot pool (`prep_*` returns an opaque `UringOp` handle),
+submit a batch as one `io_uring_submit`, and reap the completions as plain
+tuples — or attach a per-op completion callback and let `reap()` dispatch it.
+Files are int slots in the ring's registered file table, not process fds.
+`Uring` and `UringOp` are top-level types on `truenas_os`, not a submodule. See
+[`examples/uring_callback_chain.py`](examples/uring_callback_chain.py) for an
+asyncio-driven callback chain.
 
 ### `truenas_os_pyutils` (pure Python)
 
@@ -44,6 +47,10 @@ results = truenas_pyfilter.tnfilter(records, filters=filters, options=options)
 ```
 
 See [`src/cext/filter_utils/README.md`](src/cext/filter_utils/README.md).
+
+## Examples
+
+Runnable demonstrations live in [`examples/`](examples/README.md).
 
 ## CLI Tools
 
@@ -69,8 +76,8 @@ python3 -m pip install .
 ## Requirements
 
 - Python 3.13+
-- Linux kernel 6.8+ (`statmount(2)`, `listmount(2)`, `openat2(2)`)
-- Linux kernel 6.18+ for `STATMOUNT_SB_SOURCE` (mount source field, ZFS snapshot detection)
+- Linux kernel 6.18+ (and 6.18 UAPI headers to build: `STATMOUNT_SB_SOURCE` is
+  required, not probed for)
 - GCC
 - libbsd-dev
 
