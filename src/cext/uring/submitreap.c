@@ -6,10 +6,10 @@
  * uring_submit_batch stages a pre-validated batch into the submission queue and
  * fires one io_uring_submit under the submit lock (the SQ is single-producer, so
  * concurrent submitters from multiple threads serialize here). reap_one turns one
- * completed CQE into a (token, res, result) tuple, runs the fixed-file
- * accounting, recycles the slot, and fires any per-op completion callback. The
- * Python-facing submit()/reap()/cancel() stubs in uring.c do the argument parsing
- * and call these; the op-slot state machine they lean on is in op.h.
+ * completed CQE into a (token, res, result) tuple, recycles the slot, and fires
+ * any per-op completion callback. The Python-facing submit()/reap()/cancel()
+ * stubs in uring.c do the argument parsing and call these; the op-slot state
+ * machine they lean on is in op.h.
  */
 
 #include <Python.h>
@@ -28,34 +28,26 @@ op_build_result(uring_op_t *op, int res)
 {
 	switch (op->tag) {
 	case URING_TAG_OPEN:
-		/*
-		 * A direct install returns 0, not an fd -- the file went straight
-		 * into the registered table. Its handle is the bare slot index.
-		 */
-		return PyLong_FromUnsignedLong(op->file_slot);
 	case URING_TAG_READ:
 	case URING_TAG_WRITE:
-		return PyLong_FromLong(res);
-	case URING_TAG_INSTALL:
-		/* The newly installed regular process fd. */
 		return PyLong_FromLong(res);
 	case URING_TAG_STATX:
 		/* The kernel filled the slot's embedded struct statx; wrap it. */
 		return statx_to_pyobject(&op->u.statx.stx);
 	case URING_TAG_CLOSE:
+	case URING_TAG_FSYNC:
 	default:
 		Py_RETURN_NONE;
 	}
 }
 
 /*
- * Convert one completed op into a plain (token, res, result) tuple. Runs
- * the file-op accounting (per-file counter; release the fixed slot of a failed
- * open or a close), builds the typed result, returns the pool slot, and never
- * raises mid-drain except on an allocation failure building the tuple.
+ * Convert one completed op into a plain (token, res, result) tuple: build the
+ * typed result and return the pool slot. Never raises mid-drain except on an
+ * allocation failure building the tuple.
  *
  * Result convention (the driver re-raises / unwraps):
- *   res >= 0, build OK    -> result = the built object (int slot / int / None).
+ *   res >= 0, build OK    -> result = the built object (int fd / int / None).
  *   res >= 0, build OOM   -> result = the captured exception instance.
  *   res < 0               -> result = None; res carries -errno.
  */
@@ -68,10 +60,6 @@ reap_one(UringObject *self, uring_op_t *op, int res, bool *consumed)
 	PyObject *res_obj = NULL;
 	PyObject *callback = op->callback;	/* stolen below; fired once the */
 	PyObject *private_data = op->private_data;	/* tuple is built */
-	uint32_t file_slot = op->file_slot;
-	bool owns_slot = op->owns_slot;
-	bool counted = op->counted_file;
-	uint8_t tag = op->tag;
 	uint32_t slot = (uint32_t)(op - self->pool);
 	uint64_t token = SLOT_IDX_TO_OPID(op->gen, slot);
 
@@ -82,36 +70,6 @@ reap_one(UringObject *self, uring_op_t *op, int res, bool *consumed)
 	op->callback = NULL;
 	op->private_data = NULL;
 	*consumed = false;
-
-	if (counted) {
-		/*
-		 * Release the prep-time charge (symmetric with uring_file_charge). While
-		 * the op was in flight live > 0 kept the slot from being closed, so the
-		 * decrement lands on the same registration the charge counted. (An op
-		 * against an empty slot is never counted, so counted is false above.)
-		 */
-		self->files[file_slot].live--;
-	}
-
-	if (res < 0 && owns_slot && file_slot != URING_NO_SLOT) {
-		/* A failed open installed nothing, so its reserved slot returns. */
-		uring_file_release(self, file_slot);
-	}
-	if (tag == URING_TAG_CLOSE && file_slot != URING_NO_SLOT &&
-	    self->files[file_slot].in_use) {
-		/*
-		 * A fixed-file close removes the registration whether or not
-		 * filp_close() reported an error, so an installed slot is returned
-		 * on both res >= 0 and res < 0 (gating on success would leak it on a
-		 * close that fails, e.g. EIO/ENOSPC on some backing stores). But
-		 * only when the slot was actually installed: closing a slot that was
-		 * never opened -- or a double close -- reaches here with in_use
-		 * already false, and releasing it again would push it onto the file
-		 * free list a second time, corrupting the list (self-referential
-		 * next_free) and handing the same slot to two later opens.
-		 */
-		uring_file_release(self, file_slot);
-	}
 
 	/* Build the result while the slot's landing zones are still live. */
 	if (res < 0) {
@@ -279,7 +237,7 @@ uring_submit_batch(UringObject *self, submit_ent_t *ents, Py_ssize_t n,
 	 * Count the batch in flight while still holding the GIL, before
 	 * io_uring_submit drops it: once the SQEs reach the kernel a completion can be
 	 * reaped on the reaper thread, and reap_one's inflight-- must see the op
-	 * already counted. The per-file live counter is charged at prep time.
+	 * already counted.
 	 */
 	self->inflight += (uint32_t)staged;
 

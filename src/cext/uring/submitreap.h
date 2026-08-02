@@ -64,11 +64,11 @@ int uring_submit_batch(UringObject *self, submit_ent_t *ents, Py_ssize_t n,
 		       int linked);
 
 /*
- * Convert one completed op into a plain (token, res, result) tuple: run the
- * fixed-file accounting, build the typed result, recycle the slot, and -- if the
- * op carried a completion callback -- fire it here and set *consumed (the op is
- * then not returned to reap()'s list). Returns a new tuple reference, or NULL with
- * an exception set on an allocation failure. Defined in submitreap.c.
+ * Convert one completed op into a plain (token, res, result) tuple: build the
+ * typed result, recycle the slot, and -- if the op carried a completion
+ * callback -- fire it here and set *consumed (the op is then not returned to
+ * reap()'s list). Returns a new tuple reference, or NULL with an exception set
+ * on an allocation failure. Defined in submitreap.c.
  */
 PyObject *reap_one(UringObject *self, uring_op_t *op, int res, bool *consumed);
 

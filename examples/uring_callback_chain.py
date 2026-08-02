@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Chained completion callbacks on truenas_os.Uring, driven by asyncio.
 
-    openat2(O_CREAT) --> pwrite --> pread --> print + close
-                     ^          ^         ^
+    openat2(O_CREAT) --> pwritev2 --> preadv2 --> print + close
+                     ^            ^           ^
                      each arrow is a completion callback submitting the next op
 
 The ring plugs into the event loop with one line:
@@ -20,11 +20,10 @@ A callback'd op is *consumed* -- it never appears in reap()'s returned list
 -- so the add_reader reap discards nothing here: every op carries a
 callback.
 
-The open installs the file directly into the ring's registered-file table:
-its completion result is a fixed-file slot index, not a process fd, and the
-later ops name that slot.  The slot is handed down the chain via
-private_data (callbacks take the completion tuple, plus private_data when
-one was given).
+The open's completion result is a regular process file descriptor, and the
+later ops name that fd.  It is handed down the chain via private_data
+(callbacks take the completion tuple, plus private_data when one was
+given).
 """
 
 import asyncio
@@ -58,38 +57,40 @@ async def run_chain():
         # openat2 resolves relative to an anchor directory fd (there is no
         # AT_FDCWD or absolute-path surface).
         dirfd = os.open(tmp, os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
-        ring = Uring(entries=8, files=8)
+        ring = Uring(entries=8)
         try:
-            # The pread lands here; the ring pins the buffer while the op is
+            # The read lands here; the ring pins the buffer while the op is
             # in flight.
             buf = bytearray(4096)
 
             def on_open(completion):
-                token, res, slot = completion
+                token, res, fd = completion
                 if not check('open', res):
-                    finish()        # failed open installed nothing to close
+                    finish()        # a failed open leaves nothing to close
                     return
-                print('opened %s into fixed-file slot %d'
-                      % (FILENAME.decode(), slot))
-                ring.submit([ring.prep_pwrite(slot, PAYLOAD, 0,
-                                              on_write, slot)])
+                print('opened %s at fd %d' % (FILENAME.decode(), fd))
+                ring.submit([ring.prep_pwritev2(fd, [PAYLOAD],
+                                                callback=on_write,
+                                                private_data=fd)])
 
-            def on_write(completion, slot):
+            def on_write(completion, fd):
                 token, res, nwritten = completion
                 if not check('write', res):
-                    ring.submit([ring.prep_close(slot, on_close)])
+                    ring.submit([ring.prep_close(fd, on_close)])
                     return
-                # A demo-sized pwrite at offset 0 does not short-write; a
+                # A demo-sized write at offset 0 does not short-write; a
                 # real caller would loop on nwritten like a plain write(2).
                 print('wrote %d bytes' % nwritten)
-                ring.submit([ring.prep_pread(slot, buf, 0, on_read, slot)])
+                ring.submit([ring.prep_preadv2(fd, [buf],
+                                               callback=on_read,
+                                               private_data=fd)])
 
-            def on_read(completion, slot):
+            def on_read(completion, fd):
                 token, res, nread = completion
                 if check('read', res):
                     print('read back: %r' % bytes(buf[:nread]))
-                # Done with the file either way: free its slot.
-                ring.submit([ring.prep_close(slot, on_close)])
+                # Done with the file either way: close its fd.
+                ring.submit([ring.prep_close(fd, on_close)])
 
             def on_close(completion):
                 token, res, _ = completion

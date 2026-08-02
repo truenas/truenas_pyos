@@ -28,7 +28,7 @@ def test_uring_surface_is_minimal():
 
 @requires_io_uring
 def test_construct_and_close():
-    r = Uring(entries=16, files=16)
+    r = Uring(entries=16)
     assert r.closed is False
     assert r.inflight == 0
     assert r.ringfd() >= 0
@@ -38,7 +38,7 @@ def test_construct_and_close():
 
 @requires_io_uring
 def test_close_is_idempotent():
-    r = Uring(entries=8, files=8)
+    r = Uring(entries=8)
     r.close()
     r.close()
     assert r.closed is True
@@ -46,7 +46,7 @@ def test_close_is_idempotent():
 
 @requires_io_uring
 def test_ringfd_after_close_raises():
-    r = Uring(entries=8, files=8)
+    r = Uring(entries=8)
     r.close()
     with pytest.raises(ValueError, match='closed'):
         r.ringfd()
@@ -54,7 +54,6 @@ def test_ringfd_after_close_raises():
 
 @pytest.mark.parametrize('kwargs', [
     {'entries': 0},
-    {'files': 0},
 ])
 def test_zero_sizes_rejected(kwargs):
     with pytest.raises(ValueError):
@@ -63,7 +62,6 @@ def test_zero_sizes_rejected(kwargs):
 
 @pytest.mark.parametrize('kwargs', [
     {'entries': -1},
-    {'files': -1},
     {'entries': 2 ** 32},          # just past the u32 range
     {'entries': 2 ** 32 + 5},
     {'cq_entries': 2 ** 40},
@@ -85,7 +83,7 @@ def test_keyword_only_construction():
 
 @requires_io_uring
 def test_prep_after_close_rejected(tmp_path):
-    r = Uring(entries=8, files=8)
+    r = Uring(entries=8)
     dirfd = open_dir(str(tmp_path))
     r.close()
     with pytest.raises(ValueError, match='closed'):
@@ -95,7 +93,7 @@ def test_prep_after_close_rejected(tmp_path):
 
 @requires_io_uring
 def test_submit_after_close_rejected():
-    r = Uring(entries=8, files=8)
+    r = Uring(entries=8)
     r.close()
     with pytest.raises(ValueError, match='closed'):
         r.submit([])
@@ -124,7 +122,7 @@ def test_reap_on_idle_ring_is_harmless():
 
 @requires_io_uring
 def test_reap_after_close_returns_empty():
-    r = Uring(entries=8, files=8)
+    r = Uring(entries=8)
     r.close()
     assert r.reap() == []
 
@@ -139,7 +137,7 @@ def test_reap_negative_max_rejected():
 
 @requires_io_uring
 def test_cancel_after_close_rejected():
-    r = Uring(entries=8, files=8)
+    r = Uring(entries=8)
     r.close()
     with pytest.raises(ValueError, match='closed'):
         r.cancel(0)
@@ -150,7 +148,7 @@ def test_reap_returns_plain_tuples(tmp_path):
     """A completion is a plain (token, res, result) 3-tuple, not a
     struct-sequence."""
     (tmp_path / 'f').write_bytes(b'abcd')
-    r = Uring(entries=8, files=8)
+    r = Uring(entries=8)
     dirfd = open_dir(str(tmp_path))
     try:
         (ud,) = r.submit([r.prep_openat2(dirfd, b'f', os.O_RDONLY)])
@@ -165,8 +163,9 @@ def test_reap_returns_plain_tuples(tmp_path):
         assert len(comp) == 3
         token, res, result = comp
         assert token == ud
-        assert res == 0                 # a direct install returns 0
-        assert isinstance(result, int)  # the file slot
+        assert res >= 0                 # an open's raw result is the new fd
+        assert isinstance(result, int)  # ... and result is that same fd
+        assert result == res
         drive_one(r, r.prep_close(result))
     finally:
         r.close()
@@ -185,7 +184,7 @@ def test_ring_op_handle_is_opaque_and_not_constructible():
 @requires_io_uring
 def test_prep_returns_ring_op_handle(tmp_path):
     (tmp_path / 'f').write_bytes(b'x')
-    r = Uring(entries=8, files=8)
+    r = Uring(entries=8)
     dirfd = open_dir(str(tmp_path))
     try:
         handle = r.prep_openat2(dirfd, b'f', os.O_RDONLY)

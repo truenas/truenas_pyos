@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Concurrency: many threads may submit/cancel while a single thread reaps.
 
-The submission queue is serialized by an internal PyMutex; the pool, file table,
+The submission queue is serialized by an internal PyMutex; the pool, the
 inflight counter and the single-consumer completion queue ride the GIL. close()
 is fail-closed against a racing submit. These tests hammer those paths from
 multiple threads and assert no crash, no lost completions, and clean rejection.
@@ -27,7 +27,7 @@ def test_concurrent_submit_single_reap(tmp_path):
     n_threads = 8
     per = 100
     total = n_threads * per
-    with ring_env(tmp_path, entries=256, files=8) as (r, dirfd):
+    with ring_env(tmp_path, entries=256) as (r, dirfd):
         seen = []
         errors = []
         start = threading.Barrier(n_threads + 1)
@@ -38,7 +38,7 @@ def test_concurrent_submit_single_reap(tmp_path):
                 done = 0
                 while done < per:
                     try:
-                        # statx: no file slot, so pure submit contention
+                        # statx: no fd involved, so pure submit contention
                         r.submit([r.prep_statx(dirfd, b'f')])
                         done += 1
                     except BlockingIOError:
@@ -73,7 +73,7 @@ def test_close_races_concurrent_submits(tmp_path):
     """close() while other threads hammer submit(): fail-closed, never a crash.
     A racing submit gets ValueError (closed) or BlockingIOError (pool full)."""
     (tmp_path / 'f').write_bytes(b'x')
-    r = Uring(entries=128, files=8)
+    r = Uring(entries=128)
     dirfd = open_dir(str(tmp_path))
     errors = []
     stop = threading.Event()

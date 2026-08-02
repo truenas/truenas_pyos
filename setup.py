@@ -245,13 +245,14 @@ truenas_os_ext = Extension(
         # into this same shared object as top-level types (not a submodule).
         # uring.c: the Uring/UringOp types, the prep_* / submit / reap / cancel
         # stubs, and the ring lifecycle; submitreap.c: the submit and reap
-        # mechanics behind those stubs; openclose.c + rw.c + stat.c: the prep_*
-        # op workers; op.h (static inline) holds the op-slot state machine shared
-        # across them.
+        # mechanics behind those stubs; openclose.c + rw.c + fsync.c + stat.c:
+        # the prep_* op workers; op.h (static inline) holds the op-slot state
+        # machine shared across them.
         'src/cext/uring/uring.c',
         'src/cext/uring/submitreap.c',
         'src/cext/uring/openclose.c',
         'src/cext/uring/rw.c',
+        'src/cext/uring/fsync.c',
         'src/cext/uring/stat.c',
     ],
     include_dirs=['src/cext/os', 'src/cext/uring']

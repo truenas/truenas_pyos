@@ -15,12 +15,15 @@ See [`src/cext/os/README.md`](src/cext/os/README.md).
 
 ### `truenas_os.Uring` (io_uring binding)
 
-A minimal async file ring over io_uring: six operations (open, close, pread,
-pwrite, statx, fixed-fd install) with no event-loop policy. Prepare operations
-into a pre-allocated slot pool (`prep_*` returns an opaque `UringOp` handle),
-submit a batch as one `io_uring_submit`, and reap the completions as plain
-tuples — or attach a per-op completion callback and let `reap()` dispatch it.
-Files are int slots in the ring's registered file table, not process fds.
+A minimal async file ring over io_uring: six operations (open, close, preadv2,
+pwritev2, fsync, statx) with no event-loop policy. Prepare operations into a
+pre-allocated slot pool (`prep_*` returns an opaque `UringOp` handle), submit a
+batch as one `io_uring_submit`, and reap the completions as plain tuples — or
+attach a per-op completion callback and let `reap()` dispatch it. Files are
+ordinary process file descriptors: an open completes with a new fd, and
+read/write/close take any fd the caller owns, however it was opened. One
+limitation: a vectored read/write carries at most 8 buffers per operation —
+split larger scatter/gather lists across operations.
 `Uring` and `UringOp` are top-level types on `truenas_os`, not a submodule. See
 [`examples/uring_callback_chain.py`](examples/uring_callback_chain.py) for an
 asyncio-driven callback chain.

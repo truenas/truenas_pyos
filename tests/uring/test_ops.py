@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """
-The four core operations, oracled against ordinary blocking I/O.
+The six operations, oracled against ordinary blocking I/O.
 
 Every path resolves against an O_PATH anchor dirfd; open is confined in-kernel
 by RESOLVE_BENEATH. There is no AT_FDCWD surface and no absolute-path surface.
@@ -27,16 +27,15 @@ from .conftest import (
 # ── open ─────────────────────────────────────────────────────────────────────
 
 @requires_io_uring
-def test_open_returns_int_slot_not_fd(tmp_path):
-    """An explicit-index install materialises no process file descriptor.
-
-    Its handle is a bare registered-file-table slot index (an int), not a fd.
-    """
+def test_open_returns_process_fd(tmp_path):
+    """The open's completion result is a regular process file descriptor,
+    usable outside the ring like any os.open result."""
     (tmp_path / 'f').write_bytes(b'data')
     with ring_env(tmp_path) as (r, dirfd):
         fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDONLY))
         assert isinstance(fh, int)
         assert fh >= 0
+        assert os.fstat(fh).st_size == 4    # a real fd: plain syscalls work
         drive_one(r, r.prep_close(fh))
 
 
@@ -69,13 +68,15 @@ def test_resolve_beneath_blocks_escape(tmp_path):
 
 
 @requires_io_uring
-def test_open_rejects_o_cloexec(tmp_path):
-    """O_CLOEXEC is invalid with a fixed-file install; reject it up front."""
+def test_open_honors_o_cloexec(tmp_path):
+    """A plain openat2 accepts O_CLOEXEC and the returned fd carries it."""
+    import fcntl
     (tmp_path / 'f').write_bytes(b'x')
     with ring_env(tmp_path) as (r, dirfd):
-        with pytest.raises(ValueError, match='O_CLOEXEC'):
-            r.prep_openat2(dirfd, b'f', os.O_RDONLY | os.O_CLOEXEC)
-        assert r.inflight == 0
+        fh = drive_one(r, r.prep_openat2(dirfd, b'f',
+                                         os.O_RDONLY | os.O_CLOEXEC))
+        assert fcntl.fcntl(fh, fcntl.F_GETFD) & fcntl.FD_CLOEXEC
+        drive_one(r, r.prep_close(fh))
 
 
 @requires_io_uring
@@ -94,66 +95,9 @@ def test_default_flags_are_rdonly(tmp_path):
     with ring_env(tmp_path) as (r, dirfd):
         fh = drive_one(r, r.prep_openat2(dirfd, b'f'))
         buf = bytearray(3)
-        assert drive_one(r, r.prep_pread(fh, buf, 0)) == 3
+        assert drive_one(r, r.prep_preadv2(fh, [buf], 0)) == 3
         assert bytes(buf) == b'abc'
         drive_one(r, r.prep_close(fh))
-
-
-@requires_io_uring
-def test_failed_open_returns_its_file_slot(tmp_path):
-    """A failed open installed nothing, so its reserved slot must come back."""
-    with ring_env(tmp_path, files=4) as (r, dirfd):
-        for _ in range(50):             # far more than the table holds
-            with pytest.raises(FileNotFoundError):
-                drive_one(r, r.prep_openat2(dirfd, b'missing', os.O_RDONLY))
-        # The table must still be usable.
-        fh = drive_one(r, r.prep_openat2(dirfd, b'ok',
-                                         os.O_CREAT | os.O_WRONLY, 0o644))
-        drive_one(r, r.prep_close(fh))
-
-
-# ── fixed-fd install ─────────────────────────────────────────────────────────
-
-@requires_io_uring
-def test_fixed_fd_install_returns_usable_regular_fd(tmp_path):
-    """prep_fixed_fd_install mints a real process fd from a registered slot: it
-    reads with ordinary syscalls and is CLOEXEC by default."""
-    import fcntl
-    (tmp_path / 'f').write_bytes(b'hello')
-    with ring_env(tmp_path) as (r, dirfd):
-        slot = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDONLY))
-        fd = drive_one(r, r.prep_fixed_fd_install(slot))
-        assert isinstance(fd, int) and fd >= 0
-        try:
-            assert os.read(fd, 5) == b'hello'          # a real, usable fd
-            assert fcntl.fcntl(fd, fcntl.F_GETFD) & fcntl.FD_CLOEXEC
-        finally:
-            os.close(fd)
-        # The slot is untouched -- it still needs its own close.
-        drive_one(r, r.prep_close(slot))
-
-
-@requires_io_uring
-def test_fixed_fd_install_cloexec_false(tmp_path):
-    import fcntl
-    (tmp_path / 'f').write_bytes(b'x')
-    with ring_env(tmp_path) as (r, dirfd):
-        slot = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDONLY))
-        fd = drive_one(r, r.prep_fixed_fd_install(slot, False))
-        try:
-            assert not (fcntl.fcntl(fd, fcntl.F_GETFD) & fcntl.FD_CLOEXEC)
-        finally:
-            os.close(fd)
-        drive_one(r, r.prep_close(slot))
-
-
-@requires_io_uring
-def test_fixed_fd_install_on_empty_slot_fails(tmp_path):
-    """Installing a never-opened slot is a bare-slot op: the kernel reports an
-    error, like any fixed-file op on an empty slot."""
-    with ring_env(tmp_path, files=4) as (r, _dirfd):
-        with pytest.raises(OSError):
-            drive_one(r, r.prep_fixed_fd_install(0))
 
 
 # ── handle repr ──────────────────────────────────────────────────────────────
@@ -165,17 +109,16 @@ def test_ring_op_repr_names_its_op_type(tmp_path):
     with ring_env(tmp_path) as (r, dirfd):
         op = r.prep_openat2(dirfd, b'f', os.O_RDONLY)
         assert repr(op) == '<truenas_os.UringOp openat2>'
-        slot = drive_one(r, op)
+        fd = drive_one(r, op)
         assert repr(op) == '<truenas_os.UringOp openat2>'   # unchanged after submit
         # every op type maps to its own name (prepared, then dropped)
         buf = bytearray(4)
-        assert repr(r.prep_pread(slot, buf, 0)) == '<truenas_os.UringOp pread>'
-        assert repr(r.prep_pwrite(slot, b'zzzz', 0)) == '<truenas_os.UringOp pwrite>'
+        assert repr(r.prep_preadv2(fd, [buf], 0)) == '<truenas_os.UringOp preadv2>'
+        assert repr(r.prep_pwritev2(fd, [b'zzzz'], 0)) == '<truenas_os.UringOp pwritev2>'
+        assert repr(r.prep_fsync(fd)) == '<truenas_os.UringOp fsync>'
         assert repr(r.prep_statx(dirfd, b'f')) == '<truenas_os.UringOp statx>'
-        assert repr(r.prep_fixed_fd_install(slot)) == \
-            '<truenas_os.UringOp fixed_fd_install>'
-        assert repr(r.prep_close(slot)) == '<truenas_os.UringOp close>'
-        drive_one(r, r.prep_close(slot))
+        assert repr(r.prep_close(fd)) == '<truenas_os.UringOp close>'
+        drive_one(r, r.prep_close(fd))
 
 
 # ── read / write ─────────────────────────────────────────────────────────────
@@ -191,15 +134,15 @@ def test_write_then_read_round_trip(tmp_path):
 
 @requires_io_uring
 def test_read_is_positional(tmp_path):
-    """A registered file exposes no file position: every op takes an offset."""
+    """Every read/write takes an explicit offset; no file position moves."""
     (tmp_path / 'f').write_bytes(b'0123456789')
     with ring_env(tmp_path) as (r, dirfd):
         fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDONLY))
         buf = bytearray(3)
-        assert drive_one(r, r.prep_pread(fh, buf, 4)) == 3
+        assert drive_one(r, r.prep_preadv2(fh, [buf], 4)) == 3
         assert bytes(buf) == b'456'
         # Re-reading the same offset yields the same bytes: no position moved.
-        assert drive_one(r, r.prep_pread(fh, buf, 4)) == 3
+        assert drive_one(r, r.prep_preadv2(fh, [buf], 4)) == 3
         assert bytes(buf) == b'456'
         drive_one(r, r.prep_close(fh))
 
@@ -209,7 +152,7 @@ def test_write_at_offset(tmp_path):
     (tmp_path / 'f').write_bytes(b'AAAAAAAAAA')
     with ring_env(tmp_path) as (r, dirfd):
         fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_WRONLY))
-        assert drive_one(r, r.prep_pwrite(fh, b'ZZ', 4)) == 2
+        assert drive_one(r, r.prep_pwritev2(fh, [b'ZZ'], 4)) == 2
         drive_one(r, r.prep_close(fh))
     assert (tmp_path / 'f').read_bytes() == b'AAAAZZAAAA'
 
@@ -220,7 +163,7 @@ def test_default_offset_is_zero(tmp_path):
     with ring_env(tmp_path) as (r, dirfd):
         fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDONLY))
         buf = bytearray(4)
-        assert drive_one(r, r.prep_pread(fh, buf)) == 4    # offset omitted
+        assert drive_one(r, r.prep_preadv2(fh, [buf])) == 4    # offset omitted
         assert bytes(buf) == b'0123'
         drive_one(r, r.prep_close(fh))
 
@@ -231,7 +174,7 @@ def test_read_past_eof_returns_zero(tmp_path):
     with ring_env(tmp_path) as (r, dirfd):
         fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDONLY))
         buf = bytearray(16)
-        assert drive_one(r, r.prep_pread(fh, buf, 1000)) == 0
+        assert drive_one(r, r.prep_preadv2(fh, [buf], 1000)) == 0
         drive_one(r, r.prep_close(fh))
 
 
@@ -241,7 +184,7 @@ def test_read_accepts_memoryview(tmp_path):
     with ring_env(tmp_path) as (r, dirfd):
         fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDONLY))
         buf = bytearray(6)
-        n = drive_one(r, r.prep_pread(fh, memoryview(buf), 0))
+        n = drive_one(r, r.prep_preadv2(fh, [memoryview(buf)], 0))
         drive_one(r, r.prep_close(fh))
     assert bytes(buf[:n]) == b'abcdef'
 
@@ -253,33 +196,9 @@ def test_read_rejects_readonly_buffer(tmp_path):
     with ring_env(tmp_path) as (r, dirfd):
         fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDONLY))
         with pytest.raises((TypeError, BufferError)):
-            r.prep_pread(fh, b'immutable', 0)
+            r.prep_preadv2(fh, [b'immutable'], 0)
         assert r.inflight == 0
         drive_one(r, r.prep_close(fh))
-
-
-# ── close ────────────────────────────────────────────────────────────────────
-
-@requires_io_uring
-def test_close_frees_the_slot_for_reuse(tmp_path):
-    (tmp_path / 'f').write_bytes(b'x')
-    with ring_env(tmp_path, files=2) as (r, dirfd):
-        for _ in range(20):             # ten times the table size
-            fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDONLY))
-            drive_one(r, r.prep_close(fh))
-        assert r.inflight == 0
-
-
-@requires_io_uring
-def test_operations_on_closed_slot_yield_ebadf(tmp_path):
-    """A stale slot is a stale handle: the kernel reports EBADF, not ValueError."""
-    (tmp_path / 'f').write_bytes(b'x')
-    with ring_env(tmp_path) as (r, dirfd):
-        fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDONLY))
-        drive_one(r, r.prep_close(fh))
-        with pytest.raises(OSError) as exc:
-            drive_one(r, r.prep_pread(fh, bytearray(4), 0))
-        assert exc.value.errno == errno.EBADF
 
 
 # ── linked chains ────────────────────────────────────────────────────────────
@@ -296,8 +215,8 @@ def test_linked_write_then_read_sees_the_write(tmp_path):
         fh = drive_one(r, r.prep_openat2(dirfd, b'f',
                                          os.O_CREAT | os.O_RDWR, 0o644))
         buf = bytearray(len(payload))
-        nw, nr = drive(r, [r.prep_pwrite(fh, payload, 0),
-                           r.prep_pread(fh, buf, 0)], linked=True)
+        nw, nr = drive(r, [r.prep_pwritev2(fh, [payload], 0),
+                           r.prep_preadv2(fh, [buf], 0)], linked=True)
         assert nw == len(payload)
         assert nr == len(payload)
         assert bytes(buf) == payload
@@ -309,7 +228,7 @@ def test_linked_write_then_read_sees_the_write(tmp_path):
 def test_linked_chain_cancels_rest_on_failure(tmp_path):
     """A failed link -ECANCELEDs the rest of the chain (inherent io_uring).
 
-    Writing to an O_RDONLY slot fails with EBADF; the read linked behind it is
+    Writing to an O_RDONLY fd fails with EBADF; the read linked behind it is
     never issued and completes with ECANCELED.
     """
     (tmp_path / 'f').write_bytes(b'0123456789')
@@ -317,10 +236,86 @@ def test_linked_chain_cancels_rest_on_failure(tmp_path):
         fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDONLY))
         buf = bytearray(4)
         (write_res, _), (read_res, _) = drive_raw(
-            r, [r.prep_pwrite(fh, b'zz', 0), r.prep_pread(fh, buf, 0)],
+            r, [r.prep_pwritev2(fh, [b'zz'], 0), r.prep_preadv2(fh, [buf], 0)],
             linked=True)
         assert write_res == -errno.EBADF
         assert read_res == -errno.ECANCELED
+        drive_one(r, r.prep_close(fh))
+
+
+# ── fsync ────────────────────────────────────────────────────────────────────
+
+@requires_io_uring
+def test_fsync_completes_with_none(tmp_path):
+    """A plain prep_fsync completes with res 0 and result None."""
+    with ring_env(tmp_path) as (r, dirfd):
+        fh = drive_one(r, r.prep_openat2(dirfd, b'f',
+                                         os.O_CREAT | os.O_RDWR, 0o600))
+        assert drive_one(r, r.prep_pwritev2(fh, [b'x' * 4096], 0)) == 4096
+        (res, result), = drive_raw(r, [r.prep_fsync(fh)])
+        assert res == 0
+        assert result is None
+        drive_one(r, r.prep_close(fh))
+
+
+@requires_io_uring
+def test_fsync_fdatasync_flag(tmp_path):
+    """fdatasync=True (IORING_FSYNC_DATASYNC) completes successfully."""
+    with ring_env(tmp_path) as (r, dirfd):
+        fh = drive_one(r, r.prep_openat2(dirfd, b'f',
+                                         os.O_CREAT | os.O_RDWR, 0o600))
+        assert drive_one(r, r.prep_pwritev2(fh, [b'y' * 512], 0)) == 512
+        assert drive_one(r, r.prep_fsync(fh, fdatasync=True)) is None
+        drive_one(r, r.prep_close(fh))
+
+
+@requires_io_uring
+def test_fsync_byte_range(tmp_path):
+    """A nonzero length syncs only [offset, offset+length]; completes res 0."""
+    with ring_env(tmp_path) as (r, dirfd):
+        fh = drive_one(r, r.prep_openat2(dirfd, b'f',
+                                         os.O_CREAT | os.O_RDWR, 0o600))
+        assert drive_one(r, r.prep_pwritev2(fh, [b'z' * 8192], 0)) == 8192
+        assert drive_one(r, r.prep_fsync(fh, offset=4096, length=4096)) is None
+        drive_one(r, r.prep_close(fh))
+
+
+@requires_io_uring
+def test_fsync_links_behind_write(tmp_path):
+    """The durability idiom: a pwritev2 and its fsync batch together, ordered
+    by IOSQE_IO_LINK, and both complete."""
+    with ring_env(tmp_path) as (r, dirfd):
+        fh = drive_one(r, r.prep_openat2(dirfd, b'f',
+                                         os.O_CREAT | os.O_RDWR, 0o600))
+        nw, synced = drive(r, [r.prep_pwritev2(fh, [b'durable'], 0),
+                               r.prep_fsync(fh, fdatasync=True)], linked=True)
+        assert nw == 7
+        assert synced is None
+        drive_one(r, r.prep_close(fh))
+
+
+@requires_io_uring
+def test_fsync_stale_fd_yields_ebadf(tmp_path):
+    """fsync of a closed fd is the kernel's bare EBADF at completion."""
+    (tmp_path / 'f').write_bytes(b'x')
+    with ring_env(tmp_path) as (r, dirfd):
+        fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDONLY))
+        drive_one(r, r.prep_close(fh))
+        (res, result), = drive_raw(r, [r.prep_fsync(fh)])
+        assert res == -errno.EBADF
+        assert result is None
+
+
+@requires_io_uring
+def test_fsync_length_over_uint32_rejected(tmp_path):
+    """The SQE length field is 32-bit; a larger length would silently truncate
+    to the wrong range, so prep_fsync rejects it up front."""
+    with ring_env(tmp_path) as (r, dirfd):
+        fh = drive_one(r, r.prep_openat2(dirfd, b'f',
+                                         os.O_CREAT | os.O_RDWR, 0o600))
+        with pytest.raises(ValueError, match='too large'):
+            r.prep_fsync(fh, length=2 ** 32)
+        assert r.inflight == 0
         drive_one(r, r.prep_close(fh))
 
 
@@ -402,7 +397,8 @@ def test_statx_accepts_keywords(tmp_path):
 
 @requires_io_uring
 def test_prep_keyword_errors(tmp_path):
-    """openat2/statx reject unknown, duplicate, and missing-required keywords."""
+    """The keyword-taking preps reject unknown, duplicate, and missing-required
+    keywords."""
     with ring_env(tmp_path) as (r, dirfd):
         with pytest.raises(TypeError, match='unexpected keyword'):
             r.prep_openat2(dirfd, 'f', bogus=1)
@@ -412,42 +408,38 @@ def test_prep_keyword_errors(tmp_path):
             r.prep_openat2(path='f')
         with pytest.raises(TypeError, match='unexpected keyword'):
             r.prep_statx(dirfd, 'f', nope=1)
+        with pytest.raises(TypeError, match='unexpected keyword'):
+            r.prep_fsync(0, nope=1)
+        with pytest.raises(TypeError, match='missing required'):
+            r.prep_fsync(fdatasync=True)
+        with pytest.raises(TypeError, match='unexpected keyword'):
+            r.prep_preadv2(0, [bytearray(1)], nope=1)
+        with pytest.raises(TypeError, match="missing required argument 'buffers'"):
+            r.prep_pwritev2(0, flags=0)
 
 
 @requires_io_uring
-def test_positional_only_ops_reject_keywords(tmp_path):
-    """close/pread/pwrite stay positional-only: a keyword raises TypeError."""
+def test_positional_only_close_rejects_keywords(tmp_path):
+    """prep_close is the one positional-only prep: a keyword raises TypeError."""
     with ring_env(tmp_path) as (r, dirfd):
         fh = drive_one(r, r.prep_openat2(dirfd, 'f', os.O_CREAT | os.O_RDWR, 0o600))
-        with pytest.raises(TypeError, match='no keyword arguments'):
-            r.prep_pread(fh, bytearray(4), offset=0)
-        with pytest.raises(TypeError, match='no keyword arguments'):
-            r.prep_pwrite(fh, b'x', offset=0)
         with pytest.raises(TypeError, match='no keyword arguments'):
             r.prep_close(fh, extra=1)
         drive_one(r, r.prep_close(fh))
 
 
 @requires_io_uring
-def test_prep_rejects_path_at_or_over_path_max(tmp_path):
-    """A path >= PATH_MAX is rejected client-side (the slot's inline path buffer
-    is PATH_MAX); openat2 and statx both raise ValueError before submission."""
+def test_over_long_path_yields_enametoolong(tmp_path):
+    """Paths are not policed client-side (the op holds a reference to the
+    caller's path bytes, not a bounded inline copy): a path over PATH_MAX
+    reaches the kernel and completes with -ENAMETOOLONG, like any bad value."""
     with ring_env(tmp_path) as (r, dirfd):
-        with pytest.raises(ValueError, match='too long'):
-            r.prep_openat2(dirfd, b'a' * 4096)
-        with pytest.raises(ValueError, match='too long'):
-            r.prep_statx(dirfd, b'a' * 4096)
-
-
-@requires_io_uring
-def test_file_slot_over_uint32_rejected(tmp_path):
-    """A file slot >= 2**32 must not truncate into an in-range slot: the range
-    check runs at full width, so it's rejected, not treated as slot (v mod 2**32)."""
-    with ring_env(tmp_path) as (r, _dirfd):
-        with pytest.raises(ValueError, match='out of range'):
-            r.prep_close(2 ** 32)          # would truncate to slot 0
-        with pytest.raises(ValueError, match='out of range'):
-            r.prep_pread(2 ** 32 + 3, bytearray(4), 0)
+        (res, result), = drive_raw(r, [r.prep_openat2(dirfd, b'a' * 5000)])
+        assert res == -errno.ENAMETOOLONG
+        assert result is None
+        (res, result), = drive_raw(r, [r.prep_statx(dirfd, b'a' * 5000)])
+        assert res == -errno.ENAMETOOLONG
+        assert result is None
 
 
 @requires_io_uring
@@ -489,75 +481,168 @@ def test_cancel_stale_token_does_not_abort_reused_slot(tmp_path):
 
 
 @requires_io_uring
-def test_double_close_does_not_corrupt_file_table(tmp_path):
-    """Closing a slot that is not installed (a double close, or a never-opened slot)
-    must NOT push it onto the file free list a second time. If it did, the list
-    would become self-referential and two later opens would receive the same slot."""
+def test_double_close_yields_ebadf(tmp_path):
+    """A second close of the same fd completes with -EBADF, exactly like a
+    stale os.close -- there is no ring-side fd tracking to corrupt."""
     (tmp_path / 'f').write_bytes(b'A')
-    (tmp_path / 'g').write_bytes(b'B')
-    with ring_env(tmp_path, files=8) as (r, dirfd):
+    with ring_env(tmp_path) as (r, dirfd):
         fh = drive_one(r, r.prep_openat2(dirfd, 'f', os.O_RDONLY))
-        (res1, _), = drive_raw(r, [r.prep_close(fh)])   # normal close: installed->freed
+        (res1, _), = drive_raw(r, [r.prep_close(fh)])
         assert res1 == 0
-        (res2, _), = drive_raw(r, [r.prep_close(fh)])   # stale close: EBADF, must not re-free
-        assert res2 < 0
-        # the free list is intact: two opens must get two DIFFERENT slots
-        a = drive_one(r, r.prep_openat2(dirfd, 'f', os.O_RDONLY))
-        b = drive_one(r, r.prep_openat2(dirfd, 'g', os.O_RDONLY))
-        assert a != b, f"file free list corrupted: both opens got slot {a}"
+        (res2, _), = drive_raw(r, [r.prep_close(fh)])   # stale fd: bare EBADF
+        assert res2 == -errno.EBADF
+        # the ring is unharmed: a fresh open + close still works
+        fh2 = drive_one(r, r.prep_openat2(dirfd, 'f', os.O_RDONLY))
+        drive_one(r, r.prep_close(fh2))
 
 
 @requires_io_uring
-def test_close_batched_with_same_slot_sibling_refused(tmp_path):
-    """A close prepared in the same batch as another op on the same fixed-file slot
-    is refused. The sibling charges the slot's live counter at prep time, so
-    prep_close sees it (live > 0) even before the batch is submitted."""
+def test_close_links_behind_read_in_one_batch(tmp_path):
+    """There is no close-last guard on a plain fd: a read and its close batch
+    together, ordered by IOSQE_IO_LINK, and both complete."""
     (tmp_path / 'f').write_bytes(b'hello')
     with ring_env(tmp_path) as (r, dirfd):
-        fh = drive_one(r, r.prep_openat2(dirfd, 'f', os.O_RDWR))
-        read = r.prep_pread(fh, bytearray(5), 0)   # sibling: prepared, not submitted
-        with pytest.raises(BlockingIOError):
-            r.prep_close(fh)                       # refused while `read` targets fh
-        (res, _), = drive_raw(r, [read])           # the sibling is still submittable
-        assert res == 5
+        fh = drive_one(r, r.prep_openat2(dirfd, 'f', os.O_RDONLY))
+        buf = bytearray(5)
+        nread, _ = drive(r, [r.prep_preadv2(fh, [buf], 0), r.prep_close(fh)],
+                         linked=True)
+        assert nread == 5
+        assert bytes(buf) == b'hello'
 
 
 @requires_io_uring
-def test_op_batched_after_close_on_same_slot_refused(tmp_path):
-    """The reverse of the above: once a close is prepared on a slot, a further op on
-    the same slot is refused (close_pending), so a close and an unordered
-    read/write can never be batched together in either prep order."""
-    (tmp_path / 'f').write_bytes(b'hello')
+def test_prep_fd_parses_as_c_int(tmp_path):
+    """The fd argument of close/preadv2/pwritev2/fsync parses as a C int up
+    front: a non-int raises TypeError and an out-of-range int raises
+    OverflowError, before any slot is consumed."""
     with ring_env(tmp_path) as (r, dirfd):
-        fh = drive_one(r, r.prep_openat2(dirfd, 'f', os.O_RDWR))
-        close = r.prep_close(fh)                   # close prepared first
-        with pytest.raises(BlockingIOError):
-            r.prep_pread(fh, bytearray(5), 0)      # refused while close is pending
-        with pytest.raises(BlockingIOError):
-            r.prep_fixed_fd_install(fh)            # install is refused too
-        (res, _), = drive_raw(r, [close])          # the close is still submittable
-        assert res == 0
+        for prep in (lambda fd: r.prep_close(fd),
+                     lambda fd: r.prep_preadv2(fd, [bytearray(1)], 0),
+                     lambda fd: r.prep_pwritev2(fd, [b'x'], 0),
+                     lambda fd: r.prep_fsync(fd)):
+            with pytest.raises(TypeError):
+                prep('not an fd')
+            with pytest.raises(OverflowError):
+                prep(2 ** 31)
+        assert r.inflight == 0
+
+
+# ── vectored gather / scatter ────────────────────────────────────────────────
+
+@requires_io_uring
+def test_gather_write_scatter_read_round_trip(tmp_path):
+    """One pwritev2 gathers multiple source buffers; one preadv2 scatters the
+    bytes back across multiple destinations in order."""
+    parts = [b'aa', b'bbbb', b'c' * 8]
+    with ring_env(tmp_path) as (r, dirfd):
+        fh = drive_one(r, r.prep_openat2(dirfd, b'f',
+                                         os.O_CREAT | os.O_RDWR, 0o600))
+        assert drive_one(r, r.prep_pwritev2(fh, parts, 0)) == 14
+        bufs = [bytearray(2), bytearray(4), bytearray(8)]
+        assert drive_one(r, r.prep_preadv2(fh, bufs, 0)) == 14
+        assert [bytes(b) for b in bufs] == parts
+        drive_one(r, r.prep_close(fh))
+    assert (tmp_path / 'f').read_bytes() == b''.join(parts)
 
 
 @requires_io_uring
-def test_rw_buffer_over_uint32_rejected(tmp_path):
-    """A buffer larger than UINT_MAX would truncate io_uring's 32-bit length field
-    (a 4 GiB buffer to 0), so prep_pread/prep_pwrite reject it up front rather than
-    issue a wrong-sized transfer with no error."""
-    import mmap
+def test_rw_flags_rwf_append(tmp_path):
+    """flags is forwarded per-IO: RWF_APPEND writes at EOF despite offset 0."""
+    (tmp_path / 'f').write_bytes(b'base')
     with ring_env(tmp_path) as (r, dirfd):
-        fh = drive_one(r, r.prep_openat2(dirfd, 'f', os.O_CREAT | os.O_RDWR, 0o600))
-        try:
-            big = mmap.mmap(-1, (1 << 32))   # 4 GiB, demand-zero virtual reservation
-        except (OSError, OverflowError, MemoryError):
-            pytest.skip("cannot reserve a >4 GiB mapping in this environment")
-        try:
-            with pytest.raises(ValueError, match='too large'):
-                r.prep_pwrite(fh, big, 0)
-            with pytest.raises(ValueError, match='too large'):
-                r.prep_pread(fh, big, 0)
-        finally:
-            big.close()
+        fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDWR))
+        assert drive_one(r, r.prep_pwritev2(fh, [b'-tail'], 0,
+                                            os.RWF_APPEND)) == 5
+        drive_one(r, r.prep_close(fh))
+    assert (tmp_path / 'f').read_bytes() == b'base-tail'
+
+
+@requires_io_uring
+def test_rw_flags_unknown_bit_is_kernel_rejected(tmp_path):
+    """An RWF_* bit the kernel does not support surfaces as the completion's
+    -errno (EOPNOTSUPP), not a client-side error."""
+    (tmp_path / 'f').write_bytes(b'x')
+    with ring_env(tmp_path) as (r, dirfd):
+        fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDWR))
+        (res, result), = drive_raw(r, [r.prep_pwritev2(fh, [b'x'],
+                                                       flags=1 << 30)])
+        assert res == -errno.EOPNOTSUPP
+        assert result is None
+        drive_one(r, r.prep_close(fh))
+
+
+@requires_io_uring
+def test_rw_buffer_count_capped(tmp_path):
+    """A documented limitation: the iovec and Py_buffer arrays are inline in
+    the op slot, so at most 8 buffers per operation -- 8 fit, 9 raise
+    ValueError before anything is prepared."""
+    with ring_env(tmp_path) as (r, dirfd):
+        fh = drive_one(r, r.prep_openat2(dirfd, b'f',
+                                         os.O_CREAT | os.O_RDWR, 0o600))
+        assert drive_one(r, r.prep_pwritev2(fh, [b'x'] * 8, 0)) == 8
+        with pytest.raises(ValueError, match='too many buffers'):
+            r.prep_pwritev2(fh, [b'x'] * 9, 0)
+        assert r.inflight == 0
+        drive_one(r, r.prep_close(fh))
+
+
+@requires_io_uring
+def test_rw_empty_buffer_list_completes_zero(tmp_path):
+    """Zero iovecs is Linux's traditional no-op: the op completes with res 0."""
+    (tmp_path / 'f').write_bytes(b'x')
+    with ring_env(tmp_path) as (r, dirfd):
+        fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDWR))
+        assert drive_one(r, r.prep_preadv2(fh, [], 0)) == 0
+        assert drive_one(r, r.prep_pwritev2(fh, [], 0)) == 0
+        drive_one(r, r.prep_close(fh))
+
+
+@requires_io_uring
+def test_rw_non_sequence_buffers_rejected(tmp_path):
+    """buffers must be a sequence; a non-sequence raises TypeError up front."""
+    with ring_env(tmp_path) as (r, dirfd):
+        with pytest.raises(TypeError, match='sequence'):
+            r.prep_preadv2(0, 42)
+        assert r.inflight == 0
+
+
+@requires_io_uring
+def test_rw_bad_item_mid_list_unwinds_earlier_pins(tmp_path):
+    """A non-writable item part-way through a preadv2 list fails the prep and
+    releases the pins already taken -- the first buffer is resizable again and
+    the ring is unharmed."""
+    (tmp_path / 'f').write_bytes(b'abcd')
+    with ring_env(tmp_path) as (r, dirfd):
+        fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDONLY))
+        first = bytearray(2)
+        with pytest.raises((TypeError, BufferError)):
+            r.prep_preadv2(fh, [first, b'readonly', bytearray(2)], 0)
+        first.extend(b'zz')             # not left pinned by the failed prep
+        assert r.inflight == 0
+        buf = bytearray(4)
+        assert drive_one(r, r.prep_preadv2(fh, [buf], 0)) == 4
+        drive_one(r, r.prep_close(fh))
+
+
+@requires_io_uring
+def test_rw_all_buffers_pinned_in_flight(tmp_path):
+    """Every buffer of a vectored op is pinned until the completion reaps,
+    not just the first."""
+    (tmp_path / 'f').write_bytes(b'x' * 64)
+    with ring_env(tmp_path) as (r, dirfd):
+        fh = drive_one(r, r.prep_openat2(dirfd, b'f', os.O_RDONLY))
+        bufs = [bytearray(16) for _ in range(3)]
+        r.submit([r.prep_preadv2(fh, bufs, 0)])          # in flight, not reaped
+        for b in bufs:
+            with pytest.raises(BufferError):
+                b.extend(b'y')
+        import select
+        while r.inflight:
+            select.select([r.ringfd()], [], [], 5.0)
+            r.reap()
+        for b in bufs:
+            b.extend(b'y')              # all pins released at reap
+        drive_one(r, r.prep_close(fh))
 
 
 # ── completion callbacks ─────────────────────────────────────────────────────
@@ -674,8 +759,8 @@ def test_callback_closing_ring_is_refused_and_siblings_fire(tmp_path):
         old = sys.unraisablehook
         sys.unraisablehook = lambda a: captured.append(a.exc_type)
         try:
-            r.submit([r.prep_pread(fh, bytearray(5), 0, closer),
-                      r.prep_pread(fh, bytearray(5), 0, closer)])
+            r.submit([r.prep_preadv2(fh, [bytearray(5)], callback=closer),
+                      r.prep_preadv2(fh, [bytearray(5)], callback=closer)])
             _drive_idle(r)
         finally:
             sys.unraisablehook = old
@@ -770,9 +855,9 @@ def test_callback_validation(tmp_path):
             r.prep_statx(dirfd, b'f', private_data=object())
         with pytest.raises(TypeError):
             r.prep_statx(dirfd, b'f', callback=42)
-        # positional path (prep_pread): private_data without a callback
+        # a positional-only prep (prep_close): private_data without a callback
         with pytest.raises(TypeError):
-            r.prep_pread(0, bytearray(1), 0, None, object())
+            r.prep_close(0, None, object())
         # callback=None -> not consumed; the op still appears in reap()
         (ud,) = r.submit([r.prep_statx(dirfd, b'f', callback=None)])
         assert any(t[0] == ud for t in _drive_idle(r))
@@ -780,8 +865,8 @@ def test_callback_validation(tmp_path):
 
 @requires_io_uring
 def test_callback_accepted_on_all_preps(tmp_path):
-    """callback is accepted on all six preps -- by keyword on openat2/statx and
-    positionally on close/pread/pwrite/fixed_fd_install -- and fires for each."""
+    """callback is accepted on all six preps -- by keyword on every
+    keyword-taking prep and positionally on close -- and fires for each."""
     (tmp_path / 'f').write_bytes(b'data')
     with ring_env(tmp_path) as (r, dirfd):
         seen = []
@@ -791,17 +876,16 @@ def test_callback_accepted_on_all_preps(tmp_path):
 
         r.submit([r.prep_openat2(dirfd, b'f', os.O_RDWR, callback=cb)])
         _drive_idle(r)
-        slot = seen[-1][2]                           # open result = file slot
+        fd = seen[-1][2]                             # open result = the new fd
         r.submit([r.prep_statx(dirfd, b'f', callback=cb)])
         _drive_idle(r)
-        r.submit([r.prep_pread(slot, bytearray(4), 0, cb)])
+        r.submit([r.prep_preadv2(fd, [bytearray(4)], callback=cb)])
         _drive_idle(r)
-        r.submit([r.prep_pwrite(slot, b'zzzz', 0, cb)])
+        r.submit([r.prep_pwritev2(fd, [b'zzzz'], callback=cb)])
         _drive_idle(r)
-        r.submit([r.prep_fixed_fd_install(slot, True, cb)])
+        r.submit([r.prep_fsync(fd, callback=cb)])
         _drive_idle(r)
-        os.close(seen[-1][2])                        # install result = a real fd
-        r.submit([r.prep_close(slot, cb)])
+        r.submit([r.prep_close(fd, cb)])
         _drive_idle(r)
         assert len(seen) == 6
         assert all(isinstance(c, tuple) and len(c) == 3 for c in seen)

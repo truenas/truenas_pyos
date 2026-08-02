@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
 /*
- * uring_op_rw -- the file read and write worker.
+ * uring_op_rw -- the vectored file read and write worker.
  *
- * Takes an already-validated file slot, the buffer object, and the offset from
- * the prep_pread / prep_pwrite stubs in uring.c. It pins the buffer (via the
- * buffer protocol) into a pooled op slot for the whole in-flight window, fills a
- * fixed-file READ/WRITE SQE, and hands back an opaque UringOp handle. The op
- * owns the Py_buffer from here until the completion reaps (or the handle is
- * dropped unsubmitted). The op-slot state machine is in op.h.
+ * Takes the already-parsed target fd, the sequence of buffer objects, the
+ * offset and the RWF_* flags from the prep_preadv2 / prep_pwritev2 stubs in
+ * uring.c. It pins every buffer (via the buffer protocol) into a pooled op
+ * slot for the whole in-flight window, points the slot's inline iovec array at
+ * the pinned views, fills a READV/WRITEV SQE, and hands back an opaque UringOp
+ * handle. The op owns the Py_buffers from here until the completion reaps (or
+ * the handle is dropped unsubmitted); the kernel copies the iovec array itself
+ * at submission (IORING_FEAT_SUBMIT_STABLE), but reads and writes the buffers
+ * it points at until the CQE. The op-slot state machine is in op.h.
  */
 
 #include <Python.h>
@@ -17,48 +20,40 @@
 #include "op.h"
 
 PyObject *
-uring_op_rw(UringObject *self, uint32_t file_slot, PyObject *buf,
-	    unsigned long long offset, bool is_write,
+uring_op_rw(UringObject *self, int fd, PyObject *buffers,
+	    unsigned long long offset, int flags, bool is_write,
 	    PyObject *callback, PyObject *private_data)
 {
 	PyObject *handle = NULL;
+	PyObject *fast = NULL;
 	uring_op_t *op = NULL;
-	Py_buffer view;
+	Py_ssize_t nr = 0;
+	Py_ssize_t i = 0;
 	uint32_t slot = URING_NO_SLOT;
 
-	/* Refuse a read/write on a slot whose close is already pending (before the
-	 * pin, so a rejection has no buffer to release). */
-	if (uring_file_check_open(self, file_slot) < 0) {
+	fast = PySequence_Fast(buffers,
+			       "buffers must be a sequence of buffer objects");
+	if (fast == NULL) {
 		return NULL;
 	}
+	nr = PySequence_Fast_GET_SIZE(fast);
 
 	/*
-	 * Pin the buffer before touching the pool, so a buffer error never
-	 * churns a slot. A pread destination must be writable; a pwrite source
-	 * need only be readable.
+	 * The iovec and Py_buffer arrays are inline in the op slot, so the
+	 * slot's capacity is the per-op ceiling. (The kernel's own UIO_MAXIOV
+	 * is 1024; a larger transfer splits into multiple operations.)
 	 */
-	if (PyObject_GetBuffer(buf, &view,
-			       is_write ? PyBUF_SIMPLE : PyBUF_WRITABLE) < 0) {
-		return NULL;
-	}
-
-	/*
-	 * io_uring's read/write length is a 32-bit field. A Py_ssize_t buffer
-	 * larger than UINT_MAX would be silently truncated to its low 32 bits (a
-	 * 4 GiB buffer to 0), transferring the wrong byte count with no error --
-	 * reject it. A single op cannot move more than 4 GiB anyway.
-	 */
-	if (view.len > (Py_ssize_t)UINT_MAX) {
-		PyBuffer_Release(&view);
+	if (nr > URING_RW_IOV_CAP) {
+		Py_DECREF(fast);
 		PyErr_Format(PyExc_ValueError,
-			     "buffer too large for a single operation: %zd bytes "
-			     "(max %u)", view.len, UINT_MAX);
+			     "too many buffers for a single operation: %zd "
+			     "(max %u)", nr, URING_RW_IOV_CAP);
 		return NULL;
 	}
 
 	slot = pool_alloc(self);
 	if (slot == URING_NO_SLOT) {
-		PyBuffer_Release(&view);
+		Py_DECREF(fast);
 		PyErr_SetString(PyExc_BlockingIOError,
 				"op-slot pool is full: reap or drop prepared "
 				"operations before preparing more");
@@ -66,27 +61,49 @@ uring_op_rw(UringObject *self, uint32_t file_slot, PyObject *buf,
 	}
 	op = &self->pool[slot];
 	op->tag = is_write ? URING_TAG_WRITE : URING_TAG_READ;
-	op->file_slot = file_slot;
-	op->u.rw.view = view;
-	op->u.rw.buf_obj = Py_NewRef(buf);
+	/*
+	 * The union arm may hold another op type's stale bytes; zero the pin
+	 * count before anything can fail, so every unwind from here releases
+	 * exactly the views pinned so far and nothing else.
+	 */
+	op->u.rw.nr = 0;
+
+	/*
+	 * Pin each buffer and point its iovec at the view. A pread destination
+	 * must be writable; a pwrite source need only be readable. nr counts
+	 * up only after a successful pin, so the pool_recycle below (via
+	 * op_free_payloads) unwinds a mid-loop failure exactly.
+	 */
+	for (i = 0; i < nr; i++) {
+		PyObject *item = PySequence_Fast_GET_ITEM(fast, i);	/* borrowed */
+
+		if (PyObject_GetBuffer(item, &op->u.rw.views[i],
+				       is_write ? PyBUF_SIMPLE
+						: PyBUF_WRITABLE) < 0) {
+			Py_DECREF(fast);
+			pool_recycle(self, slot);
+			return NULL;
+		}
+		op->u.rw.iov[i].iov_base = op->u.rw.views[i].buf;
+		op->u.rw.iov[i].iov_len = (size_t)op->u.rw.views[i].len;
+		op->u.rw.nr++;
+	}
+	Py_DECREF(fast);
 
 	if (is_write) {
-		io_uring_prep_write(&op->sqe, (int)file_slot, op->u.rw.view.buf,
-				    (unsigned int)op->u.rw.view.len, offset);
+		io_uring_prep_writev2(&op->sqe, fd, op->u.rw.iov,
+				      (unsigned int)nr, offset, flags);
 	} else {
-		io_uring_prep_read(&op->sqe, (int)file_slot, op->u.rw.view.buf,
-				   (unsigned int)op->u.rw.view.len, offset);
+		io_uring_prep_readv2(&op->sqe, fd, op->u.rw.iov,
+				     (unsigned int)nr, offset, flags);
 	}
-	io_uring_sqe_set_flags(&op->sqe, IOSQE_FIXED_FILE);
-
-	uring_file_charge(self, op);
 
 	op->callback = Py_XNewRef(callback);
 	op->private_data = Py_XNewRef(private_data);
 
 	handle = handle_new(self, slot);
 	if (handle == NULL) {
-		pool_release(self, slot);
+		pool_recycle(self, slot);
 		return NULL;
 	}
 	return handle;

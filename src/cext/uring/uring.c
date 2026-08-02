@@ -3,10 +3,10 @@
 /*
  * The Uring: a minimal async file ring over io_uring.
  *
- * Five operations -- open / close / pread / pwrite / statx -- and no event-loop
- * policy. prep_*() fills a pre-allocated op slot and returns an opaque UringOp
- * handle; submit(handles) copies each slot's SQE into the submission queue and
- * fires one io_uring_submit; reap() drains completions into plain
+ * Six operations -- open / close / preadv2 / pwritev2 / fsync / statx -- and no
+ * event-loop policy. prep_*() fills a pre-allocated op slot and returns an opaque
+ * UringOp handle; submit(handles) copies each slot's SQE into the submission
+ * queue and fires one io_uring_submit; reap() drains completions into plain
  * (token, res, result) tuples. No Python object ever wraps kernel SQE/CQE
  * memory -- the conversion happens at the boundary.
  *
@@ -18,8 +18,8 @@
  * single-shot.
  *
  * Concurrent submitters, one reaper: multiple threads may prep/submit/cancel (a
- * PyMutex serializes the single-producer SQ; the GIL serializes the pool, file
- * table, inflight, and the single-consumer CQ), while a single thread owns
+ * PyMutex serializes the single-producer SQ; the GIL serializes the pool,
+ * inflight, and the single-consumer CQ), while a single thread owns
  * reap(). The ring fd is directly pollable (io_uring_poll() reports EPOLLIN when
  * completions are pending), so no eventfd is registered. The reap path respects
  * two poll consequences: a level-triggered poll wants the CQ fully drained, and
@@ -102,14 +102,14 @@ ringop_dealloc(UringOpObject *self)
 
 	/*
 	 * A handle dropped while its slot is still PREPPED (never submitted)
-	 * reclaims the slot: release its pin/path and any reserved fixed-file
-	 * slot. Only while the ring is open -- once closed, uring_shutdown has
-	 * already released every PREPPED pin (and may have freed the pool), and
-	 * the strong ring ref below keeps the `closed` read valid.
+	 * reclaims the slot, releasing its pin/path. Only while the ring is
+	 * open -- once closed, uring_shutdown has already released every
+	 * PREPPED pin (and may have freed the pool), and the strong ring ref
+	 * below keeps the `closed` read valid.
 	 */
 	if (!ring->closed && ring->pool != NULL && slot != URING_NO_SLOT &&
 	    ring->pool[slot].state == URING_OP_PREPPED) {
-		pool_release(ring, slot);
+		pool_recycle(ring, slot);
 	}
 
 	if (!ring->closed && ring->nr_handle_free < URING_HANDLE_FREELIST_MAX) {
@@ -150,26 +150,26 @@ ringop_repr(UringOpObject *self)
 	case URING_TAG_OPEN:
 		return Py_NewRef(state->uring_repr_openat2);
 	case URING_TAG_READ:
-		return Py_NewRef(state->uring_repr_pread);
+		return Py_NewRef(state->uring_repr_preadv2);
 	case URING_TAG_WRITE:
-		return Py_NewRef(state->uring_repr_pwrite);
+		return Py_NewRef(state->uring_repr_pwritev2);
 	case URING_TAG_CLOSE:
 		return Py_NewRef(state->uring_repr_close);
 	case URING_TAG_STATX:
 		return Py_NewRef(state->uring_repr_statx);
-	case URING_TAG_INSTALL:
-		return Py_NewRef(state->uring_repr_install);
+	case URING_TAG_FSYNC:
+		return Py_NewRef(state->uring_repr_fsync);
 	}
 	Py_RETURN_NONE;	/* unreachable: tag is always a valid URING_TAG_* */
 }
 
 PyDoc_STRVAR(ringop__doc__,
 "An opaque handle for one prepared io_uring operation.\n\n"
-"Returned by Uring.prep_openat2/prep_close/prep_pread/prep_pwrite/prep_statx and\n"
-"consumed by Uring.submit(). It is not constructible from Python and exposes no\n"
-"members.\n"
+"Returned by Uring.prep_openat2/prep_close/prep_preadv2/prep_pwritev2/\n"
+"prep_fsync/prep_statx and consumed by Uring.submit(). It is not constructible\n"
+"from Python and exposes no members.\n"
 "Dropping a prepared handle before it is submitted reclaims its slot and\n"
-"releases any pinned buffer; a submitted handle is inert.\n");
+"releases any pinned buffers; a submitted handle is inert.\n");
 
 static PyTypeObject UringOpType = {
 	PyVarObject_HEAD_INIT(NULL, 0)
@@ -190,41 +190,19 @@ static PyTypeObject UringOpType = {
 /*
  * These are the METH_FASTCALL entry points named in the method table. Each does
  * the Python-level argument parsing/validation and then calls its worker in
- * openclose.c / rw.c / stat.c (declared in op.h), which owns the op-slot
- * mechanics. prep_openat2 and prep_statx additionally take keywords via
- * map_kwargs() with a kwnames == NULL fast path.
+ * openclose.c / rw.c / fsync.c / stat.c (declared in op.h), which owns the
+ * op-slot mechanics. Every prep except the positional-only prep_close
+ * additionally takes keywords via map_kwargs() with a kwnames == NULL fast
+ * path.
  */
 
 PyDoc_STRVAR(py_uring_ring_prep_openat2__doc__,
 "prep_openat2($self, dirfd, path, flags=0, mode=0, resolve=RESOLVE_BENEATH, callback=None, private_data=None)\n"
 "--\n\n"
-"Prepare an openat2 that installs the file directly into the registered file\n"
-"table. `path` resolves against `dirfd` (a real O_PATH directory fd) confined\n"
-"by RESOLVE_BENEATH. O_CLOEXEC is invalid for a fixed-file install and is\n"
-"rejected. Returns an opaque handle for submit(); its completion result is the\n"
-"int file slot.\n");
-
-/*
- * FSConvert a path argument (str/bytes/PathLike; embedded NUL rejected) into
- * *path_bytes and point *path and *path_len at its bytes. The CALLER must
- * Py_DECREF *path_bytes once the op worker has copied the path. Shared by the
- * prep_openat2 and prep_statx stubs so the decode and its cleanup cannot drift
- * apart. Returns 0 on success, or -1 with an exception set (and *path_bytes
- * cleared).
- */
-static int
-prep_fsconvert_path(PyObject *a_path, PyObject **path_bytes, const char **path,
-		    Py_ssize_t *path_len)
-{
-	if (!PyUnicode_FSConverter(a_path, path_bytes)) {
-		return -1;
-	}
-	if (PyBytes_AsStringAndSize(*path_bytes, (char **)path, path_len) < 0) {
-		Py_CLEAR(*path_bytes);
-		return -1;
-	}
-	return 0;
-}
+"Prepare an openat2 that opens a regular process file descriptor. `path`\n"
+"resolves against `dirfd` (a real O_PATH directory fd) confined by\n"
+"RESOLVE_BENEATH. Returns an opaque handle for submit(); its completion result\n"
+"is the new int fd, owned by the caller like any os.open result.\n");
 
 /*
  * Normalize + validate the optional per-op callback/private_data (both borrowed).
@@ -256,27 +234,27 @@ prep_norm_cb(PyObject **callback, PyObject *private_data)
 }
 
 /*
- * Collect the positional-or-keyword arguments of prep_openat2 / prep_statx into
+ * Collect the positional-or-keyword arguments of a METH_KEYWORDS prep into
  * slots[nparams] (borrowed; NULL where an optional argument was not supplied).
- * Both take dirfd + path as required leading positionals with the rest optional,
- * so this shared collector enforces that one shape (and one set of messages) for
- * the two METH_KEYWORDS preps. The common kwnames == NULL call takes the fast
+ * The first `nrequired` parameters are required; the rest are optional. One
+ * shared collector enforces that shape (and one set of messages) for every
+ * keyword-taking prep. The common kwnames == NULL call takes the fast
  * positional arm; only a keyword-bearing call runs map_kwargs. Returns 0, or -1
  * with an exception set.
  */
 static int
 prep_collect(const char *funcname, PyObject *const *args, Py_ssize_t nargs,
 	     PyObject *kwnames, const char *const *params, Py_ssize_t nparams,
-	     PyObject **slots)
+	     Py_ssize_t nrequired, PyObject **slots)
 {
 	Py_ssize_t i = 0;
 
 	if (kwnames == NULL) {
 		/* Fast positional path: no keyword bookkeeping. */
-		if (nargs < 2 || nargs > nparams) {
+		if (nargs < nrequired || nargs > nparams) {
 			PyErr_Format(PyExc_TypeError,
-				     "%s() takes 2 to %zd positional arguments",
-				     funcname, nparams);
+				     "%s() takes %zd to %zd positional arguments",
+				     funcname, nrequired, nparams);
 			return -1;
 		}
 		for (i = 0; i < nparams; i++) {
@@ -291,11 +269,13 @@ prep_collect(const char *funcname, PyObject *const *args, Py_ssize_t nargs,
 	if (map_kwargs(funcname, args, nargs, kwnames, params, nparams, slots) < 0) {
 		return -1;
 	}
-	if (slots[0] == NULL || slots[1] == NULL) {
-		PyErr_Format(PyExc_TypeError,
-			     "%s() missing required argument ('dirfd' and 'path' "
-			     "are required)", funcname);
-		return -1;
+	for (i = 0; i < nrequired; i++) {
+		if (slots[i] == NULL) {
+			PyErr_Format(PyExc_TypeError,
+				     "%s() missing required argument '%s'",
+				     funcname, params[i]);
+			return -1;
+		}
 	}
 	return 0;
 }
@@ -312,8 +292,6 @@ py_uring_ring_prep_openat2(UringObject *self, PyObject *const *args,
 	PyObject *slots[7] = {0};
 	PyObject *path_bytes = NULL;
 	PyObject *result = NULL;
-	const char *path = NULL;
-	Py_ssize_t path_len = 0;
 	int dirfd = 0;
 	int flags = O_RDONLY;
 	int mode = 0;
@@ -323,7 +301,7 @@ py_uring_ring_prep_openat2(UringObject *self, PyObject *const *args,
 		return NULL;
 	}
 
-	if (prep_collect("prep_openat2", args, nargs, kwnames, params, 7, slots) < 0) {
+	if (prep_collect("prep_openat2", args, nargs, kwnames, params, 7, 2, slots) < 0) {
 		return NULL;
 	}
 	a_dirfd = slots[0];
@@ -357,42 +335,37 @@ py_uring_ring_prep_openat2(UringObject *self, PyObject *const *args,
 		}
 	}
 
-	if (flags & O_CLOEXEC) {
-		PyErr_SetString(PyExc_ValueError,
-				"O_CLOEXEC is invalid for a fixed-file install "
-				"and the kernel rejects it with EINVAL");
-		return NULL;
-	}
-
 	if ((a_callback != NULL || a_private_data != NULL) &&
 	    prep_norm_cb(&a_callback, a_private_data) < 0) {
 		return NULL;
 	}
 
-	if (prep_fsconvert_path(a_path, &path_bytes, &path, &path_len) < 0) {
+	/* str/bytes/PathLike; embedded NUL rejected. The worker takes its own
+	 * ref to the produced bytes, so ours drops right after the call. */
+	if (!PyUnicode_FSConverter(a_path, &path_bytes)) {
 		return NULL;
 	}
 
-	result = uring_op_openat2(self, dirfd, path, path_len, flags, mode,
+	result = uring_op_openat2(self, dirfd, path_bytes, flags, mode,
 				  resolve, a_callback, a_private_data);
 	Py_DECREF(path_bytes);
 	return result;
 }
 
 PyDoc_STRVAR(py_uring_ring_prep_close__doc__,
-"prep_close($self, file_slot, callback=None, private_data=None, /)\n"
+"prep_close($self, fd, callback=None, private_data=None, /)\n"
 "--\n\n"
-"Prepare a close of a registered file slot, freeing it. The close must be the\n"
-"slot's last operation: preparing it while other operations on the slot are in\n"
-"flight raises BlockingIOError. Returns an opaque handle for submit(); its\n"
-"completion result is None.\n");
+"Prepare a close(2) of the file descriptor `fd`. Nothing orders it against\n"
+"other operations on the same fd -- as with os.close, submit the close after\n"
+"their completions reap, or behind them in a linked batch. Returns an opaque\n"
+"handle for submit(); its completion result is None.\n");
 
 static PyObject *
 py_uring_ring_prep_close(UringObject *self, PyObject *const *args,
 			 Py_ssize_t nargs)
 {
 	PyObject *callback = NULL, *private_data = NULL;
-	uint32_t fs = URING_NO_SLOT;
+	int fd = -1;
 
 	if (uring_check_ready(self) < 0) {
 		return NULL;
@@ -402,81 +375,201 @@ py_uring_ring_prep_close(UringObject *self, PyObject *const *args,
 				"prep_close() takes 1 to 3 arguments");
 		return NULL;
 	}
-	if (check_file(self, args[0], &fs) < 0) {
+
+	fd = PyLong_AsInt(args[0]);
+	if (fd == -1 && PyErr_Occurred()) {
 		return NULL;
 	}
+
 	callback = nargs >= 2 ? args[1] : NULL;
 	private_data = nargs >= 3 ? args[2] : NULL;
 	if ((callback != NULL || private_data != NULL) &&
 	    prep_norm_cb(&callback, private_data) < 0) {
 		return NULL;
 	}
-	return uring_op_close(self, fs, callback, private_data);
+
+	return uring_op_close(self, fd, callback, private_data);
 }
 
-/* Shared parsing for prep_pread / prep_pwrite; the worker is uring_op_rw(). */
+/* Shared parsing for prep_preadv2 / prep_pwritev2; the worker is uring_op_rw(). */
 static PyObject *
-prep_rw_stub(UringObject *self, PyObject *const *args, Py_ssize_t nargs,
-	     bool is_write)
+prep_rwv_stub(UringObject *self, PyObject *const *args, Py_ssize_t nargs,
+	      PyObject *kwnames, bool is_write)
 {
-	PyObject *callback = NULL, *private_data = NULL;
+	static const char *const params[] = {"fd", "buffers", "offset",
+					     "flags", "callback", "private_data"};
+	PyObject *a_fd = NULL, *a_buffers = NULL, *a_offset = NULL;
+	PyObject *a_flags = NULL;
+	PyObject *a_callback = NULL, *a_private_data = NULL;
+	PyObject *slots[6] = {0};
 	unsigned long long offset = 0;
-	uint32_t fs = URING_NO_SLOT;
+	int fd = -1;
+	int flags = 0;
 
 	if (uring_check_ready(self) < 0) {
 		return NULL;
 	}
-	if (nargs < 2 || nargs > 5) {
-		PyErr_SetString(PyExc_TypeError,
-				is_write ? "prep_pwrite() takes 2 to 5 arguments"
-					 : "prep_pread() takes 2 to 5 arguments");
+
+	if (prep_collect(is_write ? "prep_pwritev2" : "prep_preadv2", args,
+			 nargs, kwnames, params, 6, 2, slots) < 0) {
 		return NULL;
 	}
-	if (check_file(self, args[0], &fs) < 0) {
+	a_fd = slots[0];
+	a_buffers = slots[1];
+	a_offset = slots[2];
+	a_flags = slots[3];
+	a_callback = slots[4];
+	a_private_data = slots[5];
+
+	fd = PyLong_AsInt(a_fd);
+	if (fd == -1 && PyErr_Occurred()) {
 		return NULL;
 	}
-	if (nargs >= 3) {
-		offset = PyLong_AsUnsignedLongLong(args[2]);
+	if (a_offset != NULL) {
+		offset = PyLong_AsUnsignedLongLong(a_offset);
 		if (offset == (unsigned long long)-1 && PyErr_Occurred()) {
 			return NULL;
 		}
 	}
-	callback = nargs >= 4 ? args[3] : NULL;
-	private_data = nargs >= 5 ? args[4] : NULL;
-	if ((callback != NULL || private_data != NULL) &&
-	    prep_norm_cb(&callback, private_data) < 0) {
+	if (a_flags != NULL) {
+		flags = PyLong_AsInt(a_flags);
+		if (flags == -1 && PyErr_Occurred()) {
+			return NULL;
+		}
+	}
+
+	if ((a_callback != NULL || a_private_data != NULL) &&
+	    prep_norm_cb(&a_callback, a_private_data) < 0) {
 		return NULL;
 	}
-	return uring_op_rw(self, fs, args[1], offset, is_write, callback,
-			   private_data);
+
+	return uring_op_rw(self, fd, a_buffers, offset, flags, is_write,
+			   a_callback, a_private_data);
 }
 
-PyDoc_STRVAR(py_uring_ring_prep_pread__doc__,
-"prep_pread($self, file_slot, buf, offset=0, callback=None, private_data=None, /)\n"
+PyDoc_STRVAR(py_uring_ring_prep_preadv2__doc__,
+"prep_preadv2($self, fd, buffers, offset=0, flags=0, callback=None, private_data=None)\n"
 "--\n\n"
-"Prepare a positional read of a registered file into a writable buffer. The\n"
-"buffer is pinned from submission until the completion reaps. Returns an opaque\n"
-"handle for submit(); its completion result is the int byte count.\n");
+"Prepare a positional vectored read (preadv2(2)) from the file descriptor `fd`\n"
+"into a sequence of writable buffers -- at most 8 per operation (a deliberate\n"
+"limitation; split larger transfers into multiple operations). Every buffer\n"
+"is pinned from submission until the completion reaps. `flags` takes per-IO\n"
+"RWF_* values (os.RWF_HIPRI, os.RWF_NOWAIT, ...); the kernel validates them at\n"
+"issue, so an unsupported flag surfaces as the completion's -errno. Returns an\n"
+"opaque handle for submit(); its completion result is the int total byte\n"
+"count. A short count is ordinary readv semantics.\n");
 
 static PyObject *
-py_uring_ring_prep_pread(UringObject *self, PyObject *const *args,
-			 Py_ssize_t nargs)
+py_uring_ring_prep_preadv2(UringObject *self, PyObject *const *args,
+			   Py_ssize_t nargs, PyObject *kwnames)
 {
-	return prep_rw_stub(self, args, nargs, false);
+	return prep_rwv_stub(self, args, nargs, kwnames, false);
 }
 
-PyDoc_STRVAR(py_uring_ring_prep_pwrite__doc__,
-"prep_pwrite($self, file_slot, buf, offset=0, callback=None, private_data=None, /)\n"
+PyDoc_STRVAR(py_uring_ring_prep_pwritev2__doc__,
+"prep_pwritev2($self, fd, buffers, offset=0, flags=0, callback=None, private_data=None)\n"
 "--\n\n"
-"Prepare a positional write of a buffer to a registered file. The buffer is\n"
-"pinned from submission until the completion reaps. Returns an opaque handle\n"
-"for submit(); its completion result is the int byte count.\n");
+"Prepare a positional vectored write (pwritev2(2)) of a sequence of buffers --\n"
+"at most 8 per operation (a deliberate limitation; split larger transfers into\n"
+"multiple operations) -- to the file descriptor `fd`. Every buffer is pinned\n"
+"from submission until the completion reaps. `flags` takes per-IO RWF_*\n"
+"values (os.RWF_DSYNC, os.RWF_APPEND, ...); the kernel validates them at\n"
+"issue, so an unsupported flag surfaces as the completion's -errno. Returns an\n"
+"opaque handle for submit(); its completion result is the int total byte\n"
+"count. A short count is ordinary writev semantics.\n");
 
 static PyObject *
-py_uring_ring_prep_pwrite(UringObject *self, PyObject *const *args,
-			  Py_ssize_t nargs)
+py_uring_ring_prep_pwritev2(UringObject *self, PyObject *const *args,
+			    Py_ssize_t nargs, PyObject *kwnames)
 {
-	return prep_rw_stub(self, args, nargs, true);
+	return prep_rwv_stub(self, args, nargs, kwnames, true);
+}
+
+PyDoc_STRVAR(py_uring_ring_prep_fsync__doc__,
+"prep_fsync($self, fd, fdatasync=False, offset=0, length=0, callback=None, private_data=None)\n"
+"--\n\n"
+"Prepare an fsync(2) of the file descriptor `fd` -- fdatasync(2) semantics\n"
+"when fdatasync=True. With the default offset=0, length=0 the whole file is\n"
+"synced; a nonzero length limits the sync to the byte range\n"
+"[offset, offset+length]. There is no offset-to-EOF form: a nonzero offset\n"
+"with length=0 degenerates to a one-byte range. Like os.fsync, nothing orders\n"
+"it against other operations on the same fd -- submit it after their\n"
+"completions reap, or behind them in a linked batch. Always runs on an io-wq\n"
+"worker (the kernel forces fsync async). Returns an opaque handle for\n"
+"submit(); its completion result is None.\n");
+
+static PyObject *
+py_uring_ring_prep_fsync(UringObject *self, PyObject *const *args,
+			 Py_ssize_t nargs, PyObject *kwnames)
+{
+	static const char *const params[] = {"fd", "fdatasync", "offset",
+					     "length", "callback", "private_data"};
+	PyObject *a_fd = NULL, *a_fdatasync = NULL, *a_offset = NULL;
+	PyObject *a_length = NULL;
+	PyObject *a_callback = NULL, *a_private_data = NULL;
+	PyObject *slots[6] = {0};
+	unsigned long long offset = 0;
+	unsigned long long length_arg = 0;
+	int fd = -1;
+	int datasync = 0;
+
+	if (uring_check_ready(self) < 0) {
+		return NULL;
+	}
+
+	if (prep_collect("prep_fsync", args, nargs, kwnames, params, 6, 1, slots) < 0) {
+		return NULL;
+	}
+	a_fd = slots[0];
+	a_fdatasync = slots[1];
+	a_offset = slots[2];
+	a_length = slots[3];
+	a_callback = slots[4];
+	a_private_data = slots[5];
+
+	fd = PyLong_AsInt(a_fd);
+	if (fd == -1 && PyErr_Occurred()) {
+		return NULL;
+	}
+	if (a_fdatasync != NULL) {
+		datasync = PyObject_IsTrue(a_fdatasync);
+		if (datasync < 0) {
+			return NULL;
+		}
+	}
+	if (a_offset != NULL) {
+		offset = PyLong_AsUnsignedLongLong(a_offset);
+		if (offset == (unsigned long long)-1 && PyErr_Occurred()) {
+			return NULL;
+		}
+	}
+	if (a_length != NULL) {
+		length_arg = PyLong_AsUnsignedLongLong(a_length);
+		if (length_arg == (unsigned long long)-1 && PyErr_Occurred()) {
+			return NULL;
+		}
+		/*
+		 * io_uring's fsync length is the SQE's 32-bit len field. A larger
+		 * value would be silently truncated to its low 32 bits, syncing
+		 * the wrong range with no error -- reject it (the same guard
+		 * read/write applies to its buffer size).
+		 */
+		if (length_arg > (unsigned long long)UINT_MAX) {
+			PyErr_Format(PyExc_ValueError,
+				     "length too large for a single operation: "
+				     "%llu (max %u)", length_arg, UINT_MAX);
+			return NULL;
+		}
+	}
+
+	if ((a_callback != NULL || a_private_data != NULL) &&
+	    prep_norm_cb(&a_callback, a_private_data) < 0) {
+		return NULL;
+	}
+
+	return uring_op_fsync(self, fd, datasync, offset,
+			      (unsigned int)length_arg, a_callback,
+			      a_private_data);
 }
 
 PyDoc_STRVAR(py_uring_ring_prep_statx__doc__,
@@ -499,8 +592,6 @@ py_uring_ring_prep_statx(UringObject *self, PyObject *const *args,
 	PyObject *slots[6] = {0};
 	PyObject *path_bytes = NULL;
 	PyObject *result = NULL;
-	const char *path = NULL;
-	Py_ssize_t path_len = 0;
 	unsigned long mask_arg = 0;
 	int dirfd = 0;
 	int flags = 0;
@@ -510,7 +601,7 @@ py_uring_ring_prep_statx(UringObject *self, PyObject *const *args,
 		return NULL;
 	}
 
-	if (prep_collect("prep_statx", args, nargs, kwnames, params, 6, slots) < 0) {
+	if (prep_collect("prep_statx", args, nargs, kwnames, params, 6, 2, slots) < 0) {
 		return NULL;
 	}
 	a_dirfd = slots[0];
@@ -543,60 +634,16 @@ py_uring_ring_prep_statx(UringObject *self, PyObject *const *args,
 		return NULL;
 	}
 
-	if (prep_fsconvert_path(a_path, &path_bytes, &path, &path_len) < 0) {
+	/* str/bytes/PathLike; embedded NUL rejected. The worker takes its own
+	 * ref to the produced bytes, so ours drops right after the call. */
+	if (!PyUnicode_FSConverter(a_path, &path_bytes)) {
 		return NULL;
 	}
 
-	result = uring_op_statx(self, dirfd, path, path_len, flags, mask,
+	result = uring_op_statx(self, dirfd, path_bytes, flags, mask,
 				a_callback, a_private_data);
 	Py_DECREF(path_bytes);
 	return result;
-}
-
-/* -- fixed-fd install ----------------------------------------------------- */
-
-PyDoc_STRVAR(py_uring_ring_prep_fixed_fd_install__doc__,
-"prep_fixed_fd_install($self, file_slot, cloexec=True, callback=None, private_data=None, /)\n"
-"--\n\n"
-"Prepare installing a registered file slot as a regular process file\n"
-"descriptor. The completion result is the new int fd (O_CLOEXEC unless\n"
-"cloexec=False). The slot stays registered -- the fd and the slot are\n"
-"independent references to the same open file, so close the fd with os.close\n"
-"and free the slot with prep_close. Returns an opaque handle for submit().\n");
-
-static PyObject *
-py_uring_ring_prep_fixed_fd_install(UringObject *self, PyObject *const *args,
-				    Py_ssize_t nargs)
-{
-	PyObject *callback = NULL, *private_data = NULL;
-	uint32_t fs = URING_NO_SLOT;
-	int cloexec = 1;
-
-	if (uring_check_ready(self) < 0) {
-		return NULL;
-	}
-	if (nargs < 1 || nargs > 4) {
-		PyErr_SetString(PyExc_TypeError,
-				"prep_fixed_fd_install() takes 1 to 4 arguments");
-		return NULL;
-	}
-	if (check_file(self, args[0], &fs) < 0) {
-		return NULL;
-	}
-	if (nargs >= 2) {
-		cloexec = PyObject_IsTrue(args[1]);
-		if (cloexec < 0) {
-			return NULL;
-		}
-	}
-	callback = nargs >= 3 ? args[2] : NULL;
-	private_data = nargs >= 4 ? args[3] : NULL;
-	if ((callback != NULL || private_data != NULL) &&
-	    prep_norm_cb(&callback, private_data) < 0) {
-		return NULL;
-	}
-	return uring_op_fixed_fd_install(self, fs, cloexec, callback,
-					private_data);
 }
 
 /* -- submit --------------------------------------------------------------- */
@@ -804,9 +851,9 @@ PyDoc_STRVAR(py_uring_ring_reap__doc__,
 "--\n\n"
 "Drain the completion queue and return the completions as a list.\n\n"
 "Each element is a plain (token, res, result) tuple. res is the raw kernel\n"
-"result: bytes transferred / a file slot on success, -errno on failure. result\n"
-"is the per-op object built in C on success (an int file slot for open, an int\n"
-"byte count for read/write, None for close), None on failure, or a captured\n"
+"result: bytes transferred / a new fd on success, -errno on failure. result\n"
+"is the per-op object built in C on success (an int fd for open, an int byte\n"
+"count for read/write, None for close/fsync), None on failure, or a captured\n"
 "exception when the result could not be built.\n\n"
 "An op prepared with a callback is instead consumed: its callback is invoked\n"
 "here with the completion tuple (and its private_data, if any), and the op is\n"
@@ -1051,7 +1098,7 @@ uring_drain(UringObject *self)
 		self->inflight--;
 		/*
 		 * GIL held here (only wait_cqe drops it), so releasing the
-		 * slot's Py_buffer / buf_obj is safe.
+		 * slot's pinned Py_buffers is safe.
 		 */
 		{
 			uring_op_t *op = &self->pool[OPID_TO_SLOT_IDX(ud)];
@@ -1099,18 +1146,14 @@ uring_shutdown(UringObject *self)
 
 	if (drained) {
 		PyMem_RawFree(self->pool);
-		PyMem_RawFree(self->files);
 	}
 	/*
-	 * else: the pool and file table are deliberately leaked -- the drain
-	 * failed, so the kernel may still be writing into buffers un-reaped
-	 * slots own; freeing anything now risks a use-after-free in the kernel's
-	 * hands.
+	 * else: the pool is deliberately leaked -- the drain failed, so the
+	 * kernel may still be writing into buffers un-reaped slots own; freeing
+	 * anything now risks a use-after-free in the kernel's hands.
 	 */
 	self->pool = NULL;
 	self->nr_pool = 0;
-	self->files = NULL;
-	self->nr_files = 0;
 
 	/*
 	 * Free the dead-handle freelist blocks. No live handle references this
@@ -1158,11 +1201,11 @@ conv_u32(PyObject *obj, void *addr)
 }
 
 PyDoc_STRVAR(uring__doc__,
-"Uring(*, entries=256, files=1024, cq_entries=0, iowq_max_bounded=0, iowq_max_unbounded=0)\n"
+"Uring(*, entries=256, cq_entries=0, iowq_max_bounded=0, iowq_max_unbounded=0)\n"
 "--\n\n"
-"A minimal async file ring over io_uring: prep_openat2/prep_close/prep_pread/\n"
-"prep_pwrite/prep_statx return opaque handles, submit() fires a batch, reap()\n"
-"drains the completions. No event-loop policy is baked in.\n\n"
+"A minimal async file ring over io_uring: prep_openat2/prep_close/prep_preadv2/\n"
+"prep_pwritev2/prep_fsync/prep_statx return opaque handles, submit() fires a\n"
+"batch, reap() drains the completions. No event-loop policy is baked in.\n\n"
 "Multiple threads may prep/submit/cancel concurrently; a single thread reaps.\n"
 "The ring fd (ringfd()) is pollable, so a higher layer can drive it from an\n"
 "event loop.\n\n"
@@ -1172,16 +1215,14 @@ PyDoc_STRVAR(uring__doc__,
 "    Submission queue depth (rounded up to a power of two by the kernel) and\n"
 "    the size of the op-slot pool -- the most operations that can be prepared\n"
 "    or in flight at once.\n"
-"files : int\n"
-"    Size of the registered (fixed) file table.\n"
 "cq_entries : int\n"
 "    Completion queue depth. 0 selects the kernel default (2 * entries). The\n"
 "    completion queue cannot be resized later, so size it up front -- 2-4x\n"
 "    entries -- for a submission-heavy workload.\n"
 "iowq_max_bounded : int\n"
 "    Cap on io-wq workers serving bounded (regular-file) work; 0 leaves the\n"
-"    kernel default. Every force-async operation (open-create, ...) runs on an\n"
-"    io-wq worker, so a cap bounds the worker pool on a busy daemon.\n"
+"    kernel default. Every force-async operation (open-create, fsync, ...) runs\n"
+"    on an io-wq worker, so a cap bounds the worker pool on a busy daemon.\n"
 "iowq_max_unbounded : int\n"
 "    Cap on io-wq workers serving unbounded work; 0 leaves the default.\n\n"
 "Raises\n"
@@ -1193,20 +1234,18 @@ PyDoc_STRVAR(uring__doc__,
 static PyObject *
 py_uring_ring_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
 {
-	static char *kwlist[] = {"entries", "files", "cq_entries",
+	static char *kwlist[] = {"entries", "cq_entries",
 				 "iowq_max_bounded", "iowq_max_unbounded", NULL};
 	UringObject *self = NULL;
 	struct io_uring_params params;
 	unsigned int entries = 256;
-	unsigned int files = 1024;
 	unsigned int cq_entries = 0;
 	unsigned int iowq_bounded = 0;
 	unsigned int iowq_unbounded = 0;
-	uint32_t i = 0;
 	int ret = 0;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$O&O&O&O&O&:Uring", kwlist,
-					 conv_u32, &entries, conv_u32, &files,
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$O&O&O&O&:Uring", kwlist,
+					 conv_u32, &entries,
 					 conv_u32, &cq_entries, conv_u32, &iowq_bounded,
 					 conv_u32, &iowq_unbounded)) {
 		return NULL;
@@ -1214,10 +1253,6 @@ py_uring_ring_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
 
 	if (entries == 0) {
 		PyErr_SetString(PyExc_ValueError, "entries must be non-zero");
-		return NULL;
-	}
-	if (files == 0) {
-		PyErr_SetString(PyExc_ValueError, "files must be non-zero");
 		return NULL;
 	}
 
@@ -1229,33 +1264,16 @@ py_uring_ring_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
 	self->ring_fd = -1;
 	self->pool_free = URING_NO_SLOT;
 	self->pool_hi = 0;
-	self->file_free = URING_NO_SLOT;
 
 	self->pool = PyMem_RawCalloc(entries, sizeof(uring_op_t));
 	if (self->pool == NULL) {
 		PyErr_NoMemory();
-		goto fail;
+		return NULL;
 	}
 	self->nr_pool = entries;
-	/*
-	 * No freelist to pre-build: pool_alloc hands out fresh slots from the
-	 * pool_hi high-water mark and only recycled slots go on pool_free, so the
-	 * never-used tail stays demand-zero (unbacked) -- RSS tracks peak
-	 * concurrency, not `entries`.
-	 */
-
-	self->files = PyMem_RawCalloc(files, sizeof(uring_file_t));
-	if (self->files == NULL) {
-		PyErr_NoMemory();
-		goto fail;
-	}
-	self->nr_files = files;
-	for (i = files; i > 0; i--) {
-		self->files[i - 1].next_free = self->file_free;
-		self->file_free = i - 1;
-	}
 
 	memset(&params, 0, sizeof(params));
+
 	/* COOP_TASKRUN (5.19+, always present on the 6.18 floor) cuts needless IPIs. */
 	params.flags = IORING_SETUP_CLAMP | IORING_SETUP_COOP_TASKRUN;
 	if (cq_entries > 0) {
@@ -1287,20 +1305,6 @@ py_uring_ring_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
 		}
 	}
 
-	/*
-	 * A sparse table with no registered alloc range: files are installed at
-	 * explicit indices this module hands out, never with
-	 * IORING_FILE_INDEX_ALLOC.
-	 */
-	Py_BEGIN_ALLOW_THREADS
-	ret = io_uring_register_files_sparse(&self->ring, files);
-	Py_END_ALLOW_THREADS
-
-	if (ret < 0) {
-		uring_set_error(ret);
-		goto fail;
-	}
-
 	return (PyObject *)self;
 
 fail:
@@ -1310,8 +1314,6 @@ fail:
 	}
 	PyMem_RawFree(self->pool);
 	self->pool = NULL;
-	PyMem_RawFree(self->files);
-	self->files = NULL;
 	Py_DECREF(self);
 	return NULL;
 }
@@ -1436,28 +1438,28 @@ static PyMethodDef py_uring_ring_methods[] = {
 		.ml_doc = py_uring_ring_prep_close__doc__
 	},
 	{
-		.ml_name = "prep_pread",
-		.ml_meth = (PyCFunction)(void (*)(void))py_uring_ring_prep_pread,
-		.ml_flags = METH_FASTCALL,
-		.ml_doc = py_uring_ring_prep_pread__doc__
+		.ml_name = "prep_preadv2",
+		.ml_meth = (PyCFunction)(void (*)(void))py_uring_ring_prep_preadv2,
+		.ml_flags = METH_FASTCALL | METH_KEYWORDS,
+		.ml_doc = py_uring_ring_prep_preadv2__doc__
 	},
 	{
-		.ml_name = "prep_pwrite",
-		.ml_meth = (PyCFunction)(void (*)(void))py_uring_ring_prep_pwrite,
-		.ml_flags = METH_FASTCALL,
-		.ml_doc = py_uring_ring_prep_pwrite__doc__
+		.ml_name = "prep_pwritev2",
+		.ml_meth = (PyCFunction)(void (*)(void))py_uring_ring_prep_pwritev2,
+		.ml_flags = METH_FASTCALL | METH_KEYWORDS,
+		.ml_doc = py_uring_ring_prep_pwritev2__doc__
+	},
+	{
+		.ml_name = "prep_fsync",
+		.ml_meth = (PyCFunction)(void (*)(void))py_uring_ring_prep_fsync,
+		.ml_flags = METH_FASTCALL | METH_KEYWORDS,
+		.ml_doc = py_uring_ring_prep_fsync__doc__
 	},
 	{
 		.ml_name = "prep_statx",
 		.ml_meth = (PyCFunction)(void (*)(void))py_uring_ring_prep_statx,
 		.ml_flags = METH_FASTCALL | METH_KEYWORDS,
 		.ml_doc = py_uring_ring_prep_statx__doc__
-	},
-	{
-		.ml_name = "prep_fixed_fd_install",
-		.ml_meth = (PyCFunction)(void (*)(void))py_uring_ring_prep_fixed_fd_install,
-		.ml_flags = METH_FASTCALL,
-		.ml_doc = py_uring_ring_prep_fixed_fd_install__doc__
 	},
 	{
 		.ml_name = "submit",
@@ -1535,14 +1537,14 @@ init_uring_types(PyObject *module)
 		return -1;
 	}
 	state->uring_repr_openat2 = PyUnicode_FromString("<truenas_os.UringOp openat2>");
-	state->uring_repr_pread = PyUnicode_FromString("<truenas_os.UringOp pread>");
-	state->uring_repr_pwrite = PyUnicode_FromString("<truenas_os.UringOp pwrite>");
+	state->uring_repr_preadv2 = PyUnicode_FromString("<truenas_os.UringOp preadv2>");
+	state->uring_repr_pwritev2 = PyUnicode_FromString("<truenas_os.UringOp pwritev2>");
 	state->uring_repr_close = PyUnicode_FromString("<truenas_os.UringOp close>");
 	state->uring_repr_statx = PyUnicode_FromString("<truenas_os.UringOp statx>");
-	state->uring_repr_install = PyUnicode_FromString("<truenas_os.UringOp fixed_fd_install>");
-	if (!state->uring_repr_openat2 || !state->uring_repr_pread ||
-	    !state->uring_repr_pwrite || !state->uring_repr_close ||
-	    !state->uring_repr_statx || !state->uring_repr_install) {
+	state->uring_repr_fsync = PyUnicode_FromString("<truenas_os.UringOp fsync>");
+	if (!state->uring_repr_openat2 || !state->uring_repr_preadv2 ||
+	    !state->uring_repr_pwritev2 || !state->uring_repr_close ||
+	    !state->uring_repr_statx || !state->uring_repr_fsync) {
 		return -1;
 	}
 

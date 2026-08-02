@@ -4,11 +4,11 @@
  * uring_op_statx -- the file-metadata worker.
  *
  * Takes already-parsed C arguments from the prep_statx stub in uring.c and
- * builds one statx operation: pop an op slot, copy the path and allocate a
- * struct statx landing zone, fill the SQE, and hand back an opaque UringOp
- * handle. reap() turns the completed struct statx into a truenas_os StatxResult
- * via statx_to_pyobject() (op_build_result in uring.c). The op-slot state
- * machine is in op.h.
+ * builds one statx operation: pop an op slot, reference the caller's path
+ * bytes, point the SQE at them and at the slot's inline struct statx landing
+ * zone, and hand back an opaque UringOp handle. reap() turns the completed
+ * struct statx into a truenas_os StatxResult via statx_to_pyobject()
+ * (op_build_result in submitreap.c). The op-slot state machine is in op.h.
  */
 
 #include <Python.h>
@@ -17,19 +17,13 @@
 #include "op.h"
 
 PyObject *
-uring_op_statx(UringObject *self, int dirfd, const char *path,
-	       Py_ssize_t path_len, int flags, unsigned int mask,
+uring_op_statx(UringObject *self, int dirfd, PyObject *path_bytes,
+	       int flags, unsigned int mask,
 	       PyObject *callback, PyObject *private_data)
 {
 	PyObject *handle = NULL;
 	uring_op_t *op = NULL;
 	uint32_t slot = URING_NO_SLOT;
-
-	if (path_len >= PATH_MAX) {
-		PyErr_SetString(PyExc_ValueError,
-				"path too long (must be < PATH_MAX)");
-		return NULL;
-	}
 
 	slot = pool_alloc(self);
 	if (slot == URING_NO_SLOT) {
@@ -42,21 +36,23 @@ uring_op_statx(UringObject *self, int dirfd, const char *path,
 	op->tag = URING_TAG_STATX;
 
 	/*
-	 * Both the path and the struct statx result are inline in the slot -- no
-	 * allocation. The kernel fully overwrites stx on completion (statx zeroes
-	 * fields it does not fill), so stale bytes from a prior op never leak.
+	 * The SQE points into the path bytes (owned ref; the kernel getname()s
+	 * its own copy at submission -- an over-long path is its ENAMETOOLONG
+	 * at completion) and at the inline struct statx landing zone. The
+	 * kernel fully overwrites stx on completion (statx zeroes fields it
+	 * does not fill), so stale bytes from a prior op never leak.
 	 */
-	memcpy(op->u.statx.path, path, (size_t)path_len + 1);
+	op->path_bytes = Py_NewRef(path_bytes);
 
-	io_uring_prep_statx(&op->sqe, dirfd, op->u.statx.path, flags, mask,
-			    &op->u.statx.stx);
+	io_uring_prep_statx(&op->sqe, dirfd, PyBytes_AS_STRING(op->path_bytes),
+			    flags, mask, &op->u.statx.stx);
 
 	op->callback = Py_XNewRef(callback);
 	op->private_data = Py_XNewRef(private_data);
 
 	handle = handle_new(self, slot);
 	if (handle == NULL) {
-		pool_release(self, slot);
+		pool_recycle(self, slot);
 		return NULL;
 	}
 	return handle;

@@ -9,8 +9,9 @@ in here would drag it into the strict mypy run. The availability gating mirrors
 that conftest -- EPERM/ENOSYS/EACCES skip, EINVAL is a ring bug and never skips,
 and TRUENAS_PYOS_REQUIRE_IO_URING turns skips into hard failures.
 
-Files are int slots in the registered table; a dirfd is an O_PATH directory fd
-the caller opens (os.open); prep_* return an opaque UringOp handle.
+Files are ordinary process fds (an open completes with a new fd); a dirfd is an
+O_PATH directory fd the caller opens (os.open); prep_* return an opaque UringOp
+handle.
 """
 import errno
 import os
@@ -30,7 +31,7 @@ _REQUIRE_ENV = 'TRUENAS_PYOS_REQUIRE_IO_URING'
 
 def _probe_io_uring() -> str | None:
     try:
-        r = Uring(entries=8, files=8)
+        r = Uring(entries=8)
     except OSError as exc:
         if exc.errno in _UNAVAILABLE:
             return f'io_uring unavailable: {exc}'
@@ -66,7 +67,7 @@ def _drive_one(r: Uring, handle: object) -> Any:
 
 @requires_io_uring
 def test_ring_lifecycle_types() -> None:
-    r = Uring(entries=8, files=8, cq_entries=0)
+    r = Uring(entries=8, cq_entries=0)
     try:
         assert_type(r, Uring)
         assert_type(r.ringfd(), int)
@@ -78,7 +79,7 @@ def test_ring_lifecycle_types() -> None:
 
 @requires_io_uring
 def test_prep_submit_reap_cancel_types(tmp_path: Path) -> None:
-    r = Uring(entries=8, files=8)
+    r = Uring(entries=8)
     dirfd = os.open(os.fspath(tmp_path), os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
     try:
         open_handle = r.prep_openat2(dirfd, 'f', os.O_CREAT | os.O_RDWR, 0o600)
@@ -92,15 +93,16 @@ def test_prep_submit_reap_cancel_types(tmp_path: Path) -> None:
         fh = _drive_one(r, r.prep_openat2(dirfd, 'g', os.O_CREAT | os.O_RDWR, 0o600))
         assert isinstance(fh, int)
 
-        wr = r.prep_pwrite(fh, b'payload', 0)
+        wr = r.prep_pwritev2(fh, [b'payload'], 0)
         assert_type(wr, UringOp)
-        rd = r.prep_pread(fh, bytearray(16), 0)
+        rd = r.prep_preadv2(fh, [bytearray(16)], 0)
         assert_type(rd, UringOp)
         assert_type(r.prep_statx(dirfd, 'f'), UringOp)  # dropped unsubmitted
-        assert_type(r.prep_fixed_fd_install(fh), UringOp)  # dropped unsubmitted
-        # openat2 / statx accept keyword arguments (no positional-only `/`)
+        # openat2 / fsync / statx accept keyword arguments (no positional-only `/`)
         assert_type(r.prep_openat2(dirfd, 'f', flags=os.O_RDONLY, mode=0), UringOp)
         assert_type(r.prep_statx(dirfd, 'f', mask=0, flags=0), UringOp)
+        assert_type(r.prep_fsync(fh, fdatasync=True, offset=0, length=0), UringOp)
+        _drive_one(r, r.prep_fsync(fh))
         # A linked write-then-read chain.
         assert_type(r.submit([wr, rd], linked=True), tuple[int, ...])
 
@@ -127,14 +129,14 @@ def test_prep_submit_reap_cancel_types(tmp_path: Path) -> None:
 def test_default_arguments_type_check(tmp_path: Path) -> None:
     # Optional prep_* arguments have defaults, so the shorter forms type-check.
     (tmp_path / 'f').write_bytes(b'abcd')
-    r = Uring(entries=8, files=8)
+    r = Uring(entries=8)
     dirfd = os.open(os.fspath(tmp_path), os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
     try:
         fh = _drive_one(r, r.prep_openat2(dirfd, 'f'))   # flags/mode/resolve default
         assert isinstance(fh, int)
         buf = bytearray(4)
-        assert_type(r.prep_pread(fh, buf), UringOp)  # offset defaults to 0
-        _drive_one(r, r.prep_pread(fh, buf))
+        assert_type(r.prep_preadv2(fh, [buf]), UringOp)  # offset defaults to 0
+        _drive_one(r, r.prep_preadv2(fh, [buf]))
         _drive_one(r, r.prep_close(fh))
     finally:
         r.close()

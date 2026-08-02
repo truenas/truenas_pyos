@@ -41,7 +41,7 @@ _REQUIRE_ENV = 'TRUENAS_PYOS_REQUIRE_IO_URING'
 def _probe_io_uring():
     """Return None when io_uring works, or a reason string when it does not."""
     try:
-        r = Uring(entries=8, files=8)
+        r = Uring(entries=8)
     except OSError as exc:
         if exc.errno in _UNAVAILABLE:
             return 'io_uring unavailable: %s' % exc
@@ -128,9 +128,9 @@ def open_dir(path):
 
 
 @contextlib.contextmanager
-def ring(entries=64, files=64, cq_entries=0):
+def ring(entries=64, cq_entries=0):
     """A Ring, closed on exit."""
-    r = Uring(entries=entries, files=files, cq_entries=cq_entries)
+    r = Uring(entries=entries, cq_entries=cq_entries)
     try:
         yield r
     finally:
@@ -138,13 +138,13 @@ def ring(entries=64, files=64, cq_entries=0):
 
 
 @contextlib.contextmanager
-def ring_env(tmp_path, entries=64, files=64):
+def ring_env(tmp_path, entries=64):
     """A Ring plus an O_PATH anchor dirfd on tmp_path.
 
     Yields (ring, dirfd). `dirfd` is an O_PATH directory fd from open_dir(),
     closed on exit.
     """
-    with ring(entries=entries, files=files) as r:
+    with ring(entries=entries) as r:
         dirfd = open_dir(tmp_path)
         try:
             yield r, dirfd
@@ -158,7 +158,7 @@ def write_file(r, dirfd, name, data):
                                      os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o644))
     written = 0
     while written < len(data):
-        n = drive_one(r, r.prep_pwrite(fh, data[written:], written))
+        n = drive_one(r, r.prep_pwritev2(fh, [data[written:]], written))
         assert n > 0, 'short write made no progress'
         written += n
     drive_one(r, r.prep_close(fh))
@@ -169,6 +169,6 @@ def read_file(r, dirfd, name, size=4096):
     """Read `name` under `dirfd` via the ring and return the bytes."""
     fh = drive_one(r, r.prep_openat2(dirfd, name, os.O_RDONLY))
     buf = bytearray(size)
-    n = drive_one(r, r.prep_pread(fh, buf, 0))
+    n = drive_one(r, r.prep_preadv2(fh, [buf], 0))
     drive_one(r, r.prep_close(fh))
     return bytes(buf[:n])
