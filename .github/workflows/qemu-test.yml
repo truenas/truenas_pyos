@@ -2,8 +2,17 @@ name: QEMU VM Tests
 
 on:
   pull_request:
-  push:
-    branches: [ master ]
+  workflow_call:
+    inputs:
+      train:
+        # TrueNAS train (master or 26) whose rolling <train>-nightly kernel
+        # and OpenZFS releases to test against.  Empty (the default, used by
+        # nightly / PR runs) means derive it from the branch via
+        # train-for-ref.sh.  Callers may pass a specific train to pin one.
+        description: "(optional) TrueNAS train to test against ('master' or '26'; default: derived from branch)"
+        type: string
+        required: false
+        default: ""
   workflow_dispatch:
     inputs:
       train:
@@ -16,6 +25,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
+# Bump IMAGE_VERSION to bust the cached Debian cloud image (e.g. when it
+# has drifted).  The TrueNAS kernel and OpenZFS debs are downloaded fresh
+# from their rolling releases every run, so they are not tied to this key.
+env:
+  IMAGE_VERSION: v1
+
 jobs:
   qemu-test:
     name: Debian Trixie QEMU Test
@@ -23,6 +38,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
+        # PR runs check out the PR head; schedule / workflow_dispatch /
+        # workflow_call runs (nightly) have no PR event, so fall back to
+        # the triggering commit (master for scheduled runs).
         ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
     - name: Determine TrueNAS train
@@ -33,10 +51,11 @@ jobs:
         # both taken from the rolling <train>-nightly GitHub releases -- the
         # tests need the real kernel and a live ZFS pool (e.g. the ACL tests
         # run against posixacl / nfsv4 datasets).  One train selects both: an
-        # explicit dispatch input wins, otherwise the branch (the PR base on
-        # PRs, else the triggering ref) maps to its train.
-        if [ -n "${{ github.event.inputs.train }}" ]; then
-          TRAIN="${{ github.event.inputs.train }}"
+        # explicit input (workflow_dispatch or workflow_call) wins, otherwise
+        # the branch (the PR base on PRs, else the triggering ref) maps to
+        # its train.
+        if [ -n "${{ inputs.train }}" ]; then
+          TRAIN="${{ inputs.train }}"
         elif [ "${{ github.event_name }}" = "pull_request" ]; then
           TRAIN="$(.github/workflows/scripts/train-for-ref.sh "${{ github.base_ref }}")"
         else
@@ -48,6 +67,13 @@ jobs:
     - name: Setup QEMU
       timeout-minutes: 10
       run: bash .github/workflows/scripts/qemu-1-setup.sh
+
+    - name: Cache Debian Trixie cloud image
+      id: cache-image
+      uses: actions/cache@v4
+      with:
+        path: /tmp/qemu-work/debian-trixie.qcow2
+        key: debian-trixie-cloudimage-${{ env.IMAGE_VERSION }}
 
     - name: Start Debian Trixie VM
       timeout-minutes: 10
