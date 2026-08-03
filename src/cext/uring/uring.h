@@ -134,24 +134,20 @@ typedef struct {
 	PyObject *private_data;
 
 	/*
-	 * The op's path (open/statx only; owned ref, NULL otherwise): the
-	 * FSConverter-produced PyBytes whose NUL-terminated internal buffer the
-	 * SQE's addr field points at. Bytes objects are immutable and their
-	 * buffer never moves, so holding this ref until the op is released is
-	 * all the lifetime the kernel needs -- it getname()s its own copy at
-	 * submission. Cleared via op_free_payloads.
-	 */
-	PyObject *path_bytes;
-
-	/*
-	 * Op-type-specific args. An op keeps one tag for its whole lifetime, so
-	 * an open's how, a read/write's pinned buffers, and a statx's result
-	 * never coexist -- they share storage. Everything here is inline in the
-	 * pre-allocated slot; op_free_payloads() releases only a read/write's
-	 * pinned caller buffers. A close or fsync op uses no arm.
+	 * Op-type-specific args, selected by `tag`. Nothing here is reset
+	 * between uses: each worker initializes its arm's owned fields
+	 * immediately after setting the tag, and op_free_payloads releases
+	 * them by tag (the path refs; a read/write's pinned buffers). A close
+	 * or fsync op uses no arm.
+	 *
+	 * A `path_bytes` is the stub's FSConverter-produced PyBytes (owned
+	 * ref) whose NUL-terminated internal buffer the SQE's addr points at:
+	 * bytes are immutable and never move, and the kernel getname()s its
+	 * own copy at submission, so the ref is all the lifetime needed.
 	 */
 	union {
 		struct {			/* URING_TAG_OPEN */
+			PyObject *path_bytes;
 			/* the kernel reads `how` off-GIL at submission */
 			struct open_how how;
 		} open;
@@ -171,6 +167,7 @@ typedef struct {
 			Py_buffer views[URING_RW_IOV_CAP];
 		} rw;
 		struct {			/* URING_TAG_STATX */
+			PyObject *path_bytes;
 			/* result landing zone, inline in the slot; kernel writes off-GIL. */
 			struct statx stx;
 		} statx;

@@ -29,20 +29,21 @@ uring_op_openat2(UringObject *self, int dirfd, PyObject *path_bytes,
 	}
 	op = &self->pool[slot];
 	op->tag = URING_TAG_OPEN;
-
 	/*
-	 * The SQE points into the path bytes rather than an inline copy; the
-	 * owned ref keeps the immutable buffer alive until the op is released
-	 * (the kernel getname()s its own copy at submission). An over-long
-	 * path is the kernel's ENAMETOOLONG at completion, not policed here.
+	 * The arm may hold another op type's stale bytes; take the path ref
+	 * with the tag, before anything can fail. The SQE points into the
+	 * bytes rather than an inline copy (the kernel getname()s its own
+	 * copy at submission); an over-long path is the kernel's ENAMETOOLONG
+	 * at completion, not policed here.
 	 */
-	op->path_bytes = Py_NewRef(path_bytes);
+	op->u.open.path_bytes = Py_NewRef(path_bytes);
 
 	op->u.open.how.flags = (__u64)(unsigned int)flags;
 	op->u.open.how.mode = (__u64)(unsigned int)mode;
 	op->u.open.how.resolve = (__u64)resolve;
 
-	io_uring_prep_openat2(&op->sqe, dirfd, PyBytes_AS_STRING(op->path_bytes),
+	io_uring_prep_openat2(&op->sqe, dirfd,
+			      PyBytes_AS_STRING(op->u.open.path_bytes),
 			      &op->u.open.how);
 
 	op->callback = Py_XNewRef(callback);

@@ -34,17 +34,18 @@ uring_op_statx(UringObject *self, int dirfd, PyObject *path_bytes,
 	}
 	op = &self->pool[slot];
 	op->tag = URING_TAG_STATX;
-
 	/*
-	 * The SQE points into the path bytes (owned ref; the kernel getname()s
-	 * its own copy at submission -- an over-long path is its ENAMETOOLONG
-	 * at completion) and at the inline struct statx landing zone. The
-	 * kernel fully overwrites stx on completion (statx zeroes fields it
-	 * does not fill), so stale bytes from a prior op never leak.
+	 * The arm may hold another op type's stale bytes; take the path ref
+	 * with the tag, before anything can fail. The SQE points into the
+	 * bytes (the kernel getname()s its own copy at submission; an
+	 * over-long path is its ENAMETOOLONG at completion) and at the inline
+	 * struct statx landing zone, which the kernel fully overwrites on
+	 * completion -- stale bytes from a prior op never leak.
 	 */
-	op->path_bytes = Py_NewRef(path_bytes);
+	op->u.statx.path_bytes = Py_NewRef(path_bytes);
 
-	io_uring_prep_statx(&op->sqe, dirfd, PyBytes_AS_STRING(op->path_bytes),
+	io_uring_prep_statx(&op->sqe, dirfd,
+			    PyBytes_AS_STRING(op->u.statx.path_bytes),
 			    flags, mask, &op->u.statx.stx);
 
 	op->callback = Py_XNewRef(callback);

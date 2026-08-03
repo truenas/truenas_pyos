@@ -35,11 +35,12 @@ uring_check_ready(UringObject *self)
 
 /**
  * Release every Python reference an op owns: the completion callback +
- * passthrough, the open/statx path bytes, and a read/write's pinned buffers
- * (exactly views[0, nr) -- uring_op_rw bumps nr per successful pin, so a
- * fully-prepared op and a mid-pin failure unwind the same way). Idempotent;
- * reap_one steals the callback/passthrough first, so a fired callback is
- * never freed here. Requires the GIL.
+ * passthrough, and the tag-selected union arm's refs -- the open/statx path
+ * bytes, or a read/write's pinned buffers (exactly views[0, nr);
+ * uring_op_rw bumps nr per successful pin, so a fully-prepared op and a
+ * mid-pin failure unwind the same way). Idempotent; reap_one steals the
+ * callback/passthrough first, so a fired callback is never freed here.
+ * Requires the GIL.
  *
  * @param op  the op whose payloads to release
  */
@@ -50,13 +51,23 @@ op_free_payloads(uring_op_t *op)
 
 	Py_CLEAR(op->callback);
 	Py_CLEAR(op->private_data);
-	Py_CLEAR(op->path_bytes);
 
-	if (op->tag == URING_TAG_READ || op->tag == URING_TAG_WRITE) {
+	switch (op->tag) {
+	case URING_TAG_OPEN:
+		Py_CLEAR(op->u.open.path_bytes);
+		break;
+	case URING_TAG_STATX:
+		Py_CLEAR(op->u.statx.path_bytes);
+		break;
+	case URING_TAG_READ:
+	case URING_TAG_WRITE:
 		for (i = 0; i < op->u.rw.nr; i++) {
 			PyBuffer_Release(&op->u.rw.views[i]);
 		}
 		op->u.rw.nr = 0;
+		break;
+	default:
+		break;
 	}
 }
 
@@ -66,9 +77,10 @@ op_free_payloads(uring_op_t *op)
  * past pool_hi stay demand-zero, so RSS tracks peak concurrency, not
  * `entries`. Bumps the slot generation (the token's high 32 bits) and
  * re-initializes the SQE the way io_uring_get_sqe() would, so no prior op's
- * flags leak into the next prep. The payload union is NOT reset: a
- * read/write worker must zero u.rw.nr before its first failure path (see
- * uring_op_rw).
+ * flags leak into the next prep. The payload union is NOT reset: it may hold
+ * another op type's stale bytes, so each worker must initialize its arm's
+ * owned fields (u.open/u.statx path_bytes, u.rw.nr) immediately after
+ * setting the tag, before any failure path can recycle the slot.
  *
  * @param self  the ring
  * @return the slot index, or URING_NO_SLOT when the pool is exhausted
@@ -95,7 +107,6 @@ pool_alloc(UringObject *self)
 	op->tag = 0;
 	op->callback = NULL;		/* already NULL (calloc / op_free_payloads); */
 	op->private_data = NULL;	/* kept explicit so "op owns these" is local */
-	op->path_bytes = NULL;
 	op->gen++;	/* persists across pool_recycle: consecutive uses of this
 			 * slot never share a token */
 	io_uring_initialize_sqe(&op->sqe);
