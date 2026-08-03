@@ -9,6 +9,11 @@ export PYBUILD_SYSTEM=pyproject
 	dh $@ --with python3 --buildsystem=pybuild
 
 override_dh_auto_configure:
+	# Materialise the pinned liburing here, in the network-enabled configure
+	# phase: the wheel build (dh_auto_build) runs sandboxed with no egress, so
+	# setup.py's build-time clone would fail there. build_ext then reuses this
+	# tree (build/liburing) instead of cloning.
+	python3 setup.py fetch-liburing
 	dh_auto_configure
 
 override_dh_install:
