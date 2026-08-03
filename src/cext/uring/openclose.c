@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
+/*
+ * uring_op_openat2 / uring_op_close -- the file open and close workers.
+ * Already-parsed C arguments come from the prep stubs in uring.c; the op-slot
+ * state machine is in op.h.
+ */
+
 #include <Python.h>
 #include "pyuring_common.h"
 #include "uring.h"

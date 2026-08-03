@@ -46,7 +46,7 @@ op_build_result(uring_op_t *op, int res)
  * typed result and return the pool slot. Never raises mid-drain except on an
  * allocation failure building the tuple.
  *
- * Result convention (the driver re-raises / unwraps):
+ * Result convention (Python consumers unwrap):
  *   res >= 0, build OK    -> result = the built object (int fd / int / None).
  *   res >= 0, build OOM   -> result = the captured exception instance.
  *   res < 0               -> result = None; res carries -errno.
@@ -95,7 +95,7 @@ reap_one(UringObject *self, uring_op_t *op, int res, bool *consumed)
 		Py_XDECREF(private_data);
 		return NULL;
 	}
-	tuple = PyTuple_New(3);
+	tuple = PyTuple_New(URING_COMP_NFIELDS);
 	if (tuple == NULL) {
 		Py_DECREF(ud_obj);
 		Py_DECREF(res_obj);
@@ -104,9 +104,9 @@ reap_one(UringObject *self, uring_op_t *op, int res, bool *consumed)
 		Py_XDECREF(private_data);
 		return NULL;
 	}
-	PyTuple_SET_ITEM(tuple, 0, ud_obj);	/* steals */
-	PyTuple_SET_ITEM(tuple, 1, res_obj);	/* steals */
-	PyTuple_SET_ITEM(tuple, 2, result);	/* steals */
+	PyTuple_SET_ITEM(tuple, URING_COMP_TOKEN, ud_obj);	/* steals */
+	PyTuple_SET_ITEM(tuple, URING_COMP_CQE_RES, res_obj);	/* steals */
+	PyTuple_SET_ITEM(tuple, URING_COMP_RESULT, result);	/* steals */
 
 	if (callback != NULL) {
 		/*
@@ -235,9 +235,9 @@ uring_submit_batch(UringObject *self, submit_ent_t *ents, Py_ssize_t n,
 
 	/*
 	 * Count the batch in flight while still holding the GIL, before
-	 * io_uring_submit drops it: once the SQEs reach the kernel a completion can be
-	 * reaped on the reaper thread, and reap_one's inflight-- must see the op
-	 * already counted.
+	 * io_uring_submit drops it: once the SQEs reach the kernel a completion can
+	 * be reaped on the reaper thread, and the reap loop's inflight-- must see
+	 * the ops already counted.
 	 */
 	self->inflight += (uint32_t)staged;
 

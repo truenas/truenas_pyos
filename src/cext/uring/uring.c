@@ -289,7 +289,7 @@ py_uring_ring_prep_openat2(UringObject *self, PyObject *const *args,
 	PyObject *a_dirfd = NULL, *a_path = NULL, *a_flags = NULL;
 	PyObject *a_mode = NULL, *a_resolve = NULL;
 	PyObject *a_callback = NULL, *a_private_data = NULL;
-	PyObject *slots[7] = {0};
+	PyObject *slots[URING_NELEM(params)] = {0};
 	PyObject *path_bytes = NULL;
 	PyObject *result = NULL;
 	int dirfd = 0;
@@ -301,7 +301,8 @@ py_uring_ring_prep_openat2(UringObject *self, PyObject *const *args,
 		return NULL;
 	}
 
-	if (prep_collect("prep_openat2", args, nargs, kwnames, params, 7, 2, slots) < 0) {
+	if (prep_collect("prep_openat2", args, nargs, kwnames, params,
+			 URING_NELEM(params), 2, slots) < 0) {
 		return NULL;
 	}
 	a_dirfd = slots[0];
@@ -401,7 +402,7 @@ prep_rwv_stub(UringObject *self, PyObject *const *args, Py_ssize_t nargs,
 	PyObject *a_fd = NULL, *a_buffers = NULL, *a_offset = NULL;
 	PyObject *a_flags = NULL;
 	PyObject *a_callback = NULL, *a_private_data = NULL;
-	PyObject *slots[6] = {0};
+	PyObject *slots[URING_NELEM(params)] = {0};
 	unsigned long long offset = 0;
 	int fd = -1;
 	int flags = 0;
@@ -411,7 +412,8 @@ prep_rwv_stub(UringObject *self, PyObject *const *args, Py_ssize_t nargs,
 	}
 
 	if (prep_collect(is_write ? "prep_pwritev2" : "prep_preadv2", args,
-			 nargs, kwnames, params, 6, 2, slots) < 0) {
+			 nargs, kwnames, params, URING_NELEM(params), 2,
+			 slots) < 0) {
 		return NULL;
 	}
 	a_fd = slots[0];
@@ -451,9 +453,9 @@ PyDoc_STRVAR(py_uring_ring_prep_preadv2__doc__,
 "prep_preadv2($self, fd, buffers, offset=0, flags=0, callback=None, private_data=None)\n"
 "--\n\n"
 "Prepare a positional vectored read (preadv2(2)) from the file descriptor `fd`\n"
-"into a sequence of writable buffers -- at most 8 per operation (a deliberate\n"
-"limitation; split larger transfers into multiple operations). Every buffer\n"
-"is pinned from submission until the completion reaps. `flags` takes per-IO\n"
+"into a sequence of writable buffers -- at most 8 per operation; split larger\n"
+"transfers across operations. Every buffer is pinned from submission until\n"
+"the completion reaps. `flags` takes per-IO\n"
 "RWF_* values (os.RWF_HIPRI, os.RWF_NOWAIT, ...); the kernel validates them at\n"
 "issue, so an unsupported flag surfaces as the completion's -errno. Returns an\n"
 "opaque handle for submit(); its completion result is the int total byte\n"
@@ -470,9 +472,9 @@ PyDoc_STRVAR(py_uring_ring_prep_pwritev2__doc__,
 "prep_pwritev2($self, fd, buffers, offset=0, flags=0, callback=None, private_data=None)\n"
 "--\n\n"
 "Prepare a positional vectored write (pwritev2(2)) of a sequence of buffers --\n"
-"at most 8 per operation (a deliberate limitation; split larger transfers into\n"
-"multiple operations) -- to the file descriptor `fd`. Every buffer is pinned\n"
-"from submission until the completion reaps. `flags` takes per-IO RWF_*\n"
+"at most 8 per operation; split larger transfers across operations -- to the\n"
+"file descriptor `fd`. Every buffer is pinned from submission until the\n"
+"completion reaps. `flags` takes per-IO RWF_*\n"
 "values (os.RWF_DSYNC, os.RWF_APPEND, ...); the kernel validates them at\n"
 "issue, so an unsupported flag surfaces as the completion's -errno. Returns an\n"
 "opaque handle for submit(); its completion result is the int total byte\n"
@@ -507,7 +509,7 @@ py_uring_ring_prep_fsync(UringObject *self, PyObject *const *args,
 	PyObject *a_fd = NULL, *a_fdatasync = NULL, *a_offset = NULL;
 	PyObject *a_length = NULL;
 	PyObject *a_callback = NULL, *a_private_data = NULL;
-	PyObject *slots[6] = {0};
+	PyObject *slots[URING_NELEM(params)] = {0};
 	unsigned long long offset = 0;
 	unsigned long long length_arg = 0;
 	int fd = -1;
@@ -517,7 +519,8 @@ py_uring_ring_prep_fsync(UringObject *self, PyObject *const *args,
 		return NULL;
 	}
 
-	if (prep_collect("prep_fsync", args, nargs, kwnames, params, 6, 1, slots) < 0) {
+	if (prep_collect("prep_fsync", args, nargs, kwnames, params,
+			 URING_NELEM(params), 1, slots) < 0) {
 		return NULL;
 	}
 	a_fd = slots[0];
@@ -551,8 +554,7 @@ py_uring_ring_prep_fsync(UringObject *self, PyObject *const *args,
 		/*
 		 * io_uring's fsync length is the SQE's 32-bit len field. A larger
 		 * value would be silently truncated to its low 32 bits, syncing
-		 * the wrong range with no error -- reject it (the same guard
-		 * read/write applies to its buffer size).
+		 * the wrong range with no error -- reject it.
 		 */
 		if (length_arg > (unsigned long long)UINT_MAX) {
 			PyErr_Format(PyExc_ValueError,
@@ -589,7 +591,7 @@ py_uring_ring_prep_statx(UringObject *self, PyObject *const *args,
 					     "callback", "private_data"};
 	PyObject *a_dirfd = NULL, *a_path = NULL, *a_flags = NULL, *a_mask = NULL;
 	PyObject *a_callback = NULL, *a_private_data = NULL;
-	PyObject *slots[6] = {0};
+	PyObject *slots[URING_NELEM(params)] = {0};
 	PyObject *path_bytes = NULL;
 	PyObject *result = NULL;
 	unsigned long mask_arg = 0;
@@ -601,7 +603,8 @@ py_uring_ring_prep_statx(UringObject *self, PyObject *const *args,
 		return NULL;
 	}
 
-	if (prep_collect("prep_statx", args, nargs, kwnames, params, 6, 2, slots) < 0) {
+	if (prep_collect("prep_statx", args, nargs, kwnames, params,
+			 URING_NELEM(params), 2, slots) < 0) {
 		return NULL;
 	}
 	a_dirfd = slots[0];
@@ -920,11 +923,11 @@ py_uring_ring_reap(UringObject *self, PyObject *args)
 
 		io_uring_cqe_seen(&self->ring, cqe);
 
-		if (ud == 0) {
+		if (ud == URING_CANCEL_SENTINEL) {
 			/*
-			 * The cancel sentinel: cancel SQEs carry user_data 0 (0
-			 * is never a valid slot token -- slots encode as index + 1).
-			 * Their result is advisory; nothing waits on them.
+			 * A cancel SQE's own completion (the sentinel is never a
+			 * valid slot token -- slots encode as index + 1). Its
+			 * result is advisory; nothing waits on it.
 			 */
 			continue;
 		}
@@ -1019,8 +1022,8 @@ py_uring_ring_cancel(UringObject *self, PyObject *arg)
 	}
 
 	io_uring_prep_cancel64(sqe, ud, 0);
-	/* The cancel SQE's own user_data is 0: reap() skips it as the sentinel. */
-	io_uring_sqe_set_data64(sqe, 0);
+	/* The cancel SQE's own completion is dropped by reap() on sight. */
+	io_uring_sqe_set_data64(sqe, URING_CANCEL_SENTINEL);
 
 	Py_BEGIN_ALLOW_THREADS
 	ret = io_uring_submit(&self->ring);
@@ -1057,8 +1060,9 @@ uring_drain(UringObject *self)
 
 	sqe = io_uring_get_sqe(&self->ring);
 	if (sqe != NULL) {
+		/* CANCEL_ANY matches every op; the target user_data (0) is unused. */
 		io_uring_prep_cancel64(sqe, 0, IORING_ASYNC_CANCEL_ANY);
-		io_uring_sqe_set_data64(sqe, 0);	/* cancel sentinel */
+		io_uring_sqe_set_data64(sqe, URING_CANCEL_SENTINEL);
 		Py_BEGIN_ALLOW_THREADS
 		io_uring_submit(&self->ring);
 		Py_END_ALLOW_THREADS
@@ -1092,8 +1096,8 @@ uring_drain(UringObject *self)
 		ud = io_uring_cqe_get_data64(cqe);
 		io_uring_cqe_seen(&self->ring, cqe);
 
-		if (ud == 0) {
-			continue;	/* cancel sentinel */
+		if (ud == URING_CANCEL_SENTINEL) {
+			continue;	/* a cancel SQE's own advisory completion */
 		}
 		self->inflight--;
 		/*

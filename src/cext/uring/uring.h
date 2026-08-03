@@ -10,21 +10,27 @@
 #define URING_NO_SLOT		0xFFFFFFFFU
 
 /*
- * Most buffers a single vectored read/write may carry -- a deliberate,
- * documented API limitation. The iovec and Py_buffer arrays live inline in
- * the op slot's payload union (keeping the pool zero-malloc-per-op) at ~96 B
- * per vector, so the cap is what sizes the slot; 8 matches the kernel's own
- * UIO_FASTIOV fast path, and a larger transfer splits into multiple
- * operations. The kernel's ceiling is UIO_MAXIOV (1024).
+ * Most buffers a single vectored read/write may carry (a documented API
+ * limit; larger transfers split across operations). The iovec and Py_buffer
+ * arrays live inline in the op slot at ~96 B per vector, so this cap sizes
+ * the slot and keeps the pool malloc-free per op.
  */
 #define URING_RW_IOV_CAP	8
+
+/*
+ * user_data of the internal cancel SQEs that cancel() and the close-time drain
+ * submit. A real op token is never 0 (slots encode as index + 1 -- see
+ * SLOT_IDX_TO_OPID below), so reap() and the drain drop these advisory
+ * completions on sight.
+ */
+#define URING_CANCEL_SENTINEL	0
 
 /*
  * The op token the caller sees (submit()'s return, reap()'s first tuple element,
  * and cancel()'s argument) packs two fields into 64 bits:
  *   high 32 bits -- the slot's generation, bumped on every reuse (pool_alloc);
- *   low  32 bits -- the op-slot index + 1 (offset by one so the id is never 0,
- *                   which is reserved as the cancel/drain sentinel).
+ *   low  32 bits -- the op-slot index + 1 (offset by one so the id is never
+ *                   URING_CANCEL_SENTINEL).
  * It is stored in each SQE's user_data field and echoed back on the CQE. The
  * generation makes every token unique for the ring's lifetime, so a stale token
  * whose op already reaped no longer equals the token of a new op that reused the
@@ -59,6 +65,18 @@ enum uring_tag {
 	URING_TAG_CLOSE,
 	URING_TAG_STATX,
 	URING_TAG_FSYNC,
+};
+
+/*
+ * Completion tuple layout -- the (token, res, result) triple that reap()
+ * returns and completion callbacks receive. reap_one() is the only builder;
+ * these indices are the single home of the field order.
+ */
+enum uring_completion_field {
+	URING_COMP_TOKEN = 0,	/* int: the token submit() returned for the op */
+	URING_COMP_CQE_RES,	/* int: the CQE's raw res -- >= 0, or -errno */
+	URING_COMP_RESULT,	/* object: typed result, None, or a captured exception */
+	URING_COMP_NFIELDS,
 };
 
 /*
@@ -205,6 +223,14 @@ typedef struct UringObject {
 
 extern PyTypeObject UringType;
 
+/**
+ * Ready the Uring/UringOp types, build the per-op repr strings in module
+ * state, and register both types on @p module. Called from the truenas_os
+ * module init.
+ *
+ * @param module  the truenas_os module object
+ * @return 0, or -1 with an exception set
+ */
 int init_uring_types(PyObject *module);
 
 #endif /* _URING_H */
