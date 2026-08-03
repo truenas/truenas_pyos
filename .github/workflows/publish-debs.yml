@@ -1,8 +1,9 @@
 name: Publish debs
 
-# Build the python3-truenas-pyos deb against the published TrueNAS
-# kernel's UAPI headers and, on pushes to a mapped branch, republish it as
-# a rolling <train>-nightly GitHub release on this repo.
+# On every push to a mapped (publishable) branch, build the
+# python3-truenas-pyos deb against the published TrueNAS kernel's UAPI
+# headers and republish it as a rolling <train>-nightly GitHub release
+# on this repo.
 #
 # The C extension compiles the statmount()/listmount() interface against
 # <linux/mount.h> etc., which must match the TrueNAS kernel -- the stock
@@ -10,25 +11,19 @@ name: Publish debs
 # the same rolling <train>-nightly truenas/linux release the QEMU test VM
 # boots.
 #
-# This is deliberately decoupled from the QEMU functional tests
-# (qemu-test.yml): a pull request's QEMU run gates the merge, so a push to
-# master publishes the already-validated deb directly.  A flaky QEMU
-# runner must never be able to block shipping debs that already passed on
-# the branch.
+# This runs on merges only, deliberately decoupled from the QEMU
+# functional tests (qemu-test.yml): a pull request's QEMU run builds,
+# installs and tests this same deb inside the test VM and gates the
+# merge, so a push to master publishes the already-validated deb
+# directly.  A flaky QEMU runner must never be able to block shipping
+# debs that already passed on the branch.
 #
 # There is intentionally no cancelling workflow-level concurrency: the
 # publish job (below) serialises release writes with a non-cancelling
 # group so a rapid second push can never tear a half-written release.
-#
-# The push trigger is limited to the mapped (publishable) branches: a PR
-# from a same-repo branch would otherwise fire both push and pull_request
-# and run this workflow twice.  Feature-branch pushes run only via the
-# pull_request event (build-deb validates; publish is skipped); pushes to
-# master/stable/26 run via push (build-deb + publish).
 on:
   push:
     branches: [master, stable/26]
-  pull_request:
 
 jobs:
   build-deb:
@@ -63,14 +58,9 @@ jobs:
 
       - name: Map branch to TrueNAS train
         run: |
-          # PRs build against their base branch's train; pushes use the
-          # pushed branch.  train-for-ref.sh is the single source of truth.
-          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            ref="$GITHUB_BASE_REF"
-          else
-            ref="$GITHUB_REF_NAME"
-          fi
-          train="$(.github/workflows/scripts/train-for-ref.sh "$ref")"
+          # train-for-ref.sh is the single source of truth for the
+          # branch -> train mapping.
+          train="$(.github/workflows/scripts/train-for-ref.sh "$GITHUB_REF_NAME")"
           echo "TRAIN=$train" >> "$GITHUB_ENV"
           echo "Building against the $train train"
 
