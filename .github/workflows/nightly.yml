@@ -1,0 +1,20 @@
+name: Nightly master tests
+
+# Run the full QEMU test suite once a day (and on demand) against the
+# current published TrueNAS kernel + OpenZFS <train>-nightly debs.  Those
+# releases roll independently of this repo, so this is what notices
+# kernel/ZFS-side breakage between PRs.  Scheduled workflows only fire
+# from the default branch, so this inherently exercises master.  The
+# pipeline itself is the reusable qemu-test.yml workflow, invoked via
+# workflow_call.
+on:
+  schedule:
+    - cron: '23 7 * * *'  # 07:23 UTC daily, offset off :00 to dodge scheduler backlog
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/qemu-test.yml
