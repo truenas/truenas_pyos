@@ -322,6 +322,14 @@ def iter_mount(
     -------
     Iterator[StatmountResult]
         Iterator yielding StatmountResult objects
+
+    Notes
+    -----
+    A mount that is unmounted between the listmount(2) call that returned its
+    id and the statmount(2) call that resolves it is skipped; the mount is gone
+    and the iteration continues with the next id. Errors that concern the mount
+    being enumerated rather than one of its children are raised as OSError, so
+    a scoped iteration whose own mnt_id is unmounted mid-iteration fails.
     """
     ...
 

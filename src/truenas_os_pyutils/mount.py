@@ -177,6 +177,10 @@ def iter_mountinfo(
           zfs_expire_snapshot seconds (default 300 s). Pass
           include_snapshot_mounts=True to include them — needed when enumerating
           all child mounts for recursive unmount operations.
+        - A mount that is unmounted while the iteration is in flight is skipped
+          by truenas_os.iter_mount() rather than raising. Scoping the iteration
+          to target_mnt_id, path, or fd does mean an OSError if that mount
+          itself goes away mid-iteration.
     """
     specifiers = sum(x is not None for x in (target_mnt_id, path, fd))
     if specifiers > 1:
@@ -189,23 +193,7 @@ def iter_mountinfo(
     if target_mnt_id:
         iter_kwargs['mnt_id'] = target_mnt_id
 
-    # listmount(2) hands back a batch of mount ids and each is resolved afterwards by
-    # statmount(2), so a mount that goes away in between yields ENOENT for that id.
-    # That is ordinary churn rather than an error for the caller -- ZFS snapshot
-    # automounts alone expire on a timer -- so the vanished mount is skipped. Resuming
-    # is safe because the iterator advances its cursor before calling statmount(2), so
-    # the next item is the one after the mount that disappeared.
-    mount_iter = truenas_os.iter_mount(**iter_kwargs)
-    while True:
-        try:
-            sm = next(mount_iter)
-        except StopIteration:
-            break
-        except OSError as e:
-            if e.errno != errno.ENOENT:
-                raise
-            continue
-
+    for sm in truenas_os.iter_mount(**iter_kwargs):
         if not include_snapshot_mounts and _is_zfs_snapshot_mount(sm):
             continue
         if as_dict:
