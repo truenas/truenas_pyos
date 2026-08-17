@@ -170,7 +170,7 @@ PyDoc_STRVAR(py_iter_mount__doc__,
 "failure, and any listmount(2) failure, is raised as OSError.\n\n"
 "Unmounting the mnt_id a scoped iteration is bound to takes its children with\n"
 "it, so the walk ends early rather than raising, unless a continuation\n"
-"listmount(2) was still due (more than 1024 children), which fails ENOENT.\n\n"
+"listmount(2) was still due (1024 or more children), which fails ENOENT.\n\n"
 "Examples\n"
 "--------\n"
 ">>> import truenas_os\n"

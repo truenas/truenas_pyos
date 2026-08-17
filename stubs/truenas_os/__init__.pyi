@@ -332,7 +332,7 @@ def iter_mount(
 
     Unmounting the mnt_id a scoped iteration is bound to takes its children
     with it, so the walk ends early rather than raising, unless a continuation
-    listmount(2) was still due (more than 1024 children), which fails ENOENT.
+    listmount(2) was still due (1024 or more children), which fails ENOENT.
     """
     ...
 

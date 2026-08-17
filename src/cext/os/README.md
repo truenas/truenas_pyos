@@ -166,7 +166,7 @@ is raised as `OSError`.
 Unmounting the mount a scoped iteration (`mnt_id=` other than `LSMT_ROOT`) is
 bound to takes its children with it, so the remaining ids all resolve to
 `ENOENT` and the walk simply ends early. It raises `ENOENT` instead only when a
-continuation `listmount(2)` was still due, which needs more than
+continuation `listmount(2)` was still due, which needs at least
 `LISTMOUNT_BATCH_SIZE` (1024) children.
 
 ---

@@ -180,7 +180,7 @@ def iter_mountinfo(
         - A mount that is unmounted while the iteration is in flight is skipped
           by truenas_os.iter_mount() rather than raising. If the mount a scoped
           iteration is bound to goes away, its children go with it, so the walk
-          ends early; only a scope with more than 1024 children raises OSError
+          ends early; only a scope with 1024 or more children raises OSError
           in that case.
     """
     specifiers = sum(x is not None for x in (target_mnt_id, path, fd))
