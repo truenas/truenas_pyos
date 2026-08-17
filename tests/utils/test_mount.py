@@ -387,14 +387,62 @@ def _build_and_check_vanishing(base):
     expected2 = expected - set(doomed2)
     assert survived2 == expected2, f'iter_mountinfo returned {survived2}, expected {expected2}'
 
-    # A failure that concerns the mount being enumerated rather than one of its
-    # children is still an error: once the parent is gone, listmount(2) reports
-    # ENOENT for it and that must not be swallowed as churn.
-    for tgt in expected2:
-        umount(tgt)
-    umount(str(base))
+    # Losing the scope root takes its children with it.  Their ids are already
+    # in hand from the first listmount(2), so they all resolve to ENOENT and the
+    # walk ends early -- no continuation call is due at this size, so there is
+    # nothing left to report an error.
+    it3 = iter_mountinfo(target_mnt_id=parent_id, include_snapshot_mounts=True)
+    next(it3)
+    umount(str(base), detach=True)
+    leftover = list(it3)
+    assert leftover == [], f'expected the walk to end with the scope root, got {leftover}'
+
+    # Building an iterator on a mount that is already gone fails in
+    # mount_iter_init(), where the very first listmount(2) has no mount to
+    # enumerate.  See _build_and_check_scope_root_vanishes for the same failure
+    # from the continuation call in mount_iter_next().
     with pytest.raises(OSError) as exc:
-        list(truenas_os.iter_mount(mnt_id=parent_id, statmount_flags=flags))
+        truenas_os.iter_mount(mnt_id=parent_id, statmount_flags=flags)
+    assert exc.value.errno == errno.ENOENT, f'unexpected errno {exc.value.errno}'
+
+
+def _build_and_check_scope_root_vanishes(base):
+    """Lose the scope root mid-walk, with enough children to force a continuation.
+
+    Past LISTMOUNT_BATCH_SIZE children the iterator has to issue a second
+    listmount(2), and that one reports ENOENT for a scope root that is no longer
+    mounted.  Unlike a vanished child, this is not churn to skip: the iterator
+    cannot continue, so it must raise.  Runs inside a forked child that has
+    already unshared its mount namespace.
+    """
+    truenas_os.mount_setattr(
+        path='/', propagation=truenas_os.MS_PRIVATE, flags=truenas_os.AT_RECURSIVE,
+    )
+
+    _mount_tmpfs(str(base))
+    parent_id = truenas_os.statx(
+        str(base),
+        mask=truenas_os.STATX_MNT_ID_UNIQUE | truenas_os.STATX_BASIC_STATS,
+    ).stx_mnt_id
+
+    for i in range(_LISTMOUNT_BATCH + 1):
+        tgt = os.path.join(str(base), f'm{i:05d}')
+        os.mkdir(tgt)
+        _mount_tmpfs(tgt)
+
+    n = len(truenas_os.listmount(parent_id))
+    assert n > _LISTMOUNT_BATCH, f'need more than one batch, got {n} mounts'
+
+    flags = truenas_os.STATMOUNT_MNT_BASIC | truenas_os.STATMOUNT_MNT_POINT
+    it = truenas_os.iter_mount(mnt_id=parent_id, statmount_flags=flags)
+    for _ in range(_LISTMOUNT_BATCH):
+        next(it)  # drain the batch fetched by mount_iter_init()
+
+    # The next call has to ask the kernel for more ids, and by then the mount it
+    # would ask about is gone.
+    umount(str(base), detach=True)
+    with pytest.raises(OSError) as exc:
+        next(it)
     assert exc.value.errno == errno.ENOENT, f'unexpected errno {exc.value.errno}'
 
 
@@ -411,6 +459,19 @@ def test_mount_unmounted_mid_iteration_is_skipped(tmp_path):
     base = tmp_path / 'ns_root'
     base.mkdir()
     _run_in_private_mountns(_build_and_check_vanishing, base)
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason='requires root to create mounts in a private namespace')
+def test_scope_root_unmounted_mid_iteration_raises(tmp_path):
+    """Losing the mount a scoped walk is bound to is an error, not churn.
+
+    Only the continuation listmount(2) can report it, so this needs more than
+    LISTMOUNT_BATCH_SIZE children for a second batch to be due.  Needs root for
+    the throwaway mount namespace.
+    """
+    base = tmp_path / 'ns_root'
+    base.mkdir()
+    _run_in_private_mountns(_build_and_check_scope_root_vanishes, base)
 
 
 # ── umount ────────────────────────────────────────────────────────────────────

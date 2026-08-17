@@ -3,7 +3,6 @@
 #include <Python.h>
 #include "common/includes.h"
 #include "mount.h"
-#include <errno.h>
 #include <linux/mount.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -74,7 +73,6 @@ mount_iter_next(MountIterator *self)
 	PyObject *result = NULL;
 	ssize_t count;
 	uint64_t mnt_id;
-	int err = 0;
 
 	while (1) {
 		// Check if we've exhausted the current batch
@@ -123,23 +121,31 @@ mount_iter_next(MountIterator *self)
 		self->current_idx++;
 
 		// Call do_statmount to get the mount information
-		result = do_statmount_err(mnt_id, self->statmount_flags, &err);
+		result = do_statmount(mnt_id, self->statmount_flags);
 		if (result != NULL) {
 			return result;
 		}
 
 		// listmount(2) hands back a batch of mount ids that are resolved one
 		// by one afterwards, so a mount that goes away in between is reported
-		// by statmount(2) as ENOENT.  That is ordinary mount table churn --
-		// ZFS snapshot automounts alone expire on a timer -- and the mount is
-		// genuinely gone, so it is skipped rather than failing the whole
-		// enumeration.  Every other error, including a non-OSError failure
-		// (err stays 0), belongs to the caller.
-		if (err != ENOENT) {
+		// by statmount(2) as ENOENT, which reaches us as FileNotFoundError.
+		// That is ordinary mount table churn -- ZFS snapshot automounts alone
+		// expire on a timer -- and the mount is genuinely gone, so it is
+		// skipped rather than failing the whole enumeration.  No other failure
+		// in do_statmount() raises FileNotFoundError, so nothing else can be
+		// mistaken for it.
+		if (!PyErr_ExceptionMatches(PyExc_FileNotFoundError)) {
 			return NULL;
 		}
 
 		PyErr_Clear();
+
+		// A mass unmount can make this loop skip many ids before it yields, so
+		// unlike the one-statmount-per-call version it has to give pending
+		// signal handlers a chance to run (a no-op off the main thread).
+		if (PyErr_CheckSignals() < 0) {
+			return NULL;
+		}
 	}
 }
 

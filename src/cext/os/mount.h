@@ -12,13 +12,6 @@
 PyObject *do_listmount(uint64_t mnt_id, uint64_t last_mnt_id, int reverse);
 PyObject *do_statmount(uint64_t mnt_id, uint64_t mask);
 
-// As do_statmount(), but also reports the raw errno to the caller so that it can
-// tell one statmount(2) failure from another without inspecting the exception.
-// On failure of the syscall itself *err_out is set to errno; it is set to 0 in
-// every other case, including the failures that raise something other than
-// OSError.  err_out may be NULL.
-PyObject *do_statmount_err(uint64_t mnt_id, uint64_t mask, int *err_out);
-
 // C wrapper for statmount() - returns pointer to statmount struct (caller must free)
 // Returns NULL with errno set on error
 struct statmount *statmount_impl(uint64_t mnt_id, uint64_t mask);

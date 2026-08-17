@@ -215,11 +215,6 @@ PyObject *do_listmount(uint64_t mnt_id, uint64_t last_mnt_id, int reverse)
 
 PyObject *do_statmount(uint64_t mnt_id, uint64_t mask)
 {
-	return do_statmount_err(mnt_id, mask, NULL);
-}
-
-PyObject *do_statmount_err(uint64_t mnt_id, uint64_t mask, int *err_out)
-{
 	struct mnt_id_req req = {0};
 	char stack_buf[1024];
 	struct statmount *sm = (struct statmount *)stack_buf;
@@ -228,10 +223,6 @@ PyObject *do_statmount_err(uint64_t mnt_id, uint64_t mask, int *err_out)
 	ssize_t ret;
 	PyObject *result = NULL;
 	truenas_os_state_t *state = NULL;
-
-	if (err_out != NULL) {
-		*err_out = 0;
-	}
 
 	req.size = MNT_ID_REQ_SIZE_VER1;
 	req.mnt_id = mnt_id;
@@ -258,9 +249,6 @@ PyObject *do_statmount_err(uint64_t mnt_id, uint64_t mask, int *err_out)
 	}
 
 	if (ret < 0) {
-		if (err_out != NULL) {
-			*err_out = errno;
-		}
 		PyMem_RawFree(dynamic_buf);
 		PyErr_SetFromErrno(PyExc_OSError);
 		return NULL;

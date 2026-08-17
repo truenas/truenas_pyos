@@ -40,6 +40,13 @@ Symlinks in `path` raise `SymlinkInPathError`. ZFS snapshot mounts are excluded
 from `iter_mountinfo` by default; pass `include_snapshot_mounts=True` to
 include them.
 
+A mount unmounted while `iter_mountinfo` is in flight is skipped rather than
+raising, since the mount is genuinely gone by the time `statmount(2)` reaches
+its id. If the mount a scoped walk is bound to goes away, its children go with
+it and the walk ends early; only a scope with more than 1024 children raises
+`OSError` in that case. See the `iter_mount` notes in
+[`src/cext/os/README.md`](../cext/os/README.md).
+
 A `RuntimeWarning` is emitted at import time if the package was built without
 `STATMOUNT_SB_SOURCE` support (kernel < 6.18); `mount_source` will be `None`
 and ZFS snapshot detection will be disabled in that case.
