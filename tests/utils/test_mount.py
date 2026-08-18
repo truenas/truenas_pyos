@@ -175,8 +175,21 @@ def test_iter_mountinfo_reverse():
 # ── reverse listing across the listmount() batch boundary ───────────────────────
 
 # Must match LISTMOUNT_BATCH_SIZE in src/cext/os/mount.h; listmount()/iter_mount()
-# fetch mount ids in batches of this size.
+# fetch mount ids in batches of this size.  Not exported to Python, so the tests
+# below that aim at the batch boundary depend on this staying in step.
 _LISTMOUNT_BATCH = 1024
+
+# The CI VM sets this to say the box really is privileged, so a test that cannot
+# create mounts there has lost its coverage and must fail rather than skip.
+_REQUIRE_PRIVILEGED = bool(os.environ.get('TRUENAS_POS_REQUIRE_PRIVILEGED'))
+
+# Running as root is the normal precondition.  Where CI declares the box
+# privileged, run regardless: skipping on euid would slip past the fail-hard
+# above and drop the coverage silently, which is the thing it exists to prevent.
+_needs_mount_privs = pytest.mark.skipif(
+    os.geteuid() != 0 and not _REQUIRE_PRIVILEGED,
+    reason='requires root to create mounts in a private namespace',
+)
 
 
 def _mount_tmpfs(target):
@@ -198,26 +211,14 @@ def _mount_tmpfs(target):
         os.close(mnt_fd)
 
 
-def _build_and_check_reverse(base):
+def _build_and_check_reverse(base, parent_id):
     """Create >1024 child mounts and verify reverse listing survives batching.
 
-    Runs inside a forked child that has already unshared its mount namespace, so
-    every mount created here disappears when the child exits.  Raises on the
-    first failed assertion; the caller relays the message to the parent.
+    Runs inside the forked child prepared by _run_in_private_mountns(), where
+    ``base`` is already a tmpfs whose mount id is ``parent_id``, so
+    listmount(parent_id) enumerates exactly the children made here.  Raises on
+    the first failed assertion; the caller relays the message to the parent.
     """
-    # Isolate propagation so none of this escapes to the host mount namespace.
-    truenas_os.mount_setattr(
-        path='/', propagation=truenas_os.MS_PRIVATE, flags=truenas_os.AT_RECURSIVE,
-    )
-
-    # A tmpfs is the common parent; each child is a tmpfs mounted on a directory
-    # of that parent, so listmount(parent_id) enumerates exactly the children.
-    _mount_tmpfs(str(base))
-    parent_id = truenas_os.statx(
-        str(base),
-        mask=truenas_os.STATX_MNT_ID_UNIQUE | truenas_os.STATX_BASIC_STATS,
-    ).stx_mnt_id
-
     made = 0
 
     def add_one():
@@ -266,34 +267,38 @@ def _build_and_check_reverse(base):
     assert it_fwd == list(reversed(it_rev)), 'iter_mountinfo reverse is not the reverse of forward'
 
 
-@pytest.mark.skipif(os.geteuid() != 0, reason='requires root to create mounts in a private namespace')
-def test_reverse_listing_across_batch_boundary(tmp_path):
-    """Reverse mount listing must stay correct past the 1024-entry batch.
+def _run_in_private_mountns(check, base):
+    """Set up a throwaway mount namespace and run ``check(base, parent_id)`` in it.
 
-    Regression test for the listmount()/iter_mount() batch-continuation bug: the
-    reverse flag was dropped (MountIterator) and OR'd into the cursor
-    (do_listmount) after the first batch, so beyond 1024 mounts a reverse walk
-    re-listed or duplicated entries.  Builds >1024 mounts in a throwaway mount
-    namespace, so it needs root.  Where mounts cannot be created it skips, unless
-    TRUENAS_POS_REQUIRE_PRIVILEGED is set (the CI VM does), in which case it fails
-    rather than silently dropping this coverage.
+    Forks, unshares the mount namespace, isolates propagation, and mounts a tmpfs
+    at ``base`` to be the common parent, so ``listmount(parent_id)`` enumerates
+    exactly what ``check`` mounts underneath it.  All of it disappears when the
+    child exits.  The first failed assertion is relayed back here as text.
+
+    Only that setup can report "mounts cannot be created here", which is what the
+    calling test skips on (or fails on, under TRUENAS_POS_REQUIRE_PRIVILEGED).
+    Once ``check`` is running every error is a test failure, so an EPERM out of
+    the code under test can never be mistaken for a missing capability.
     """
-    base = tmp_path / 'ns_root'
-    base.mkdir()
-
     read_fd, write_fd = os.pipe()
     pid = os.fork()
     if pid == 0:  # child: its own mount namespace, torn down when it exits
         os.close(read_fd)
+        payload = None
         try:
             os.unshare(os.CLONE_NEWNS)
-            _build_and_check_reverse(base)
-            payload = b'OK'
+            # Isolate propagation so none of this escapes to the host namespace.
+            truenas_os.mount_setattr(
+                path='/', propagation=truenas_os.MS_PRIVATE, flags=truenas_os.AT_RECURSIVE,
+            )
+            _mount_tmpfs(str(base))
+            parent_id = truenas_os.statx(
+                str(base),
+                mask=truenas_os.STATX_MNT_ID_UNIQUE | truenas_os.STATX_BASIC_STATS,
+            ).stx_mnt_id
         except OSError as exc:
             # Mounting not permitted (e.g. no CAP_SYS_ADMIN in an unprivileged
-            # sandbox).  Report it and let the parent decide skip-vs-fail; the
-            # reverse-listing bug surfaces as wrong data, never as one of these
-            # errnos, so this branch cannot mask the regression under test.
+            # sandbox).  Report it and let the parent decide skip-vs-fail.
             if exc.errno in (errno.EPERM, errno.EACCES, errno.ENOSYS):
                 payload = b'NOPRIV\n' + f'cannot create mounts here: {exc}'.encode()
             else:
@@ -302,6 +307,14 @@ def test_reverse_listing_across_batch_boundary(tmp_path):
         except BaseException:
             import traceback
             payload = b'ERR\n' + traceback.format_exc().encode()
+
+        if payload is None:
+            try:
+                check(base, parent_id)
+                payload = b'OK'
+            except BaseException:
+                import traceback
+                payload = b'ERR\n' + traceback.format_exc().encode()
         try:
             os.write(write_fd, payload)
         finally:
@@ -319,12 +332,175 @@ def test_reverse_listing_across_batch_boundary(tmp_path):
     result = b''.join(chunks).decode(errors='replace')
     if result.startswith('NOPRIV'):
         reason = result.split('\n', 1)[-1] or 'mount creation not permitted'
-        # The CI VM runs privileged and sets TRUENAS_POS_REQUIRE_PRIVILEGED, so a
-        # skip there would silently drop the only >1024-mount coverage: fail hard.
-        if os.environ.get('TRUENAS_POS_REQUIRE_PRIVILEGED'):
+        if _REQUIRE_PRIVILEGED:
             pytest.fail(f'privileged mount test could not run where required: {reason}')
         pytest.skip(reason)
     assert result == 'OK', result
+
+
+@_needs_mount_privs
+def test_reverse_listing_across_batch_boundary(tmp_path):
+    """Reverse mount listing must stay correct past the 1024-entry batch.
+
+    Regression test for the listmount()/iter_mount() batch-continuation bug: the
+    reverse flag was dropped (MountIterator) and OR'd into the cursor
+    (do_listmount) after the first batch, so beyond 1024 mounts a reverse walk
+    re-listed or duplicated entries.  Builds >1024 mounts in a throwaway mount
+    namespace, so it needs root.
+    """
+    base = tmp_path / 'ns_root'
+    base.mkdir()
+    _run_in_private_mountns(_build_and_check_reverse, base)
+
+
+# ── mounts that vanish mid-iteration ──────────────────────────────────────────
+
+def _build_and_check_vanishing(base, parent_id):
+    """Unmount part of the tree mid-iteration and check the walk survives it.
+
+    Runs inside the forked child prepared by _run_in_private_mountns().
+    """
+    children = []
+    for i in range(6):
+        tgt = os.path.join(str(base), f'm{i}')
+        os.mkdir(tgt)
+        _mount_tmpfs(tgt)
+        children.append(tgt)
+
+    flags = truenas_os.STATMOUNT_MNT_BASIC | truenas_os.STATMOUNT_MNT_POINT
+    listed = {m.mnt_point for m in truenas_os.iter_mount(mnt_id=parent_id, statmount_flags=flags)}
+    assert listed == set(children), f'unexpected starting mount set: {listed}'
+
+    # listmount(2) fills the whole batch of ids up front, so everything unmounted
+    # from here on is an id still queued for statmount(2) -- exactly the race the
+    # iterator has to absorb.
+    it = truenas_os.iter_mount(mnt_id=parent_id, statmount_flags=flags)
+    first = next(it)
+    doomed = [c for c in children if c != first.mnt_point][:3]
+    for tgt in doomed:
+        umount(tgt)
+
+    survived = {first.mnt_point} | {m.mnt_point for m in it}
+    expected = set(children) - set(doomed)
+    assert survived == expected, f'iter_mount returned {survived}, expected {expected}'
+
+    # iter_mountinfo() rides on the same iterator and must inherit the tolerance.
+    it2 = iter_mountinfo(target_mnt_id=parent_id, include_snapshot_mounts=True)
+    first2 = next(it2)
+    doomed2 = [c for c in sorted(expected) if c != first2['mountpoint']][:1]
+    for tgt in doomed2:
+        umount(tgt)
+
+    survived2 = {first2['mountpoint']} | {m['mountpoint'] for m in it2}
+    expected2 = expected - set(doomed2)
+    assert survived2 == expected2, f'iter_mountinfo returned {survived2}, expected {expected2}'
+
+    # Losing the scope root takes its children with it.  Their ids are already
+    # in hand from the first listmount(2), so they all resolve to ENOENT and the
+    # walk ends early -- no continuation call is due at this size, so there is
+    # nothing left to report an error.
+    it3 = iter_mountinfo(target_mnt_id=parent_id, include_snapshot_mounts=True)
+    next(it3)
+    umount(str(base), detach=True)
+    leftover = list(it3)
+    assert leftover == [], f'expected the walk to end with the scope root, got {leftover}'
+
+    # Building an iterator on a mount that is already gone fails in
+    # mount_iter_init(), where the very first listmount(2) has no mount to
+    # enumerate.  See _build_and_check_batch_boundary_churn for the same
+    # failure from the continuation call in mount_iter_next().
+    with pytest.raises(OSError) as exc:
+        truenas_os.iter_mount(mnt_id=parent_id, statmount_flags=flags)
+    assert exc.value.errno == errno.ENOENT, f'unexpected errno {exc.value.errno}'
+
+
+def _build_and_check_batch_boundary_churn(base, parent_id):
+    """Cover the batch boundary: skipped ids across it, then a lost scope root.
+
+    Both need a tree of more than LISTMOUNT_BATCH_SIZE children, which is the
+    slowest setup in this file, so they share one.  Runs inside the forked child
+    prepared by _run_in_private_mountns().
+    """
+    flags = truenas_os.STATMOUNT_MNT_BASIC | truenas_os.STATMOUNT_MNT_POINT
+    for i in range(_LISTMOUNT_BATCH + 8):
+        tgt = os.path.join(str(base), f'm{i:05d}')
+        os.mkdir(tgt)
+        _mount_tmpfs(tgt)
+
+    ids = truenas_os.listmount(parent_id)
+    n = len(ids)
+    assert n > _LISTMOUNT_BATCH, f'need more than one batch, got {n} mounts'
+    assert ids == sorted(ids), 'listmount is not in ascending id order'
+    mnt_point = {m.mnt_id: m.mnt_point for m in truenas_os.iter_mount(
+        mnt_id=parent_id, statmount_flags=flags,
+    )}
+    assert len(mnt_point) == n, f'iter_mount saw {len(mnt_point)} of {n} mounts'
+
+    # The continuation asks the kernel to resume from the last id of the batch it
+    # just finished, and nothing says that id is still mounted.  Unmount exactly
+    # that one, plus its neighbours on either side of the boundary, so the second
+    # listmount(2) has to pick up from an id that was itself skipped.
+    it = truenas_os.iter_mount(mnt_id=parent_id, statmount_flags=flags)
+    cursor_id = ids[_LISTMOUNT_BATCH - 1]
+    doomed = {ids[0], ids[_LISTMOUNT_BATCH - 2], cursor_id, ids[_LISTMOUNT_BATCH]}
+    for mnt_id in doomed:
+        umount(mnt_point[mnt_id])
+
+    walked = {m.mnt_id for m in it}
+    expected = set(ids) - doomed
+    assert walked == expected, (
+        f'walk lost {sorted(expected - walked)} and invented {sorted(walked - expected)} '
+        f'after skipping the continuation cursor {cursor_id}'
+    )
+
+    # Now the other half: the scope root itself goes, with a continuation still
+    # due.  Unlike a vanished child this is not churn to skip, because the
+    # iterator has no way to ask for the rest, so it must raise.
+    assert len(expected) >= _LISTMOUNT_BATCH, (
+        f'{len(expected)} mounts left, need at least {_LISTMOUNT_BATCH} for a second batch'
+    )
+    it2 = truenas_os.iter_mount(mnt_id=parent_id, statmount_flags=flags)
+    for _ in range(_LISTMOUNT_BATCH):
+        next(it2)  # drain the batch fetched by mount_iter_init()
+
+    umount(str(base), detach=True)
+
+    # If this stops raising, check that _LISTMOUNT_BATCH still matches
+    # LISTMOUNT_BATCH_SIZE in src/cext/os/mount.h: drain fewer ids than a real
+    # batch holds and the iterator is still inside it, with no reason to ask the
+    # kernel for more and so nothing to fail on.
+    with pytest.raises(OSError) as exc:
+        next(it2)
+    assert exc.value.errno == errno.ENOENT, f'unexpected errno {exc.value.errno}'
+
+
+@_needs_mount_privs
+def test_mount_unmounted_mid_iteration_is_skipped(tmp_path):
+    """A mount that goes away between listmount(2) and statmount(2) is skipped.
+
+    Mount ids are fetched in batches and resolved one at a time afterwards, so
+    anything unmounted in between -- ZFS snapshot automounts expire on a timer,
+    for one -- makes statmount(2) return ENOENT.  iter_mount() skips that id
+    instead of failing the whole enumeration.  Needs root for the throwaway
+    mount namespace.
+    """
+    base = tmp_path / 'ns_root'
+    base.mkdir()
+    _run_in_private_mountns(_build_and_check_vanishing, base)
+
+
+@_needs_mount_privs
+def test_batch_boundary_churn(tmp_path):
+    """Skips that land on the listmount(2) batch boundary, and a lost scope root.
+
+    Both need more than LISTMOUNT_BATCH_SIZE children: the first so a skipped id
+    becomes the cursor the continuation resumes from, the second so a
+    continuation is due at all when the scope root disappears.  Needs root for
+    the throwaway mount namespace.
+    """
+    base = tmp_path / 'ns_root'
+    base.mkdir()
+    _run_in_private_mountns(_build_and_check_batch_boundary_churn, base)
 
 
 # ── umount ────────────────────────────────────────────────────────────────────

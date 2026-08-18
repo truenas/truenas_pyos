@@ -157,6 +157,18 @@ for mount_info in truenas_os.iter_mount(statmount_flags=flags):
 
 **Returns:** Iterator yielding `StatmountResult` objects
 
+Mount ids come back from `listmount(2)` in batches and are resolved one at a
+time afterwards by `statmount(2)`, so a mount can be unmounted in between. Those
+mounts are skipped: the mount is genuinely gone, and iteration continues with
+the next id. Every other `statmount(2)` failure, and any `listmount(2)` failure,
+is raised as `OSError`.
+
+Unmounting the mount a scoped iteration (`mnt_id=` other than `LSMT_ROOT`) is
+bound to takes its children with it, so the remaining ids all resolve to
+`ENOENT` and the walk simply ends early. It raises `ENOENT` instead only when a
+continuation `listmount(2)` was still due, which needs at least
+`LISTMOUNT_BATCH_SIZE` (1024) children.
+
 ---
 
 #### `open_mount_by_id(mount_id, flags=os.O_DIRECTORY)`

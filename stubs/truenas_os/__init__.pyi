@@ -322,6 +322,17 @@ def iter_mount(
     -------
     Iterator[StatmountResult]
         Iterator yielding StatmountResult objects
+
+    Notes
+    -----
+    A mount that is unmounted between the listmount(2) call that returned its
+    id and the statmount(2) call that resolves it is skipped; the mount is gone
+    and the iteration continues with the next id. Every other statmount(2)
+    failure, and any listmount(2) failure, is raised as OSError.
+
+    Unmounting the mnt_id a scoped iteration is bound to takes its children
+    with it, so the walk ends early rather than raising, unless a continuation
+    listmount(2) was still due (1024 or more children), which fails ENOENT.
     """
     ...
 
