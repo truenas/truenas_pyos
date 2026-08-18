@@ -178,10 +178,14 @@ def iter_mountinfo(
           include_snapshot_mounts=True to include them — needed when enumerating
           all child mounts for recursive unmount operations.
         - A mount that is unmounted while the iteration is in flight is skipped
-          by truenas_os.iter_mount() rather than raising. If the mount a scoped
-          iteration is bound to goes away, its children go with it, so the walk
-          ends early; only a scope with 1024 or more children raises OSError
-          in that case.
+          by truenas_os.iter_mount() rather than raising.
+        - Losing the mount a scoped iteration is bound to takes its children
+          with it. This is a generator, so nothing runs until the first next():
+          a scope that is already gone by then raises OSError from the initial
+          listmount(2), whatever its size. Once the walk is under way the
+          remaining ids just resolve to ENOENT and it ends early, raising only
+          when the scope had 1024 or more children and a second listmount(2)
+          was still due.
     """
     specifiers = sum(x is not None for x in (target_mnt_id, path, fd))
     if specifiers > 1:
