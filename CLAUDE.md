@@ -6,9 +6,11 @@
 |---|---|
 | `src/cext/os/` | `truenas_os` C extension (mount, ACL, statx, fsiter, …) |
 | `src/cext/filter_utils/` | `truenas_pyfilter` C extension (compiled filter engine) |
+| `src/cext/threadstat/` | `truenas_threadstat` C extension and BPF program (per-thread CPU usage) |
 | `src/truenas_os_pyutils/` | Pure-Python utilities built on `truenas_os` |
 | `stubs/truenas_os/` | Type stubs for `truenas_os` |
 | `stubs/truenas_pyfilter/` | Type stubs for `truenas_pyfilter` |
+| `stubs/truenas_threadstat/` | Type stubs for `truenas_threadstat` |
 | `tests/` | pytest suite |
 | `tests/type_checks/` | mypy typing tests |
 | `tests/.stubtest_allowlist.txt` | stubtest allowlist for `truenas_os` |
@@ -33,6 +35,7 @@ Run all checks before declaring stub work done:
 ```bash
 python3 -m mypy stubs/truenas_os/
 python3 -m mypy stubs/truenas_pyfilter/
+python3 -m mypy stubs/truenas_threadstat/
 python3 -m mypy src/truenas_os_pyutils/
 python3 -m mypy tests/type_checks/
 
@@ -44,6 +47,11 @@ sys.exit(main())
 python3 -c "
 from mypy.stubtest import main; import sys
 sys.argv = ['stubtest', 'truenas_pyfilter']
+sys.exit(main())
+"
+python3 -c "
+from mypy.stubtest import main; import sys
+sys.argv = ['stubtest', 'truenas_threadstat']
 sys.exit(main())
 "
 ```
@@ -86,6 +94,7 @@ Each module has its own README next to its source:
 |---|---|
 | `truenas_os` | `src/cext/os/README.md` |
 | `truenas_pyfilter` | `src/cext/filter_utils/README.md` |
+| `truenas_threadstat` | `src/cext/threadstat/README.md` |
 | `truenas_os_pyutils` | `src/truenas_os_pyutils/README.md` |
 
 The repo-level `README.md` is a brief overview with links; detailed API reference lives in the per-module files.

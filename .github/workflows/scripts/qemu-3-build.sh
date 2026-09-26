@@ -54,7 +54,8 @@ sudo apt-get update
 # Packages the VM needs, in three groups:
 #  - build the deb: build-essential (compiler + dpkg-buildpackage),
 #    debhelper + dh-python + pybuild-plugin-pyproject, python3-all-dev,
-#    python3-setuptools.
+#    python3-setuptools, and clang + bpftool + libbpf-dev for the BPF
+#    program in truenas_threadstat.
 #  - run the tests: python3-pytest, python3-pydantic (truenas_pyfilter
 #    models), python3-mypy (stub checks), gdb (core backtraces).
 #  - fetch+verify the releases: curl, jq, ca-certificates.
@@ -62,8 +63,11 @@ sudo apt-get update
 # the kmod + userland are downloaded prebuilt instead of compiled here.
 sudo apt-get install -y \
   build-essential \
+  bpftool \
+  clang \
   debhelper \
   dh-python \
+  libbpf-dev \
   pybuild-plugin-pyproject \
   python3-all-dev \
   python3-setuptools \

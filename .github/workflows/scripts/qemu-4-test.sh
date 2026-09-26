@@ -117,6 +117,10 @@ echo "Running mypy on truenas_pyfilter stubs..."
 python3 -m mypy stubs/truenas_pyfilter/
 FILTERLIST_MYPY_EXIT=$?
 
+echo "Running mypy on truenas_threadstat stubs..."
+python3 -m mypy stubs/truenas_threadstat/
+THREADSTAT_MYPY_EXIT=$?
+
 # Check truenas_os_pyutils Python module
 echo "Running mypy on truenas_os_pyutils..."
 python3 -m mypy src/truenas_os_pyutils/
@@ -147,7 +151,16 @@ sys.exit(main())
 "
 FILTERLIST_STUBTEST_EXIT=$?
 
-if [ $MYPY_EXIT -ne 0 ] || [ $FILTERLIST_MYPY_EXIT -ne 0 ] || [ $PYUTILS_MYPY_EXIT -ne 0 ] || [ $TYPING_MYPY_EXIT -ne 0 ] || [ $STUBTEST_EXIT -ne 0 ] || [ $FILTERLIST_STUBTEST_EXIT -ne 0 ]; then
+echo "Running stubtest for truenas_threadstat..."
+python3 -c "
+from mypy.stubtest import main
+import sys
+sys.argv = ['stubtest', 'truenas_threadstat']
+sys.exit(main())
+"
+THREADSTAT_STUBTEST_EXIT=$?
+
+if [ $MYPY_EXIT -ne 0 ] || [ $FILTERLIST_MYPY_EXIT -ne 0 ] || [ $THREADSTAT_MYPY_EXIT -ne 0 ] || [ $PYUTILS_MYPY_EXIT -ne 0 ] || [ $TYPING_MYPY_EXIT -ne 0 ] || [ $STUBTEST_EXIT -ne 0 ] || [ $FILTERLIST_STUBTEST_EXIT -ne 0 ] || [ $THREADSTAT_STUBTEST_EXIT -ne 0 ]; then
     echo "ERROR: Stub checks failed"
     exit 1
 fi

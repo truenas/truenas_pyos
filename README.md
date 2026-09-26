@@ -36,6 +36,20 @@ results = truenas_pyfilter.tnfilter(records, filters=filters, options=options)
 
 See [`src/cext/filter_utils/README.md`](src/cext/filter_utils/README.md).
 
+### `truenas_threadstat` (C extension)
+
+Per-thread CPU usage and process resident memory like `top -H` shows, with
+the thread scan done by a BPF task iterator instead of `/proc`.
+
+```python
+import truenas_threadstat
+
+with truenas_threadstat.ThreadSampler() as sampler:
+    sample = sampler.sample()
+```
+
+See [`src/cext/threadstat/README.md`](src/cext/threadstat/README.md).
+
 ## CLI Tools
 
 ### `truenas_getfacl`
@@ -64,6 +78,8 @@ python3 -m pip install .
 - Linux kernel 6.18+ for `STATMOUNT_SB_SOURCE` (mount source field, ZFS snapshot detection)
 - GCC
 - libbsd-dev
+- clang, bpftool, and libbpf-dev to build `truenas_threadstat`, and libbpf1 to run it
+- A kernel built with `CONFIG_DEBUG_INFO_BTF` for `truenas_threadstat`
 
 ## License
 
@@ -76,3 +92,4 @@ LGPL-3.0-or-later
 - Type stubs kept in sync when a C extension API changes:
   - `truenas_os`: `stubs/truenas_os/__init__.pyi`
   - `truenas_pyfilter`: `stubs/truenas_pyfilter/__init__.pyi`
+  - `truenas_threadstat`: `stubs/truenas_threadstat/__init__.pyi`

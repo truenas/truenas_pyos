@@ -3,7 +3,10 @@ Section: contrib/python
 Priority: optional
 Maintainer: TrueNAS Engineering <dev@truenas.com>
 Build-Depends: debhelper-compat (= 12),
+               bpftool,
+               clang,
                dh-python,
+               libbpf-dev,
                pybuild-plugin-pyproject,
                python3-all-dev,
                python3-setuptools
@@ -12,8 +15,9 @@ Homepage: https://github.com/truenas/truenas_pyos
 
 Package: python3-truenas-pyos
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, ${python3:Depends}
+Depends: libbpf1, ${shlibs:Depends}, ${misc:Depends}, ${python3:Depends}
 Description: TrueNAS OS utilities
  This package provides Python bindings for TrueNAS OS-specific utilities
  and system operations. It includes functions for working with mount points,
  file handles, and other low-level system operations required by TrueNAS.
+ It also provides per-thread CPU usage read through a BPF task iterator.
