@@ -64,6 +64,7 @@ sudo apt-get install -y \
   build-essential \
   debhelper \
   dh-python \
+  git \
   pybuild-plugin-pyproject \
   python3-all-dev \
   python3-setuptools \
@@ -131,7 +132,8 @@ echo "Found zfs.ko at: $ZFS_KO"
 
 # Build and install truenas_pyos.  The build is userland-only (it compiles
 # against the UAPI headers, not the kernel build tree), so it runs fine
-# while the stock kernel is still booted.
+# while the stock kernel is still booted.  debian/rules fetches the pinned
+# liburing in its configure step (the sandboxed wheel-build phase can't).
 echo "Building truenas_pyos..."
 dpkg-buildpackage -us -uc -b
 echo "Installing truenas_pyos..."

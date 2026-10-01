@@ -4,7 +4,6 @@ from collections.abc import Generator
 import errno
 import os
 from typing import Any, Literal, TypedDict, overload
-import warnings
 
 import truenas_os
 
@@ -12,17 +11,6 @@ from .io import SymlinkInPathError
 
 
 __all__ = ["iter_mountinfo", "statmount", "umount"]
-
-# STATMOUNT_SB_SOURCE requires kernel 6.18 or higher; the C extension
-# conditionally includes the field only when the header defines it at build time.
-_SB_SOURCE_SUPPORTED = hasattr(truenas_os.StatmountResult, 'sb_source')
-if not _SB_SOURCE_SUPPORTED:
-    warnings.warn(
-        'truenas_os was built without STATMOUNT_SB_SOURCE support; '
-        'mount_source will be None for all mounts and ZFS snapshot detection is disabled.',
-        RuntimeWarning,
-        stacklevel=1,
-    )
 
 
 def __parse_mnt_attr(attr: int) -> list[str]:
@@ -87,7 +75,7 @@ def __statmount_dict(sm: truenas_os.StatmountResult) -> StatmountResultDict:
         'mountpoint': sm.mnt_point,
         'mount_opts': __parse_mnt_attr(sm.mnt_attr),  # type: ignore[arg-type]
         'fs_type': sm.fs_type,
-        'mount_source': sm.sb_source if _SB_SOURCE_SUPPORTED else None,
+        'mount_source': sm.sb_source,
         'super_opts': sm.mnt_opts.upper().split(',') if sm.mnt_opts else []
     }
 
@@ -107,7 +95,7 @@ def _is_zfs_snapshot_mount(sm: truenas_os.StatmountResult) -> bool:
     a false match on non-ZFS filesystems that happen to include ``@`` in their
     source name.
     """
-    return _SB_SOURCE_SUPPORTED and sm.fs_type == 'zfs' and sm.sb_source is not None and '@' in sm.sb_source
+    return sm.fs_type == 'zfs' and sm.sb_source is not None and '@' in sm.sb_source
 
 
 @overload

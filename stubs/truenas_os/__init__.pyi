@@ -4,8 +4,118 @@ This module provides Python bindings to Linux kernel system calls for
 advanced filesystem and mount operations, plus ACL support.
 """
 
-from typing import Any, Callable, ClassVar, Iterable, Iterator, Literal, NamedTuple, final, type_check_only
+import os
+from typing import Any, Callable, ClassVar, Iterable, Iterator, Literal, NamedTuple, Sequence, final, type_check_only
 from enum import IntEnum, IntFlag
+
+_PathLike = str | bytes | os.PathLike[str] | os.PathLike[bytes]
+
+@final
+class UringOp:
+    """An opaque handle for one prepared io_uring operation.
+
+    Returned by Uring.prep_openat2/prep_close/prep_preadv2/prep_pwritev2/
+    prep_fsync/prep_statx and consumed by Uring.submit(). Not constructible
+    from Python; exposes no members.
+    Dropping a prepared handle before it is submitted reclaims its op slot and
+    releases any pinned buffers; a submitted handle is inert.
+    """
+
+@final
+class Uring:
+    """A minimal async file ring over io_uring: prep_* handles, submit() a batch, reap()."""
+    def __new__(
+        cls,
+        *,
+        entries: int = 256,
+        cq_entries: int = 0,
+        iowq_max_bounded: int = 0,
+        iowq_max_unbounded: int = 0,
+    ) -> Uring: ...
+    def prep_openat2(
+        self,
+        dirfd: int,
+        path: _PathLike,
+        flags: int = ...,
+        mode: int = 0,
+        resolve: int = ...,
+        callback: Callable[..., object] | None = None,
+        private_data: object = None,
+    ) -> UringOp:
+        """Prepare an openat2; the completion result is the new int fd.
+
+        An optional completion `callback` is invoked at reap() with the
+        `(token, res, result)` tuple (and `private_data` if given); the op is
+        then consumed -- not returned by reap()."""
+        ...
+    def prep_close(self, fd: int, callback: Callable[..., object] | None = None, private_data: object = None, /) -> UringOp:
+        """Prepare a close(2) of the file descriptor fd."""
+        ...
+    def prep_preadv2(
+        self,
+        fd: int,
+        buffers: Sequence[Any],
+        offset: int = 0,
+        flags: int = 0,
+        callback: Callable[..., object] | None = None,
+        private_data: object = None,
+    ) -> UringOp:
+        """Prepare a vectored positional read (preadv2(2)) from fd into a
+        sequence of writable buffers (max 8); flags takes per-IO RWF_*."""
+        ...
+    def prep_pwritev2(
+        self,
+        fd: int,
+        buffers: Sequence[Any],
+        offset: int = 0,
+        flags: int = 0,
+        callback: Callable[..., object] | None = None,
+        private_data: object = None,
+    ) -> UringOp:
+        """Prepare a vectored positional write (pwritev2(2)) of a sequence of
+        buffers (max 8) to fd; flags takes per-IO RWF_*."""
+        ...
+    def prep_fsync(
+        self,
+        fd: int,
+        fdatasync: bool = False,
+        offset: int = 0,
+        length: int = 0,
+        callback: Callable[..., object] | None = None,
+        private_data: object = None,
+    ) -> UringOp:
+        """Prepare an fsync(2) of fd (fdatasync(2) when fdatasync=True).
+
+        The defaults sync the whole file; a nonzero length limits the sync to
+        the byte range [offset, offset+length]."""
+        ...
+    def prep_statx(
+        self,
+        dirfd: int,
+        path: _PathLike,
+        flags: int = 0,
+        mask: int = ...,
+        callback: Callable[..., object] | None = None,
+        private_data: object = None,
+    ) -> UringOp:
+        """Prepare a statx of path relative to dirfd; the completion result is a
+        truenas_os StatxResult."""
+        ...
+    def submit(self, handles: Iterable[object], /, linked: bool = False) -> tuple[int, ...]:
+        """Submit prepared handles as one batch; return their tokens."""
+        ...
+    def reap(self, max: int = 0, /) -> list[tuple[int, int, object]]:
+        """Drain the completion queue into (token, res, result) tuples."""
+        ...
+    def cancel(self, token: int, /) -> None:
+        """Ask the kernel to cancel the operation with this token."""
+        ...
+    def close(self) -> None: ...
+    def ringfd(self) -> int: ...
+    @property
+    def inflight(self) -> int: ...
+    @property
+    def closed(self) -> bool: ...
 
 # StatxResult type - PyStructSequence from statx(2)
 @final
@@ -97,7 +207,7 @@ class StatmountResult(tuple[Any, ...]):  # PyStructSequence, not a true NamedTup
     A struct-sequence containing mount metadata.
     Fields not requested will be None.
 
-    Note: optional fields (fs_subtype, sb_source, opt_array, opt_sec_array,
+    Note: optional fields (fs_subtype, opt_array, opt_sec_array,
     supported_mask, mnt_uidmap, mnt_gidmap) are only present when the kernel
     supports the corresponding STATMOUNT_* constant.  They are absent from
     this build.
@@ -146,7 +256,7 @@ class StatmountResult(tuple[Any, ...]):  # PyStructSequence, not a true NamedTup
     @property
     def fs_subtype(self) -> str | None: ...  # Present on kernels with STATMOUNT_FS_SUBTYPE
     @property
-    def sb_source(self) -> str | None: ...   # Present on kernels with STATMOUNT_SB_SOURCE
+    def sb_source(self) -> str | None: ...   # None if the mount reports no source
     @property
     def opt_array(self) -> list[str] | None: ...     # Present on kernels with STATMOUNT_OPT_ARRAY
     @property

@@ -144,10 +144,10 @@ length stays the same but the last entry differs.
 
 ## Kernel compatibility
 
-- `STATMOUNT_SB_SOURCE` (kernel 6.18+) is used to validate the fsiter
-  source name when available; on older kernels we fall back to the
-  mountpoint string and fsiter's strict source-name check is also
-  disabled, so the fallback is benign.
+- `STATMOUNT_SB_SOURCE` (kernel 6.18+, the project floor) validates the
+  fsiter source name; it is required and the extension will not build
+  without it. A mount that reports no source falls back to its mountpoint
+  string, which the source-name check accepts.
 - All other features (`statmount`, `openat2`, `RESOLVE_NO_SYMLINKS`,
   `statx`, `iter_filesystem_contents`) require kernel 6.8+.
 
