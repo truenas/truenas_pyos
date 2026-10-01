@@ -4,7 +4,7 @@
 # Install the prebuilt TrueNAS kernel and OpenZFS release debs in the VM,
 # then build and install truenas_pyos against them.
 #
-# Invoked with the TrueNAS train (master or 26) in the TRAIN environment
+# Invoked with the TrueNAS train in the TRAIN environment
 # variable.  The kernel image + UAPI headers (truenas/linux) and the
 # OpenZFS userland + kmod debs (truenas/zfs) are consumed from the rolling
 # <TRAIN>-nightly GitHub releases.  The test suite needs the real TrueNAS
@@ -16,7 +16,7 @@
 
 set -eu
 
-TRAIN="${TRAIN:?TRAIN must be set (master or 26)}"
+TRAIN="${TRAIN:?TRAIN must be set}"
 
 echo "Installing prebuilt TrueNAS kernel + OpenZFS ($TRAIN train) and building truenas_pyos..."
 
