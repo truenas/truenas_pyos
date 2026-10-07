@@ -88,6 +88,8 @@ class StatxResult(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
     def stx_dio_read_offset_align(self) -> int: ...  # kernels with STATX_DIO_READ_ALIGN
     @property
     def stx_atomic_write_unit_max_opt(self) -> int: ...  # kernels with STATX_DIO_READ_ALIGN
+    @property
+    def stx_gen(self) -> int: ...  # TrueNAS kernels with STATX_GEN
 
 # StatmountResult type - PyStructSequence from statmount(2)
 @final
@@ -814,6 +816,7 @@ STATX_MNT_ID_UNIQUE: int
 STATX_SUBVOL: int
 STATX_WRITE_ATOMIC: int
 STATX_DIO_READ_ALIGN: int  # Kernel 6.x+
+STATX_GEN: int  # TrueNAS kernels
 STATX__RESERVED: int
 STATX_ALL: int
 

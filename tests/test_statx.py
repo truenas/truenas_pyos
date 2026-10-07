@@ -261,6 +261,17 @@ def test_statx_with_mnt_id():
     assert result.stx_mnt_id > 0
 
 
+@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_GEN'), reason='needs TrueNAS kernel headers')
+def test_statx_with_gen():
+    """Test statx() with STATX_GEN to get the inode generation."""
+    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_GEN)
+
+    assert isinstance(result.stx_gen, int)
+    if not result.stx_mask & truenas_os.STATX_GEN:
+        # the filesystem does not report a generation
+        assert result.stx_gen == 0
+
+
 def test_statx_attributes_mask():
     """Test that stx_attributes_mask is set."""
     result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS)

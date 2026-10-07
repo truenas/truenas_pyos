@@ -15,6 +15,9 @@ truenas_os\.STATMOUNT_MNT_GIDMAP
 truenas_os\.STATX_DIO_READ_ALIGN
 truenas_os\.StatxResult\.stx_dio_read_offset_align
 truenas_os\.StatxResult\.stx_atomic_write_unit_max_opt
+# Only in TrueNAS kernel headers, not in Debian's
+truenas_os\.STATX_GEN
+truenas_os\.StatxResult\.stx_gen
 truenas_os\.StatmountResult\.fs_subtype
 truenas_os\.StatmountResult\.sb_source
 truenas_os\.StatmountResult\.opt_array
