@@ -18,6 +18,12 @@
 #define HAVE_STATX_DIO_READ_FIELDS 0
 #endif
 
+#ifdef STATX_GEN
+#define HAVE_STATX_GEN 1
+#else
+#define HAVE_STATX_GEN 0
+#endif
+
 // StatxResult structured sequence type
 static PyStructSequence_Field statx_result_fields[] = {
 	{"stx_mask", "Mask of bits indicating filled fields"},
@@ -56,6 +62,9 @@ static PyStructSequence_Field statx_result_fields[] = {
 	{"stx_dio_read_offset_align", "File offset alignment for direct I/O reads"},
 	{"stx_atomic_write_unit_max_opt", "Optimised max atomic write unit in bytes"},
 #endif
+#if HAVE_STATX_GEN
+	{"stx_gen", "Inode generation"},
+#endif
 	{NULL}
 };
 
@@ -65,11 +74,7 @@ static PyStructSequence_Desc statx_result_desc = {
 	       "A named tuple containing extended file attributes. "
 	       "Fields that were not requested or are unavailable will be None or 0 depending on the field.",
 	.fields = statx_result_fields,
-#if HAVE_STATX_DIO_READ_FIELDS
-	.n_in_sequence = 34
-#else
-	.n_in_sequence = 32
-#endif
+	.n_in_sequence = 32 + 2 * HAVE_STATX_DIO_READ_FIELDS + HAVE_STATX_GEN
 };
 
 /*
@@ -147,6 +152,10 @@ PyObject *statx_to_pyobject(const struct statx *stx)
 	SET_FIELD(33, PyLong_FromUnsignedLong(stx->stx_atomic_write_unit_max_opt));
 #endif
 
+#if HAVE_STATX_GEN
+	SET_FIELD(32 + 2 * HAVE_STATX_DIO_READ_FIELDS, PyLong_FromUnsignedLongLong(stx->stx_gen));
+#endif
+
 	#undef SET_FIELD
 
 	return result;
@@ -215,6 +224,9 @@ int init_statx_types(PyObject *module)
 	PyModule_AddIntConstant(module, "STATX_WRITE_ATOMIC", STATX_WRITE_ATOMIC);
 #ifdef STATX_DIO_READ_ALIGN
 	PyModule_AddIntConstant(module, "STATX_DIO_READ_ALIGN", STATX_DIO_READ_ALIGN);
+#endif
+#ifdef STATX_GEN
+	PyModule_AddIntConstant(module, "STATX_GEN", STATX_GEN);
 #endif
 	PyModule_AddIntConstant(module, "STATX__RESERVED", STATX__RESERVED);
 	PyModule_AddIntConstant(module, "STATX_ALL", STATX_ALL);

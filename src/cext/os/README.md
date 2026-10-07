@@ -503,6 +503,7 @@ print(f"Mount ID: {result.stx_mnt_id}")
 - `STATX_MNT_ID` - Mount ID
 - `STATX_MNT_ID_UNIQUE` - Unique mount ID
 - `STATX_DIOALIGN` - Direct I/O alignment info
+- `STATX_GEN` - Inode generation (`stx_gen`), which tells a reused inode number from the file that had it before (TrueNAS kernels only)
 
 ---
 
