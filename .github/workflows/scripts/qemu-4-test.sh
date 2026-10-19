@@ -98,7 +98,10 @@ echo "Now running full test suite..."
 # TRUENAS_POS_REQUIRE_PRIVILEGED=1 makes privileged tests that would otherwise
 # skip when mounts cannot be created (unprivileged sandbox) fail instead: this
 # VM is privileged, so a skip here means the test lost its coverage.
-sudo sh -c "ulimit -c unlimited && cd /home/debian/truenas_pyos && TRUENAS_POS_REQUIRE_PRIVILEGED=1 python3 -m pytest tests/ -v --tb=short" 2>&1 | tee /home/debian/test-output.txt
+# TRUENAS_PYOS_REQUIRE_IO_URING=1 does the same for the tests/uring suite:
+# io_uring is expected to work on the TrueNAS 6.18 kernel, so an environmental
+# skip there means the reactor lost its coverage.
+sudo sh -c "ulimit -c unlimited && cd /home/debian/truenas_pyos && TRUENAS_POS_REQUIRE_PRIVILEGED=1 TRUENAS_PYOS_REQUIRE_IO_URING=1 python3 -m pytest tests/ -v --tb=short" 2>&1 | tee /home/debian/test-output.txt
 TEST_EXIT_CODE=${PIPESTATUS[0]}
 
 echo ""
@@ -128,7 +131,9 @@ python3 -m mypy tests/type_checks/
 TYPING_MYPY_EXIT=$?
 
 # Check stubs match the installed runtime module.
-# truenas_os is a flat C extension (.so) — no submodule pre-registration needed.
+# truenas_os is a flat C extension (.so) that exposes Uring/UringOp as top-level
+# types (there is no submodule); stubtest checks them, and the rest of the
+# module surface, against stubs/truenas_os/__init__.pyi.
 echo "Running stubtest for truenas_os..."
 python3 -c "
 from mypy.stubtest import main

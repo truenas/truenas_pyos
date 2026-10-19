@@ -79,14 +79,14 @@ _STATX_DEFAULT_MASK = (
     | truenas_os.STATX_MNT_ID_UNIQUE
 )
 
-# STATMOUNT_SB_SOURCE requires kernel 6.18+; the C extension defines the
-# constant only when the header has it.  When unavailable the traverse code
-# falls back to the mountpoint as the filesystem source name (matches the
-# fsiter fallback path that is also gated on STATMOUNT_SB_SOURCE in the C
-# code), so requesting the field here is best-effort.
-_STATMOUNT_TRAVERSE_FLAGS = truenas_os.STATMOUNT_MNT_POINT | truenas_os.STATMOUNT_FS_TYPE
-if hasattr(truenas_os, "STATMOUNT_SB_SOURCE"):
-    _STATMOUNT_TRAVERSE_FLAGS |= truenas_os.STATMOUNT_SB_SOURCE
+# STATMOUNT_SB_SOURCE (kernel 6.18+, the project floor) yields the filesystem
+# source name.  A mount that reports no source falls back to its mountpoint in
+# _get_mount_info.
+_STATMOUNT_TRAVERSE_FLAGS = (
+    truenas_os.STATMOUNT_MNT_POINT
+    | truenas_os.STATMOUNT_FS_TYPE
+    | truenas_os.STATMOUNT_SB_SOURCE
+)
 
 
 # ── Public types ─────────────────────────────────────────────────────────────
@@ -215,10 +215,9 @@ def _get_mount_info(fd: int) -> tuple[str, str, str | None, int]:
 
     ``rel_path`` is ``None`` when the fd refers to the mount root itself,
     which lets ``iter_filesystem_contents`` accept it as a positional
-    argument.  ``fs_source`` falls back to ``mnt_point`` on kernels without
-    ``STATMOUNT_SB_SOURCE`` (kernel < 6.18); fsiter's strict source-name
-    check is also gated on that constant in the C code, so the fallback is
-    benign.
+    argument.  ``fs_source`` falls back to ``mnt_point`` for a mount that
+    reports no source; fsiter applies the same strict source-name check, so
+    the fallback is benign.
     """
     sm = _statmount(fd=fd, as_dict=False)
     abs_path = readlink(f"/proc/self/fd/{fd}")
@@ -226,7 +225,7 @@ def _get_mount_info(fd: int) -> tuple[str, str, str | None, int]:
     assert sm.mnt_id is not None
     rel = os.path.relpath(abs_path, sm.mnt_point)
     rel_path = None if rel == "." else rel
-    sb_source = getattr(sm, "sb_source", None)
+    sb_source = sm.sb_source
     fs_source = sb_source if sb_source is not None else sm.mnt_point
     return sm.mnt_point, fs_source, rel_path, sm.mnt_id
 

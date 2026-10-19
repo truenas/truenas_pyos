@@ -1590,14 +1590,49 @@ compiled_options_repr(CompiledOptionsObject *self)
 
 /* The original arguments passed to compile_options(), exposed read-only. */
 static PyMemberDef compiled_options_members[] = {
-    {"get", Py_T_BOOL, offsetof(CompiledOptionsObject, get_flag), Py_READONLY},
-    {"count", Py_T_BOOL, offsetof(CompiledOptionsObject, count_flag), Py_READONLY},
-    {"select", Py_T_OBJECT_EX, offsetof(CompiledOptionsObject, arg_select), Py_READONLY},
-    {"order_by", Py_T_OBJECT_EX, offsetof(CompiledOptionsObject, arg_order_by), Py_READONLY},
-    {"offset", Py_T_PYSSIZET, offsetof(CompiledOptionsObject, offset), Py_READONLY},
-    {"limit", Py_T_PYSSIZET, offsetof(CompiledOptionsObject, limit), Py_READONLY},
-    {"model", Py_T_OBJECT_EX, offsetof(CompiledOptionsObject, model), Py_READONLY},
-    {NULL}
+    {
+        .name = "get",
+        .type = Py_T_BOOL,
+        .offset = offsetof(CompiledOptionsObject, get_flag),
+        .flags = Py_READONLY,
+    },
+    {
+        .name = "count",
+        .type = Py_T_BOOL,
+        .offset = offsetof(CompiledOptionsObject, count_flag),
+        .flags = Py_READONLY,
+    },
+    {
+        .name = "select",
+        .type = Py_T_OBJECT_EX,
+        .offset = offsetof(CompiledOptionsObject, arg_select),
+        .flags = Py_READONLY,
+    },
+    {
+        .name = "order_by",
+        .type = Py_T_OBJECT_EX,
+        .offset = offsetof(CompiledOptionsObject, arg_order_by),
+        .flags = Py_READONLY,
+    },
+    {
+        .name = "offset",
+        .type = Py_T_PYSSIZET,
+        .offset = offsetof(CompiledOptionsObject, offset),
+        .flags = Py_READONLY,
+    },
+    {
+        .name = "limit",
+        .type = Py_T_PYSSIZET,
+        .offset = offsetof(CompiledOptionsObject, limit),
+        .flags = Py_READONLY,
+    },
+    {
+        .name = "model",
+        .type = Py_T_OBJECT_EX,
+        .offset = offsetof(CompiledOptionsObject, model),
+        .flags = Py_READONLY,
+    },
+    { .name = NULL }
 };
 
 PyTypeObject CompiledOptions_Type = {
