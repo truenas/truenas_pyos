@@ -272,6 +272,36 @@ def test_statx_with_gen():
         assert result.stx_gen == 0
 
 
+def _zfsflags(dataset):
+    path = os.path.join(dataset, 'pflags_file')
+    open(path, 'w').close()
+    result = truenas_os.statx(path, mask=truenas_os.STATX_ZFSFLAGS)
+    if not result.stx_mask & truenas_os.STATX_ZFSFLAGS:
+        pytest.skip('dataset is not ZFS')
+    return result.stx_zfsflags
+
+
+@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ZFSFLAGS'), reason='needs TrueNAS kernel headers')
+def test_statx_zfsflags_nfs4_trivial(nfs4_dataset):
+    """A new file on an NFSv4 dataset reports a trivial ACL (and ZFS sets archive on create)."""
+    ZFSFlags = truenas_os.ZFSFlags
+    assert ZFSFlags(_zfsflags(nfs4_dataset)) == ZFSFlags.ACL_TRIVIAL | ZFSFlags.ARCHIVE
+
+
+@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ZFSFLAGS'), reason='needs TrueNAS kernel headers')
+def test_statx_zfsflags_posix_hides_trivial(posix_dataset):
+    """ZFS_ACL_TRIVIAL is only meaningful (and only reported) with NFSv4 ACLs."""
+    assert not _zfsflags(posix_dataset) & truenas_os.ZFSFlags.ACL_TRIVIAL
+
+
+@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ZFSFLAGS'), reason='needs TrueNAS kernel headers')
+def test_statx_zfsflags_non_zfs():
+    """Non-ZFS files do not fill stx_zfsflags."""
+    result = truenas_os.statx('/proc/self/status', mask=truenas_os.STATX_ZFSFLAGS)
+    assert not result.stx_mask & truenas_os.STATX_ZFSFLAGS
+    assert result.stx_zfsflags == 0
+
+
 def test_statx_attributes_mask():
     """Test that stx_attributes_mask is set."""
     result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS)
