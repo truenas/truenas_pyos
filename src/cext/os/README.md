@@ -611,7 +611,7 @@ opened that way).  Identify one as an entry that is none of `isdir` / `islnk` /
 - `parent` (str): Directory path
 - `name` (str): Entry name
 - `fd` (int): Open file descriptor (valid until next iteration, do not close - iterator manages lifecycle)
-- `statxinfo` (StatxResult): File metadata
+- `statxinfo` (StatxResult): File metadata (includes `stx_zfsflags` on TrueNAS kernels)
 - `isdir` (bool): True if directory, False otherwise
 - `islnk` (bool): True if symlink, False otherwise
 - `isreg` (bool): True if regular file, False otherwise

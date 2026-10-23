@@ -325,6 +325,18 @@ def test_iter_fd_cleanup(temp_mount_tree):
     assert final_fds <= initial_fds + 5
 
 
+@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ZFSFLAGS'), reason='needs TrueNAS kernel headers')
+def test_iter_statx_has_zfsflags(nfs4_dataset):
+    """On ZFS each entry's statxinfo carries stx_zfsflags."""
+    open(os.path.join(nfs4_dataset, 'zfsflags_file'), 'w').close()
+    for item in truenas_os.iter_filesystem_contents(nfs4_dataset, get_filesystem_name(nfs4_dataset)):
+        if item.name == 'zfsflags_file':
+            assert item.statxinfo.stx_mask & truenas_os.STATX_ZFSFLAGS
+            assert truenas_os.ZFSFlags.ACL_TRIVIAL in truenas_os.ZFSFlags(item.statxinfo.stx_zfsflags)
+            return
+    pytest.fail('zfsflags_file not yielded')
+
+
 def test_iter_statx_info_complete(temp_mount_tree):
     """Test that statxinfo contains all expected data."""
     iterator = truenas_os.iter_filesystem_contents(
