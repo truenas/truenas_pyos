@@ -90,6 +90,8 @@ class StatxResult(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
     def stx_atomic_write_unit_max_opt(self) -> int: ...  # kernels with STATX_DIO_READ_ALIGN
     @property
     def stx_gen(self) -> int: ...  # TrueNAS kernels with STATX_GEN
+    @property
+    def stx_zfsflags(self) -> int: ...  # TrueNAS kernels with STATX_ZFSFLAGS
 
 # StatmountResult type - PyStructSequence from statmount(2)
 @final
@@ -817,8 +819,24 @@ STATX_SUBVOL: int
 STATX_WRITE_ATOMIC: int
 STATX_DIO_READ_ALIGN: int  # Kernel 6.x+
 STATX_GEN: int  # TrueNAS kernels
+STATX_ZFSFLAGS: int  # TrueNAS kernels
 STATX__RESERVED: int
 STATX_ALL: int
+
+# Bits in StatxResult.stx_zfsflags (ZFS DOS attributes + trivial ACL)
+class ZFSFlags(IntFlag):
+    ACL_TRIVIAL = 0x4
+    READONLY = 0x100000000
+    HIDDEN = 0x200000000
+    SYSTEM = 0x400000000
+    ARCHIVE = 0x800000000
+    IMMUTABLE = 0x1000000000
+    NOUNLINK = 0x2000000000
+    APPENDONLY = 0x4000000000
+    NODUMP = 0x8000000000
+    REPARSE = 0x80000000000
+    OFFLINE = 0x100000000000
+    SPARSE = 0x200000000000
 
 # AT constants
 AT_FDCWD: int

@@ -4,6 +4,7 @@
 #include "common/includes.h"
 #include "statx.h"
 #include "truenas_os_state.h"
+#include "util_enum.h"
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -23,6 +24,32 @@
 #else
 #define HAVE_STATX_GEN 0
 #endif
+
+#ifdef STATX_ZFSFLAGS
+#define HAVE_STATX_ZFSFLAGS 1
+#else
+#define HAVE_STATX_ZFSFLAGS 0
+#endif
+
+/*
+ * Bits the kernel can report in stx_zfsflags: the DOS attributes
+ * (ZFS_DOS_FL_USER_VISIBLE) plus ZFS_ACL_TRIVIAL. Values are the ZFS on-disk
+ * pflags from sys/zfs_znode.h, defined here so we need no ZFS headers.
+ */
+static const py_intenum_tbl_t zfs_pflag_table[] = {
+	{ "ACL_TRIVIAL", 0x0000000000000004 },
+	{ "READONLY",    0x0000000100000000 },
+	{ "HIDDEN",      0x0000000200000000 },
+	{ "SYSTEM",      0x0000000400000000 },
+	{ "ARCHIVE",     0x0000000800000000 },
+	{ "IMMUTABLE",   0x0000001000000000 },
+	{ "NOUNLINK",    0x0000002000000000 },
+	{ "APPENDONLY",  0x0000004000000000 },
+	{ "NODUMP",      0x0000008000000000 },
+	{ "REPARSE",     0x0000080000000000 },
+	{ "OFFLINE",     0x0000100000000000 },
+	{ "SPARSE",      0x0000200000000000 },
+};
 
 // StatxResult structured sequence type
 static PyStructSequence_Field statx_result_fields[] = {
@@ -65,6 +92,9 @@ static PyStructSequence_Field statx_result_fields[] = {
 #if HAVE_STATX_GEN
 	{"stx_gen", "Inode generation"},
 #endif
+#if HAVE_STATX_ZFSFLAGS
+	{"stx_zfsflags", "ZFS pflags (DOS attributes and ZFS_ACL_TRIVIAL)"},
+#endif
 	{NULL}
 };
 
@@ -74,7 +104,7 @@ static PyStructSequence_Desc statx_result_desc = {
 	       "A named tuple containing extended file attributes. "
 	       "Fields that were not requested or are unavailable will be None or 0 depending on the field.",
 	.fields = statx_result_fields,
-	.n_in_sequence = 32 + 2 * HAVE_STATX_DIO_READ_FIELDS + HAVE_STATX_GEN
+	.n_in_sequence = 32 + 2 * HAVE_STATX_DIO_READ_FIELDS + HAVE_STATX_GEN + HAVE_STATX_ZFSFLAGS
 };
 
 /*
@@ -156,6 +186,10 @@ PyObject *statx_to_pyobject(const struct statx *stx)
 	SET_FIELD(32 + 2 * HAVE_STATX_DIO_READ_FIELDS, PyLong_FromUnsignedLongLong(stx->stx_gen));
 #endif
 
+#if HAVE_STATX_ZFSFLAGS
+	SET_FIELD(32 + 2 * HAVE_STATX_DIO_READ_FIELDS + HAVE_STATX_GEN, PyLong_FromUnsignedLongLong(stx->stx_zfsflags));
+#endif
+
 	#undef SET_FIELD
 
 	return result;
@@ -188,6 +222,10 @@ PyObject *do_statx(int dirfd, const char *pathname, int flags, unsigned int mask
 
 int init_statx_types(PyObject *module)
 {
+	PyObject *enum_mod = NULL;
+	PyObject *intflag = NULL;
+	PyObject *kwargs = NULL;
+	int err = -1;
 	truenas_os_state_t *state = get_truenas_os_state(module);
 	if (state == NULL) {
 		return -1;
@@ -228,6 +266,9 @@ int init_statx_types(PyObject *module)
 #ifdef STATX_GEN
 	PyModule_AddIntConstant(module, "STATX_GEN", STATX_GEN);
 #endif
+#ifdef STATX_ZFSFLAGS
+	PyModule_AddIntConstant(module, "STATX_ZFSFLAGS", STATX_ZFSFLAGS);
+#endif
 	PyModule_AddIntConstant(module, "STATX__RESERVED", STATX__RESERVED);
 	PyModule_AddIntConstant(module, "STATX_ALL", STATX_ALL);
 
@@ -254,5 +295,27 @@ int init_statx_types(PyObject *module)
 	PyModule_AddIntConstant(module, "STATX_ATTR_DAX", STATX_ATTR_DAX);
 	PyModule_AddIntConstant(module, "STATX_ATTR_WRITE_ATOMIC", STATX_ATTR_WRITE_ATOMIC);
 
-	return 0;
+	kwargs = Py_BuildValue("{s:s}", "module", "truenas_os");
+	if (kwargs == NULL)
+		goto out;
+
+	enum_mod = PyImport_ImportModule("enum");
+	if (enum_mod == NULL)
+		goto out;
+
+	intflag = PyObject_GetAttrString(enum_mod, "IntFlag");
+	if (intflag == NULL)
+		goto out;
+
+	if (add_enum(module, intflag, "ZFSFlags",
+	             zfs_pflag_table, TABLE_SIZE(zfs_pflag_table),
+	             kwargs, NULL) < 0)
+		goto out;
+
+	err = 0;
+out:
+	Py_XDECREF(kwargs);
+	Py_XDECREF(enum_mod);
+	Py_XDECREF(intflag);
+	return err;
 }

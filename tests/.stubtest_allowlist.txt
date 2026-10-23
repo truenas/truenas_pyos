@@ -18,6 +18,8 @@ truenas_os\.StatxResult\.stx_atomic_write_unit_max_opt
 # Only in TrueNAS kernel headers, not in Debian's
 truenas_os\.STATX_GEN
 truenas_os\.StatxResult\.stx_gen
+truenas_os\.STATX_ZFSFLAGS
+truenas_os\.StatxResult\.stx_zfsflags
 truenas_os\.StatmountResult\.fs_subtype
 truenas_os\.StatmountResult\.sb_source
 truenas_os\.StatmountResult\.opt_array

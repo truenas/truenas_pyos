@@ -16,7 +16,12 @@
 #include <stdbool.h>
 
 /* Flags from Python version */
+#ifdef STATX_ZFSFLAGS
+/* ZFS DOS attributes / trivial ACL come for free with each entry's statx */
+#define STATX_MASK_ITER (STATX_BASIC_STATS | STATX_BTIME | STATX_MNT_ID_UNIQUE | STATX_ZFSFLAGS)
+#else
 #define STATX_MASK_ITER (STATX_BASIC_STATS | STATX_BTIME | STATX_MNT_ID_UNIQUE)
+#endif
 #define STATX_FLAGS_ITER (AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW)
 #define RESOLVE_FLAGS_ITER (RESOLVE_NO_XDEV | RESOLVE_NO_SYMLINKS)
 #define OFLAGS_DIR_ITER (O_NOFOLLOW | O_DIRECTORY)
