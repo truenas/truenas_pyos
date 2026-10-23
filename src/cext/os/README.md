@@ -504,6 +504,7 @@ print(f"Mount ID: {result.stx_mnt_id}")
 - `STATX_MNT_ID_UNIQUE` - Unique mount ID
 - `STATX_DIOALIGN` - Direct I/O alignment info
 - `STATX_GEN` - Inode generation (`stx_gen`), which tells a reused inode number from the file that had it before (TrueNAS kernels only)
+- `STATX_ZFSFLAGS` - ZFS pflags (`stx_zfsflags`): the DOS attributes and, on `acltype=nfsv4` datasets, `ACL_TRIVIAL`, meaning the ACL is fully described by the mode bits. Decode with the `ZFSFlags` IntFlag, e.g. `ZFSFlags(r.stx_zfsflags) & ZFSFlags.HIDDEN`. Not set on non-ZFS files (TrueNAS kernels only)
 
 ---
 
