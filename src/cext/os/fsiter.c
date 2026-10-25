@@ -1278,7 +1278,6 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 		return NULL;
 	}
 
-#ifdef STATMOUNT_SB_SOURCE
 	/* Validate mount source using statmount */
 	sm = statmount_impl(root_st.stx_mnt_id, STATMOUNT_SB_BASIC | STATMOUNT_SB_SOURCE);
 	if (sm == NULL) {
@@ -1289,10 +1288,10 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	}
 
 	/*
-	 * Only validate when the kernel actually reported sb_source (its mask
-	 * bit is set).  A kernel that does not report it leaves sm->sb_source
-	 * unset, so reading sm->str + sm->sb_source there would compare against
-	 * garbage; skip the check and accept the mount, as callers expect.
+	 * Validate only when statmount actually reported sb_source (its mask
+	 * bit is set).  A mount with no source leaves sm->sb_source unset, so
+	 * reading sm->str + sm->sb_source there would compare against garbage;
+	 * skip the check and accept the mount, as callers expect.
 	 */
 	if (sm->mask & STATMOUNT_SB_SOURCE) {
 		sb_source = sm->str + sm->sb_source;
@@ -1308,7 +1307,6 @@ create_filesystem_iterator(const char *mountpoint, const char *relative_path,
 	}
 
 	PyMem_RawFree(sm);
-#endif /* STATMOUNT_SB_SOURCE */
 
 	/* Open DIR* from root fd */
 	root_dirp = fdopendir(root_fd);

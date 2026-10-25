@@ -20,6 +20,7 @@
 #include "acl.h"
 #include "acl_check.h"
 #include "xattr.h"
+#include "uring.h"
 
 #define MODULE_DOC "TrueNAS OS module"
 
@@ -1918,6 +1919,12 @@ PyObject* module_init(void)
 
 	// Initialize xattr constants
 	if (init_xattr_constants(m) < 0) {
+		Py_DECREF(m);
+		return NULL;
+	}
+
+	// Register the io_uring binding types (Uring, UringOp) on the module
+	if (init_uring_types(m) < 0) {
 		Py_DECREF(m);
 		return NULL;
 	}

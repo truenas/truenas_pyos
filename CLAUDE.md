@@ -5,9 +5,10 @@
 | Path | Contents |
 |---|---|
 | `src/cext/os/` | `truenas_os` C extension (mount, ACL, statx, fsiter, …) |
+| `src/cext/uring/` | `truenas_os.Uring` io_uring binding (top-level type in the `truenas_os` extension) |
 | `src/cext/filter_utils/` | `truenas_pyfilter` C extension (compiled filter engine) |
 | `src/truenas_os_pyutils/` | Pure-Python utilities built on `truenas_os` |
-| `stubs/truenas_os/` | Type stubs for `truenas_os` |
+| `stubs/truenas_os/` | Type stubs for `truenas_os` (incl. `Uring`/`UringOp`) |
 | `stubs/truenas_pyfilter/` | Type stubs for `truenas_pyfilter` |
 | `tests/` | pytest suite |
 | `tests/type_checks/` | mypy typing tests |
