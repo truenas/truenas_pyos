@@ -33,11 +33,15 @@
 
 /*
  * Bits the kernel can report in stx_zfsflags: the DOS attributes
- * (ZFS_DOS_FL_USER_VISIBLE) plus ZFS_ACL_TRIVIAL. Values are the ZFS on-disk
+ * (ZFS_DOS_FL_USER_VISIBLE) plus, on acltype=nfsv4 datasets, ZFS_ACL_TRIVIAL
+ * and the ACL-wide flags of the NFSv4 dacl. Values are the ZFS on-disk
  * pflags from sys/zfs_znode.h, defined here so we need no ZFS headers.
  */
 static const py_intenum_tbl_t zfs_pflag_table[] = {
 	{ "ACL_TRIVIAL", 0x0000000000000004 },
+	{ "ACL_PROTECTED", 0x0000000000000010 },
+	{ "ACL_DEFAULTED", 0x0000000000000020 },
+	{ "ACL_AUTO_INHERIT", 0x0000000000000040 },
 	{ "READONLY",    0x0000000100000000 },
 	{ "HIDDEN",      0x0000000200000000 },
 	{ "SYSTEM",      0x0000000400000000 },
@@ -93,7 +97,7 @@ static PyStructSequence_Field statx_result_fields[] = {
 	{"stx_gen", "Inode generation"},
 #endif
 #if HAVE_STATX_ZFSFLAGS
-	{"stx_zfsflags", "ZFS pflags (DOS attributes and ZFS_ACL_TRIVIAL)"},
+	{"stx_zfsflags", "ZFS pflags (DOS attributes and NFSv4 ACL flags)"},
 #endif
 	{NULL}
 };
