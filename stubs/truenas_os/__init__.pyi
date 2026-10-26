@@ -823,9 +823,12 @@ STATX_ZFSFLAGS: int  # TrueNAS kernels
 STATX__RESERVED: int
 STATX_ALL: int
 
-# Bits in StatxResult.stx_zfsflags (ZFS DOS attributes + trivial ACL)
+# Bits in StatxResult.stx_zfsflags (ZFS DOS attributes + NFSv4 ACL flags)
 class ZFSFlags(IntFlag):
     ACL_TRIVIAL = 0x4
+    ACL_PROTECTED = 0x10
+    ACL_DEFAULTED = 0x20
+    ACL_AUTO_INHERIT = 0x40
     READONLY = 0x100000000
     HIDDEN = 0x200000000
     SYSTEM = 0x400000000

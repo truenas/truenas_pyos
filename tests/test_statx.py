@@ -295,6 +295,35 @@ def test_statx_zfsflags_posix_hides_trivial(posix_dataset):
 
 
 @pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ZFSFLAGS'), reason='needs TrueNAS kernel headers')
+@pytest.mark.parametrize('folder', [False, True], ids=['file', 'folder'])
+@pytest.mark.parametrize('flag', ['PROTECTED', 'DEFAULTED', 'AUTO_INHERIT'])
+def test_statx_zfsflags_acl_flags(nfs4_dataset, folder, flag):
+    """An ACL-wide flag set through the ACL is reported in stx_zfsflags."""
+    path = os.path.join(nfs4_dataset, 'acl_flags')
+    inherit = truenas_os.NFS4Flag(0)
+    if folder:
+        os.mkdir(path)
+        inherit = truenas_os.NFS4Flag.FILE_INHERIT | truenas_os.NFS4Flag.DIRECTORY_INHERIT
+    else:
+        open(path, 'w').close()
+    read = truenas_os.NFS4Perm.READ_DATA | truenas_os.NFS4Perm.READ_ATTRIBUTES | truenas_os.NFS4Perm.READ_ACL
+    aces = [
+        truenas_os.NFS4Ace(truenas_os.NFS4AceType.ALLOW, inherit, read | truenas_os.NFS4Perm.WRITE_ACL,
+                           truenas_os.NFS4Who.OWNER),
+        truenas_os.NFS4Ace(truenas_os.NFS4AceType.ALLOW, inherit, read, truenas_os.NFS4Who.NAMED, who_id=8675309),
+    ]
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        truenas_os.fsetacl(fd, truenas_os.NFS4ACL.from_aces(aces, acl_flags=truenas_os.NFS4ACLFlag[flag]))
+    finally:
+        os.close(fd)
+    ZFSFlags = truenas_os.ZFSFlags
+    acl_flags = ZFSFlags.ACL_PROTECTED | ZFSFlags.ACL_DEFAULTED | ZFSFlags.ACL_AUTO_INHERIT
+    result = truenas_os.statx(path, mask=truenas_os.STATX_ZFSFLAGS)
+    assert ZFSFlags(result.stx_zfsflags) & acl_flags == ZFSFlags[f'ACL_{flag}']
+
+
+@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ZFSFLAGS'), reason='needs TrueNAS kernel headers')
 def test_statx_zfsflags_non_zfs():
     """Non-ZFS files do not fill stx_zfsflags."""
     result = truenas_os.statx('/proc/self/status', mask=truenas_os.STATX_ZFSFLAGS)
