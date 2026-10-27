@@ -505,6 +505,7 @@ print(f"Mount ID: {result.stx_mnt_id}")
 - `STATX_DIOALIGN` - Direct I/O alignment info
 - `STATX_GEN` - Inode generation (`stx_gen`), which tells a reused inode number from the file that had it before (TrueNAS kernels only)
 - `STATX_ZFSFLAGS` - ZFS pflags (`stx_zfsflags`), the DOS attributes and, on `acltype=nfsv4` datasets, `ACL_TRIVIAL`, meaning the ACL is fully described by the mode bits, and the ACL-wide flags `ACL_PROTECTED`, `ACL_DEFAULTED` and `ACL_AUTO_INHERIT`, which are the `PROTECTED`, `DEFAULTED` and `AUTO_INHERIT` of `NFS4ACLFlag` without reading the ACL. Decode with the `ZFSFlags` IntFlag, e.g. `ZFSFlags(r.stx_zfsflags) & ZFSFlags.HIDDEN`. Not set on non-ZFS files (TrueNAS kernels only)
+- `STATX_ATTR_POSIXACL` and `STATX_ATTR_NFSV4ACL` - bits of `stx_attributes` that say which ACL type the file system keeps, neither when it keeps none. ZFS keeps them current as `acltype` changes, with no remount, and a snapshot carries the type of its own mount. Both are in `stx_attributes_mask`
 
 ---
 
