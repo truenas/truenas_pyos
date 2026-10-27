@@ -331,6 +331,29 @@ def test_statx_zfsflags_non_zfs():
     assert result.stx_zfsflags == 0
 
 
+def _acltype(path):
+    """The ACL type bits of stx_attributes, once the mask says the kernel reports them."""
+    both = truenas_os.STATX_ATTR_POSIXACL | truenas_os.STATX_ATTR_NFSV4ACL
+    result = truenas_os.statx(path, mask=truenas_os.STATX_BASIC_STATS)
+    assert result.stx_attributes_mask & both == both, 'the kernel reports the ACL type'
+    return result.stx_attributes & both
+
+
+def test_statx_attributes_acltype_nfs4(nfs4_dataset):
+    """An NFSv4 dataset reports STATX_ATTR_NFSV4ACL alone."""
+    assert _acltype(nfs4_dataset) == truenas_os.STATX_ATTR_NFSV4ACL
+
+
+def test_statx_attributes_acltype_posix(posix_dataset):
+    """A POSIX dataset reports STATX_ATTR_POSIXACL alone."""
+    assert _acltype(posix_dataset) == truenas_os.STATX_ATTR_POSIXACL
+
+
+def test_statx_attributes_acltype_none():
+    """A file system that keeps no ACL reports neither bit, with both in the mask."""
+    assert _acltype('/proc/self/status') == 0
+
+
 def test_statx_attributes_mask():
     """Test that stx_attributes_mask is set."""
     result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS)
