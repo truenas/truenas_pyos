@@ -298,6 +298,9 @@ int init_statx_types(PyObject *module)
 	PyModule_AddIntConstant(module, "STATX_ATTR_VERITY", STATX_ATTR_VERITY);
 	PyModule_AddIntConstant(module, "STATX_ATTR_DAX", STATX_ATTR_DAX);
 	PyModule_AddIntConstant(module, "STATX_ATTR_WRITE_ATOMIC", STATX_ATTR_WRITE_ATOMIC);
+	// https://github.com/truenas/linux/pull/385
+	PyModule_AddIntConstant(module, "STATX_ATTR_POSIXACL", 0x0100000000000000L);
+	PyModule_AddIntConstant(module, "STATX_ATTR_NFSV4ACL", 0x0200000000000000L);
 
 	kwargs = Py_BuildValue("{s:s}", "module", "truenas_os");
 	if (kwargs == NULL)
