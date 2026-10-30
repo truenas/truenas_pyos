@@ -506,6 +506,7 @@ print(f"Mount ID: {result.stx_mnt_id}")
 - `STATX_GEN` - Inode generation (`stx_gen`), which tells a reused inode number from the file that had it before (TrueNAS kernels only)
 - `STATX_ZFSFLAGS` - ZFS pflags (`stx_zfsflags`), the DOS attributes and, on `acltype=nfsv4` datasets, `ACL_TRIVIAL`, meaning the ACL is fully described by the mode bits, and the ACL-wide flags `ACL_PROTECTED`, `ACL_DEFAULTED` and `ACL_AUTO_INHERIT`, which are the `PROTECTED`, `DEFAULTED` and `AUTO_INHERIT` of `NFS4ACLFlag` without reading the ACL. Decode with the `ZFSFlags` IntFlag, e.g. `ZFSFlags(r.stx_zfsflags) & ZFSFlags.HIDDEN`. Not set on non-ZFS files (TrueNAS kernels only)
 - `STATX_ATTR_POSIXACL` and `STATX_ATTR_NFSV4ACL` - bits of `stx_attributes` that say which ACL type the file system keeps, neither when it keeps none. ZFS keeps them current as `acltype` changes, with no remount, and a snapshot carries the type of its own mount. Both are in `stx_attributes_mask`
+- `STATX_ACL` - asks whether the file has a POSIX ACL, answered from the ACLs the inode caches, on a file system that keeps POSIX ACLs. Where `stx_mask` has it, `STATX_ATTR_ACL_ACCESS` in `stx_attributes` says the file has an access ACL, which is always more than the mode says, and `STATX_ATTR_ACL_DEFAULT` that a directory has a default ACL. Neither set means the mode is the whole of it, with no xattr to read or list. Left out of `stx_mask` on any other file system and on an error (TrueNAS kernels only)
 
 ---
 
@@ -612,7 +613,7 @@ opened that way).  Identify one as an entry that is none of `isdir` / `islnk` /
 - `parent` (str): Directory path
 - `name` (str): Entry name
 - `fd` (int): Open file descriptor (valid until next iteration, do not close - iterator manages lifecycle)
-- `statxinfo` (StatxResult): File metadata (includes `stx_zfsflags` on TrueNAS kernels)
+- `statxinfo` (StatxResult): File metadata (includes `stx_zfsflags`, and on POSIX ACL datasets the `STATX_ACL` bits, on TrueNAS kernels)
 - `isdir` (bool): True if directory, False otherwise
 - `islnk` (bool): True if symlink, False otherwise
 - `isreg` (bool): True if regular file, False otherwise
