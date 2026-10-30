@@ -273,6 +273,9 @@ int init_statx_types(PyObject *module)
 #ifdef STATX_ZFSFLAGS
 	PyModule_AddIntConstant(module, "STATX_ZFSFLAGS", STATX_ZFSFLAGS);
 #endif
+#ifdef STATX_ACL
+	PyModule_AddIntConstant(module, "STATX_ACL", STATX_ACL);
+#endif
 	PyModule_AddIntConstant(module, "STATX__RESERVED", STATX__RESERVED);
 	PyModule_AddIntConstant(module, "STATX_ALL", STATX_ALL);
 
@@ -301,6 +304,10 @@ int init_statx_types(PyObject *module)
 	// https://github.com/truenas/linux/pull/385
 	PyModule_AddIntConstant(module, "STATX_ATTR_POSIXACL", 0x0100000000000000L);
 	PyModule_AddIntConstant(module, "STATX_ATTR_NFSV4ACL", 0x0200000000000000L);
+	// Answered for STATX_ACL from the ACLs the inode caches (statx_posix_acls
+	// in fs/stat.c of the TrueNAS kernel)
+	PyModule_AddIntConstant(module, "STATX_ATTR_ACL_ACCESS", 0x0400000000000000L);
+	PyModule_AddIntConstant(module, "STATX_ATTR_ACL_DEFAULT", 0x0800000000000000L);
 
 	kwargs = Py_BuildValue("{s:s}", "module", "truenas_os");
 	if (kwargs == NULL)
