@@ -354,6 +354,64 @@ def test_statx_attributes_acltype_none():
     assert _acltype('/proc/self/status') == 0
 
 
+def _posix_acls(path):
+    """The POSIX ACL bits of stx_attributes, once the mask says the kernel answered STATX_ACL."""
+    result = truenas_os.statx(path, mask=truenas_os.STATX_ACL)
+    assert result.stx_mask & truenas_os.STATX_ACL, 'the kernel answers STATX_ACL'
+    return result.stx_attributes & (truenas_os.STATX_ATTR_ACL_ACCESS | truenas_os.STATX_ATTR_ACL_DEFAULT)
+
+
+def _posix_aces(named, default=False):
+    """The three entries the mode makes, and with `named` a user behind a mask too."""
+    t, P = truenas_os, truenas_os.POSIXPerm
+    aces = [
+        t.POSIXAce(tag=t.POSIXTag.USER_OBJ, perms=P.READ | P.WRITE, default=default),
+        t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ, perms=P.READ, default=default),
+        t.POSIXAce(tag=t.POSIXTag.OTHER, perms=P(0), default=default),
+    ]
+    if named:
+        aces += [
+            t.POSIXAce(tag=t.POSIXTag.USER, perms=P.READ, id=8675309, default=default),
+            t.POSIXAce(tag=t.POSIXTag.MASK, perms=P.READ, default=default),
+        ]
+    return aces
+
+
+@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ACL'), reason='needs TrueNAS kernel headers')
+def test_statx_acl_posix(posix_dataset):
+    """STATX_ACL says which file has an access ACL and which directory a default one."""
+    path = os.path.join(posix_dataset, 'acl_file')
+    folder = os.path.join(posix_dataset, 'acl_dir')
+    open(path, 'w').close()
+    os.mkdir(folder)
+    assert _posix_acls(path) == 0
+    assert _posix_acls(folder) == 0
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        truenas_os.fsetacl(fd, truenas_os.POSIXACL.from_aces(_posix_aces(named=True)))
+        assert _posix_acls(path) == truenas_os.STATX_ATTR_ACL_ACCESS
+        # An ACL the mode says all of is not kept, so none is left.
+        truenas_os.fsetacl(fd, truenas_os.POSIXACL.from_aces(_posix_aces(named=False)))
+        assert _posix_acls(path) == 0
+    finally:
+        os.close(fd)
+    fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        aces = _posix_aces(named=False) + _posix_aces(named=True, default=True)
+        truenas_os.fsetacl(fd, truenas_os.POSIXACL.from_aces(aces))
+        assert _posix_acls(folder) == truenas_os.STATX_ATTR_ACL_DEFAULT
+    finally:
+        os.close(fd)
+
+
+@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ACL'), reason='needs TrueNAS kernel headers')
+def test_statx_acl_not_posix(nfs4_dataset):
+    """A file system that keeps no POSIX ACL leaves STATX_ACL out of the mask."""
+    for path in (nfs4_dataset, '/proc/self/status'):
+        result = truenas_os.statx(path, mask=truenas_os.STATX_ACL)
+        assert not result.stx_mask & truenas_os.STATX_ACL, path
+
+
 def test_statx_attributes_mask():
     """Test that stx_attributes_mask is set."""
     result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS)

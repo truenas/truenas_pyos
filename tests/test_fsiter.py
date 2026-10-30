@@ -337,6 +337,32 @@ def test_iter_statx_has_zfsflags(nfs4_dataset):
     pytest.fail('zfsflags_file not yielded')
 
 
+@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ACL'), reason='needs TrueNAS kernel headers')
+def test_iter_statx_has_posix_acls(posix_dataset):
+    """On a POSIX ACL dataset each entry's statxinfo says whether it has an access ACL."""
+    t, P = truenas_os, truenas_os.POSIXPerm
+    for name in ('plain', 'named'):
+        open(os.path.join(posix_dataset, name), 'w').close()
+    aces = [
+        t.POSIXAce(tag=t.POSIXTag.USER_OBJ, perms=P.READ | P.WRITE),
+        t.POSIXAce(tag=t.POSIXTag.USER, perms=P.READ, id=8675309),
+        t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ, perms=P.READ),
+        t.POSIXAce(tag=t.POSIXTag.MASK, perms=P.READ),
+        t.POSIXAce(tag=t.POSIXTag.OTHER, perms=P(0)),
+    ]
+    fd = os.open(os.path.join(posix_dataset, 'named'), os.O_RDONLY)
+    try:
+        t.fsetacl(fd, t.POSIXACL.from_aces(aces))
+    finally:
+        os.close(fd)
+    seen = {}
+    for item in t.iter_filesystem_contents(posix_dataset, get_filesystem_name(posix_dataset)):
+        if item.name in ('plain', 'named'):
+            assert item.statxinfo.stx_mask & t.STATX_ACL
+            seen[item.name] = item.statxinfo.stx_attributes & t.STATX_ATTR_ACL_ACCESS
+    assert seen == {'plain': 0, 'named': t.STATX_ATTR_ACL_ACCESS}
+
+
 def test_iter_statx_info_complete(temp_mount_tree):
     """Test that statxinfo contains all expected data."""
     iterator = truenas_os.iter_filesystem_contents(
