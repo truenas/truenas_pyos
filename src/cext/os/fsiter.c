@@ -16,11 +16,18 @@
 #include <stdbool.h>
 
 /* Flags from Python version */
+#ifdef STATX_ACL
+/* Whether a POSIX ACL is set comes with each entry's statx too, from the ACLs
+ * the inode caches, so a caller need not list xattrs to find one */
+#define STATX_MASK_ITER_ACL STATX_ACL
+#else
+#define STATX_MASK_ITER_ACL 0
+#endif
 #ifdef STATX_ZFSFLAGS
 /* ZFS DOS attributes / trivial ACL come for free with each entry's statx */
-#define STATX_MASK_ITER (STATX_BASIC_STATS | STATX_BTIME | STATX_MNT_ID_UNIQUE | STATX_ZFSFLAGS)
+#define STATX_MASK_ITER (STATX_BASIC_STATS | STATX_BTIME | STATX_MNT_ID_UNIQUE | STATX_ZFSFLAGS | STATX_MASK_ITER_ACL)
 #else
-#define STATX_MASK_ITER (STATX_BASIC_STATS | STATX_BTIME | STATX_MNT_ID_UNIQUE)
+#define STATX_MASK_ITER (STATX_BASIC_STATS | STATX_BTIME | STATX_MNT_ID_UNIQUE | STATX_MASK_ITER_ACL)
 #endif
 #define STATX_FLAGS_ITER (AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW)
 #define RESOLVE_FLAGS_ITER (RESOLVE_NO_XDEV | RESOLVE_NO_SYMLINKS)
