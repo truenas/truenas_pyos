@@ -3,6 +3,7 @@
 import pytest
 import truenas_os
 import os
+import subprocess
 import stat
 import tempfile
 
@@ -352,6 +353,58 @@ def test_statx_attributes_acltype_posix(posix_dataset):
 def test_statx_attributes_acltype_none():
     """A file system that keeps no ACL reports neither bit, with both in the mask."""
     assert _acltype('/proc/self/status') == 0
+
+
+def _read_only(path):
+    """The read-only bit of stx_attributes, once the mask says the kernel reports it."""
+    result = truenas_os.statx(path, mask=truenas_os.STATX_BASIC_STATS)
+    assert result.stx_attributes_mask & truenas_os.STATX_ATTR_RDONLY, 'the kernel reports a read-only mount'
+    return bool(result.stx_attributes & truenas_os.STATX_ATTR_RDONLY)
+
+
+def _dataset_of(mountpoint):
+    """The dataset mounted at mountpoint."""
+    return subprocess.run(
+        ['findmnt', '-n', '-o', 'SOURCE', '--mountpoint', mountpoint],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+
+def test_statx_attributes_rdonly_dataset(nfs4_dataset, zfs_enabled):
+    """A dataset reports the read-only bit while readonly=on, set and cleared with no remount."""
+    if not zfs_enabled:
+        pytest.skip('needs a dataset of its own')
+    ds = _dataset_of(nfs4_dataset)
+    path = os.path.join(nfs4_dataset, 'f')
+    open(path, 'w').close()
+    assert not _read_only(nfs4_dataset)
+    assert not _read_only(path)
+    subprocess.run(['zfs', 'set', 'readonly=on', ds], check=True)
+    try:
+        assert _read_only(nfs4_dataset)
+        assert _read_only(path)
+    finally:
+        subprocess.run(['zfs', 'set', 'readonly=off', ds], check=True)
+    assert not _read_only(path)
+
+
+def test_statx_attributes_rdonly_snapshot(nfs4_dataset, zfs_enabled):
+    """A file inside a snapshot of a writable dataset reports the read-only bit."""
+    if not zfs_enabled:
+        pytest.skip('needs a dataset of its own')
+    ds = _dataset_of(nfs4_dataset)
+    open(os.path.join(nfs4_dataset, 'f'), 'w').close()
+    subprocess.run(['zfs', 'snapshot', f'{ds}@ro'], check=True)
+    try:
+        assert _read_only(os.path.join(nfs4_dataset, '.zfs', 'snapshot', 'ro', 'f'))
+        assert not _read_only(os.path.join(nfs4_dataset, 'f'))
+    finally:
+        subprocess.run(['zfs', 'destroy', f'{ds}@ro'], check=True)
+
+
+def test_statx_attributes_rdonly_none():
+    """A writable file system that is not ZFS reports no read-only bit, with it in the mask."""
+    assert not _read_only('/proc/self/status')
 
 
 def _posix_acls(path):
