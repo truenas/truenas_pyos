@@ -308,6 +308,9 @@ int init_statx_types(PyObject *module)
 	// in fs/stat.c of the TrueNAS kernel)
 	PyModule_AddIntConstant(module, "STATX_ATTR_ACL_ACCESS", 0x0400000000000000L);
 	PyModule_AddIntConstant(module, "STATX_ATTR_ACL_DEFAULT", 0x0800000000000000L);
+	// Set where the mount or its superblock is read only (vfs_statx_path
+	// in fs/stat.c of the TrueNAS kernel)
+	PyModule_AddIntConstant(module, "STATX_ATTR_RDONLY", 0x1000000000000000L);
 
 	kwargs = Py_BuildValue("{s:s}", "module", "truenas_os");
 	if (kwargs == NULL)
