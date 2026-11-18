@@ -608,6 +608,13 @@ opened that way).  Identify one as an entry that is none of `isdir` / `islnk` /
 `isreg` / `ismount`, and read its type and device number from `statxinfo`
 (`stx_mode`, `stx_rdev_major`, `stx_rdev_minor`).
 
+Regular files are opened with `O_NONBLOCK` added, so an entry that turns out
+to be a FIFO cannot block the walk either.  An open that breaks a file lease,
+such as an NFSv4 delegation the NFS server holds for a client, fails with
+`EWOULDBLOCK` under `O_NONBLOCK`; the iterator then opens the file again
+without it, so the open waits for the lease holder to let go as an ordinary
+open would.
+
 **Returns:** FilesystemIterator yielding IterInstance objects
 
 **IterInstance:**

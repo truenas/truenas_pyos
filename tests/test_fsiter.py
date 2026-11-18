@@ -5,6 +5,7 @@ import truenas_os
 import os
 import stat
 import subprocess
+import sys
 import time
 
 
@@ -1911,3 +1912,61 @@ def test_special_files_classify_without_hanging(tmp_path):
     # FIFO and socket: not dir / link / regular / mount -> special.
     assert kinds["pipe"] == (False, False, False, False)
     assert kinds["sock"] == (False, False, False, False)
+
+
+# Holds a write lease on argv[1] -- the same kernel object as an NFSv4 write
+# delegation held by knfsd -- and releases it 0.2 s after the break starts,
+# the way a client returns its delegation.
+_LEASE_HOLDER = r'''
+import fcntl, os, signal, sys, time
+fd = os.open(sys.argv[1], os.O_RDWR)
+signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGIO])
+try:
+    fcntl.fcntl(fd, fcntl.F_SETLEASE, fcntl.F_WRLCK)
+except OSError as e:
+    print('nolease', e.errno, flush=True)
+    sys.exit(0)
+print('ready', flush=True)
+if signal.sigtimedwait([signal.SIGIO], 10) is None:
+    print('nobreak', flush=True)
+    sys.exit(1)
+time.sleep(0.2)
+fcntl.fcntl(fd, fcntl.F_SETLEASE, fcntl.F_UNLCK)
+print('released', flush=True)
+'''
+
+
+def test_iter_waits_for_lease_break(tmp_path):
+    """An open that breaks a lease is retried until the holder releases it.
+
+    Regression: regular files are opened with O_NONBLOCK, so an open that
+    conflicted with a lease (e.g. an NFSv4 write delegation) failed with
+    EWOULDBLOCK and aborted the walk with "openat2(...): Resource
+    temporarily unavailable".
+    """
+    leased = tmp_path / "leased"
+    leased.write_bytes(b"x" * 64)
+    (tmp_path / "other").write_bytes(b"y" * 64)
+
+    with subprocess.Popen(
+        [sys.executable, "-c", _LEASE_HOLDER, str(leased)],
+        stdout=subprocess.PIPE, text=True,
+    ) as holder:
+        try:
+            line = holder.stdout.readline()
+            status = line.split()
+            if status[:1] == ["nolease"]:
+                pytest.skip(f"no write lease here: {os.strerror(int(status[1]))}")
+            assert status == ["ready"], line
+
+            names = {item.name for item in truenas_os.iter_filesystem_contents(
+                str(tmp_path), get_filesystem_name(tmp_path)
+            )}
+            out, _ = holder.communicate(timeout=20)
+        finally:
+            if holder.poll() is None:
+                holder.kill()
+
+    assert holder.returncode == 0
+    assert out.split() == ["released"]
+    assert {"leased", "other"} <= names
