@@ -320,6 +320,29 @@ enum fsiter_action {
 };
 
 /*
+ * Open a directory entry, waiting out a lease break.  An O_NONBLOCK open that
+ * conflicts with a lease, e.g. an NFSv4 delegation knfsd holds for a client,
+ * starts the break and then fails with EWOULDBLOCK instead of waiting for the
+ * holder to let go.  A FIFO never fails an O_NONBLOCK open that way, so for an
+ * entry readdir reported as a regular file, open again without O_NONBLOCK and
+ * let the kernel wait for the break to finish.  The wait is interruptible: a
+ * signal fails the open with EINTR.  A DT_UNKNOWN entry gets no second open,
+ * since a device's open method may also fail an O_NONBLOCK open with EAGAIN.
+ * Called with GIL released
+ */
+static int
+openat2_wait_lease(int dirfd, const struct dirent *entry, int flags)
+{
+	int fd = -1;
+
+	fd = openat2_impl(dirfd, entry->d_name, flags, RESOLVE_FLAGS_ITER);
+	if (fd < 0 && errno == EWOULDBLOCK && entry->d_type == DT_REG)
+		fd = openat2_impl(dirfd, entry->d_name, flags & ~O_NONBLOCK, RESOLVE_FLAGS_ITER);
+
+	return fd;
+}
+
+/*
  * Process next directory entry
  * Called with GIL released
  * Returns action code, fills self->last on success
@@ -382,12 +405,14 @@ process_next_entry(FilesystemIteratorObject *self,
 		 * a filesystem that does not fill d_type, or an entry swapped
 		 * under us — the open returns immediately instead of blocking on
 		 * an absent writer.  O_NONBLOCK has no effect on regular-file
-		 * reads, so a regular file's fd behaves normally.
+		 * reads, so a regular file's fd behaves normally.  It does make
+		 * an open that breaks a lease fail instead of waiting, which
+		 * openat2_wait_lease() takes care of.
 		 */
 		open_flags = self->state.file_open_flags | O_NONBLOCK;
 	}
 
-	fd = openat2_impl(dirfd(cur_dir->dirp), entry->d_name, open_flags, RESOLVE_FLAGS_ITER);
+	fd = openat2_wait_lease(dirfd(cur_dir->dirp), entry, open_flags);
 	if (fd < 0) {
 		/* ELOOP: intermediate component replaced with symlink (shouldn't be possible)
 		 * ENOENT: file was deleted between readdir and open (TOCTOU race)
@@ -457,11 +482,17 @@ process_next_entry(FilesystemIteratorObject *self,
 		 *
 		 * Symlinks skip the O_RDONLY fallback — opening a symlink
 		 * O_RDONLY|O_NOFOLLOW always ELOOPs anyway.  O_NONBLOCK keeps a
-		 * raced-in FIFO from blocking, as on the primary open above.
+		 * raced-in FIFO from blocking, and a lease break is waited out,
+		 * as on the primary open above.  A signal during that wait is
+		 * an error rather than a skip, so the caller retries the entry.
 		 */
 		} else if (!is_dir && !is_lnk && (errno == EPERM || errno == EACCES)) {
-			fd = openat2_impl(dirfd(cur_dir->dirp), entry->d_name,
-					  O_RDONLY | O_NOFOLLOW | O_NONBLOCK, RESOLVE_FLAGS_ITER);
+			fd = openat2_wait_lease(dirfd(cur_dir->dirp), entry,
+						O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+			if (fd < 0 && errno == EINTR) {
+				SET_ERROR_ERRNO(err, "openat2(%s)", entry->d_name);
+				return FSITER_ERROR;
+			}
 			if (fd < 0)
 				return FSITER_CONTINUE;
 		} else {
