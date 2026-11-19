@@ -4,8 +4,8 @@
 from contextlib import contextmanager
 import errno
 import os
-from tempfile import TemporaryDirectory
 import typing
+import uuid
 
 import truenas_os
 
@@ -110,6 +110,37 @@ def atomic_replace(
         f.write(data)
 
 
+@contextmanager
+def _temporary_directory_at(dir_fd: int) -> typing.Generator[int, None, None]:
+    """Create a private temporary directory beneath `dir_fd` and yield an fd for it.
+
+    The directory and anything left in it are removed on exit. Unlike
+    tempfile.TemporaryDirectory, nothing here resolves a path string, so a
+    symlink in the path cannot redirect where the directory is created or
+    removed.
+    """
+    # A random name cannot be guessed in advance, so it will not already exist
+    name = f'tmp{uuid.uuid4().hex}'
+    os.mkdir(name, 0o700, dir_fd=dir_fd)
+
+    try:
+        fd = truenas_os.openat2(
+            name, os.O_DIRECTORY, dir_fd=dir_fd,
+            resolve=truenas_os.RESOLVE_BENEATH | truenas_os.RESOLVE_NO_SYMLINKS,
+        )
+        try:
+            yield fd
+        finally:
+            try:
+                # Only atomic_write writes here: the file being written, or the old one after an exchange
+                for entry in os.listdir(fd):
+                    os.unlink(entry, dir_fd=fd)
+            finally:
+                os.close(fd)
+    finally:
+        os.rmdir(name, dir_fd=dir_fd)
+
+
 @typing.overload
 @contextmanager
 def atomic_write(target: str, mode: typing.Literal["w"] = "w", *, tmppath: str | None = None,
@@ -167,7 +198,8 @@ def atomic_write(target: str, mode: typing.Literal["w", "wb"] = "w", *, tmppath:
           AT_RENAME_NOREPLACE on the rename to catch races
         - File is only replaced if the context manager exits successfully
         - If an intermediate symlink is detected during openat2 call then errno
-          will be set to ELOOP
+          will be set to ELOOP. This is checked before the temporary directory
+          is created, so nothing is created through the symlink.
 
     Example:
         with atomic_write('/etc/config.conf') as f:
@@ -177,21 +209,21 @@ def atomic_write(target: str, mode: typing.Literal["w", "wb"] = "w", *, tmppath:
     if mode not in ("w", "wb"):
         raise ValueError(f'{mode}: invalid mode. Only "w" and "wb" are supported.')
 
-    if tmppath is None:
-        tmppath = os.path.dirname(target)
+    dst_dirpath = os.path.dirname(target)
+    target_filename = os.path.basename(target)
 
-    with TemporaryDirectory(dir=tmppath) as tmpdir:
-        # We're using absolute paths here initially to open dir fds for the write and rename operations. This is
-        # generally susceptible to symlink races and so it's being mitigated by setting RESOLVE_NO_SYMLINKS. *IF* an
-        # intermediate symlink is discovered during path resolution in kernel (e.g. /etc/default/foo and the
-        # `/etc/default` component is a symlink), then this will fail with an OSError with errno set to ELOOP
-        dst_dirpath = os.path.dirname(target)
-        target_filename = os.path.basename(target)
-
-        dst_dirfd = truenas_os.openat2(dst_dirpath, os.O_DIRECTORY, resolve=truenas_os.RESOLVE_NO_SYMLINKS)
+    # Open the directories with RESOLVE_NO_SYMLINKS before anything is created in them. *IF* an intermediate
+    # symlink is discovered during path resolution in kernel (e.g. /etc/default/foo and the `/etc/default`
+    # component is a symlink), then this fails with an OSError with errno set to ELOOP, and nothing has been
+    # created through the symlink. The temporary directory is then created relative to the opened fd.
+    dst_dirfd = truenas_os.openat2(dst_dirpath, os.O_DIRECTORY, resolve=truenas_os.RESOLVE_NO_SYMLINKS)
+    try:
+        if tmppath is None:
+            tmp_parent_fd = dst_dirfd
+        else:
+            tmp_parent_fd = truenas_os.openat2(tmppath, os.O_DIRECTORY, resolve=truenas_os.RESOLVE_NO_SYMLINKS)
         try:
-            src_dirfd = truenas_os.openat2(tmpdir, os.O_DIRECTORY, resolve=truenas_os.RESOLVE_NO_SYMLINKS)
-            try:
+            with _temporary_directory_at(tmp_parent_fd) as src_dirfd:
                 # Check if target file exists and get its stat
                 existing_stat = None
                 try:
@@ -230,7 +262,8 @@ def atomic_write(target: str, mode: typing.Literal["w", "wb"] = "w", *, tmppath:
                     dst_dir_fd=dst_dirfd,
                     flags=rename_flags
                 )
-            finally:
-                os.close(src_dirfd)
         finally:
-            os.close(dst_dirfd)
+            if tmp_parent_fd != dst_dirfd:
+                os.close(tmp_parent_fd)
+    finally:
+        os.close(dst_dirfd)
