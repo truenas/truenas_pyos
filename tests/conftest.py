@@ -21,9 +21,10 @@ import pytest
 
 # ── ZFS availability helpers ─────────────────────────────────────────────────
 
+
 def _zfs_available():
     try:
-        r = subprocess.run(['zfs', 'version'], capture_output=True, timeout=5)
+        r = subprocess.run(["zfs", "version"], capture_output=True, timeout=5)
         return r.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
@@ -31,13 +32,14 @@ def _zfs_available():
 
 # ── Session-scoped: pool ─────────────────────────────────────────────────────
 
-@pytest.fixture(scope='session')
+
+@pytest.fixture(scope="session")
 def zfs_enabled():
     """True when ZFS commands are present and the process is running as root."""
     return _zfs_available() and os.geteuid() == 0
 
 
-@pytest.fixture(scope='session')
+@pytest.fixture(scope="session")
 def zpool(zfs_enabled):
     """
     Create a single ZFS test pool for the whole test session using a
@@ -50,24 +52,25 @@ def zpool(zfs_enabled):
         yield None
         return
 
-    tmpdir    = tempfile.mkdtemp(prefix='truenas_pos_vdev_')
-    vdev_file = os.path.join(tmpdir, 'vdev.img')
-    altroot   = tempfile.mkdtemp(prefix='truenas_pos_altroot_')
-    pool_name = f'postest_{os.getpid()}'
+    tmpdir = tempfile.mkdtemp(prefix="truenas_pos_vdev_")
+    vdev_file = os.path.join(tmpdir, "vdev.img")
+    altroot = tempfile.mkdtemp(prefix="truenas_pos_altroot_")
+    pool_name = f"postest_{os.getpid()}"
 
     try:
-        subprocess.run(['truncate', '-s', '200M', vdev_file], check=True)
+        subprocess.run(["truncate", "-s", "200M", vdev_file], check=True)
         subprocess.run(
-            ['zpool', 'create', pool_name, vdev_file, '-R', altroot],
+            ["zpool", "create", pool_name, vdev_file, "-R", altroot],
             check=True,
         )
         yield pool_name
     finally:
         subprocess.run(
-            ['zpool', 'destroy', '-f', pool_name],
-            timeout=30, check=False,
+            ["zpool", "destroy", "-f", pool_name],
+            timeout=30,
+            check=False,
         )
-        shutil.rmtree(tmpdir,  ignore_errors=True)
+        shutil.rmtree(tmpdir, ignore_errors=True)
         shutil.rmtree(altroot, ignore_errors=True)
 
 
@@ -86,17 +89,17 @@ def _zfs_create_dataset(pool, acltype):
     global _ds_counter
     _ds_counter += 1
 
-    ds = f'{pool}/acl_{acltype}_{_ds_counter}'
-    mountpoint = tempfile.mkdtemp(prefix=f'truenas_pos_{acltype}_')
+    ds = f"{pool}/acl_{acltype}_{_ds_counter}"
+    mountpoint = tempfile.mkdtemp(prefix=f"truenas_pos_{acltype}_")
 
-    subprocess.run(['zfs', 'create', ds], check=True)
-    subprocess.run(['zfs', 'set', 'mountpoint=legacy', ds], check=True)
-    subprocess.run(['zfs', 'set', f'acltype={acltype}', ds], check=True)
-    if acltype == 'nfsv4':
-        subprocess.run(['zfs', 'set', 'aclmode=passthrough', ds], check=True)
-        subprocess.run(['zfs', 'set', 'aclinherit=passthrough', ds], check=True)
+    subprocess.run(["zfs", "create", ds], check=True)
+    subprocess.run(["zfs", "set", "mountpoint=legacy", ds], check=True)
+    subprocess.run(["zfs", "set", f"acltype={acltype}", ds], check=True)
+    if acltype == "nfsv4":
+        subprocess.run(["zfs", "set", "aclmode=passthrough", ds], check=True)
+        subprocess.run(["zfs", "set", "aclinherit=passthrough", ds], check=True)
 
-    subprocess.run(['mount', '-t', 'zfs', ds, mountpoint], check=True)
+    subprocess.run(["mount", "-t", "zfs", ds, mountpoint], check=True)
     return ds, mountpoint
 
 
@@ -109,18 +112,21 @@ def _zfs_destroy_dataset(ds, mountpoint):
     gc.collect()
     gc.collect()
 
-    subprocess.run(['umount', mountpoint], check=False)
+    subprocess.run(["umount", mountpoint], check=False)
     shutil.rmtree(mountpoint, ignore_errors=True)
 
     for attempt in range(30):
         try:
             subprocess.run(
-                ['zfs', 'destroy', '-f', ds],
-                capture_output=True, text=True, check=True, timeout=30,
+                ["zfs", "destroy", "-f", ds],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,
             )
             return
         except subprocess.CalledProcessError as exc:
-            if 'busy' in exc.stderr.lower() and attempt < 29:
+            if "busy" in exc.stderr.lower() and attempt < 29:
                 gc.collect()
                 time.sleep(1)
             else:
@@ -129,7 +135,8 @@ def _zfs_destroy_dataset(ds, mountpoint):
 
 # ── Per-test dataset fixtures ─────────────────────────────────────────────────
 
-@pytest.fixture(scope='function')
+
+@pytest.fixture(scope="function")
 def nfs4_dataset(zpool, zfs_enabled):
     """
     ZFS dataset with acltype=nfsv4 when ZFS is available; otherwise
@@ -137,14 +144,14 @@ def nfs4_dataset(zpool, zfs_enabled):
     Yields the mountpoint path.
     """
     if zfs_enabled and zpool is not None:
-        ds, mountpoint = _zfs_create_dataset(zpool, 'nfsv4')
+        ds, mountpoint = _zfs_create_dataset(zpool, "nfsv4")
         yield mountpoint
         _zfs_destroy_dataset(ds, mountpoint)
     else:
-        yield '/NFSV4ACL'
+        yield "/NFSV4ACL"
 
 
-@pytest.fixture(scope='function')
+@pytest.fixture(scope="function")
 def posix_dataset(zpool, zfs_enabled):
     """
     ZFS dataset with acltype=posixacl when ZFS is available; otherwise
@@ -152,8 +159,8 @@ def posix_dataset(zpool, zfs_enabled):
     Yields the mountpoint path.
     """
     if zfs_enabled and zpool is not None:
-        ds, mountpoint = _zfs_create_dataset(zpool, 'posixacl')
+        ds, mountpoint = _zfs_create_dataset(zpool, "posixacl")
         yield mountpoint
         _zfs_destroy_dataset(ds, mountpoint)
     else:
-        yield '/POSIXACL'
+        yield "/POSIXACL"

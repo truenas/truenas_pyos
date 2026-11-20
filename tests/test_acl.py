@@ -21,11 +21,11 @@ import truenas_os as t
 
 # ── binary layout helpers ────────────────────────────────────────────────────
 
-_NFS4_HDR  = struct.Struct('>II')       # acl_flags, naces
-_NFS4_ACE  = struct.Struct('>IIIII')    # type, flags, iflag, access_mask, who
+_NFS4_HDR = struct.Struct(">II")  # acl_flags, naces
+_NFS4_ACE = struct.Struct(">IIIII")  # type, flags, iflag, access_mask, who
 
-_POSIX_HDR = struct.Struct('<I')        # version
-_POSIX_ACE = struct.Struct('<HHI')      # tag, perm, id
+_POSIX_HDR = struct.Struct("<I")  # version
+_POSIX_ACE = struct.Struct("<HHI")  # tag, perm, id
 POSIX_SPECIAL_ID = 0xFFFFFFFF
 
 
@@ -38,20 +38,17 @@ def _unpack_nfs4_acl(data):
 
 
 def _unpack_posix_acl(data):
-    version, = _POSIX_HDR.unpack_from(data, 0)
+    (version,) = _POSIX_HDR.unpack_from(data, 0)
     n = (len(data) - _POSIX_HDR.size) // _POSIX_ACE.size
-    entries = [_POSIX_ACE.unpack_from(data, _POSIX_HDR.size + i * _POSIX_ACE.size)
-               for i in range(n)]
+    entries = [_POSIX_ACE.unpack_from(data, _POSIX_HDR.size + i * _POSIX_ACE.size) for i in range(n)]
     return version, entries
 
 
-
-def _open_file(directory, name='testfile'):
-    return os.open(os.path.join(directory, name),
-                   os.O_RDWR | os.O_CREAT, 0o644)
+def _open_file(directory, name="testfile"):
+    return os.open(os.path.join(directory, name), os.O_RDWR | os.O_CREAT, 0o644)
 
 
-def _open_dir(directory, name='testdir'):
+def _open_dir(directory, name="testdir"):
     path = os.path.join(directory, name)
     os.makedirs(path, exist_ok=True)
     return os.open(path, os.O_RDONLY | os.O_DIRECTORY)
@@ -60,46 +57,48 @@ def _open_dir(directory, name='testdir'):
 # ── shared ACL fixtures ──────────────────────────────────────────────────────
 
 _MINIMAL_POSIX_ACES = [
-    t.POSIXAce(tag=t.POSIXTag.USER_OBJ,
-               perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE),
-    t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ,
-               perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
-    t.POSIXAce(tag=t.POSIXTag.OTHER,
-               perms=t.POSIXPerm(0)),
+    t.POSIXAce(tag=t.POSIXTag.USER_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE),
+    t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
+    t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0)),
 ]
 
 _EXTENDED_POSIX_ACES = [
-    t.POSIXAce(tag=t.POSIXTag.USER_OBJ,
-               perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE),
-    t.POSIXAce(tag=t.POSIXTag.USER,
-               perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, id=1001),
-    t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ,
-               perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
-    t.POSIXAce(tag=t.POSIXTag.MASK,
-               perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
-    t.POSIXAce(tag=t.POSIXTag.OTHER,
-               perms=t.POSIXPerm(0)),
+    t.POSIXAce(tag=t.POSIXTag.USER_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE),
+    t.POSIXAce(tag=t.POSIXTag.USER, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, id=1001),
+    t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
+    t.POSIXAce(tag=t.POSIXTag.MASK, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
+    t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0)),
 ]
 
 _NFS4_FULL = (
-    t.NFS4Perm.READ_DATA        | t.NFS4Perm.WRITE_DATA       |
-    t.NFS4Perm.APPEND_DATA      | t.NFS4Perm.READ_NAMED_ATTRS |
-    t.NFS4Perm.WRITE_NAMED_ATTRS| t.NFS4Perm.EXECUTE          |
-    t.NFS4Perm.DELETE_CHILD     | t.NFS4Perm.READ_ATTRIBUTES  |
-    t.NFS4Perm.WRITE_ATTRIBUTES | t.NFS4Perm.DELETE           |
-    t.NFS4Perm.READ_ACL         | t.NFS4Perm.WRITE_ACL        |
-    t.NFS4Perm.WRITE_OWNER      | t.NFS4Perm.SYNCHRONIZE
+    t.NFS4Perm.READ_DATA
+    | t.NFS4Perm.WRITE_DATA
+    | t.NFS4Perm.APPEND_DATA
+    | t.NFS4Perm.READ_NAMED_ATTRS
+    | t.NFS4Perm.WRITE_NAMED_ATTRS
+    | t.NFS4Perm.EXECUTE
+    | t.NFS4Perm.DELETE_CHILD
+    | t.NFS4Perm.READ_ATTRIBUTES
+    | t.NFS4Perm.WRITE_ATTRIBUTES
+    | t.NFS4Perm.DELETE
+    | t.NFS4Perm.READ_ACL
+    | t.NFS4Perm.WRITE_ACL
+    | t.NFS4Perm.WRITE_OWNER
+    | t.NFS4Perm.SYNCHRONIZE
 )
 _NFS4_READ_EXEC = (
-    t.NFS4Perm.READ_DATA        | t.NFS4Perm.READ_NAMED_ATTRS |
-    t.NFS4Perm.EXECUTE          | t.NFS4Perm.READ_ATTRIBUTES  |
-    t.NFS4Perm.READ_ACL         | t.NFS4Perm.SYNCHRONIZE
+    t.NFS4Perm.READ_DATA
+    | t.NFS4Perm.READ_NAMED_ATTRS
+    | t.NFS4Perm.EXECUTE
+    | t.NFS4Perm.READ_ATTRIBUTES
+    | t.NFS4Perm.READ_ACL
+    | t.NFS4Perm.SYNCHRONIZE
 )
 
 _BASE_NFS4_ACES = [
-    t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),                      _NFS4_FULL,      t.NFS4Who.OWNER),
-    t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.IDENTIFIER_GROUP,        _NFS4_READ_EXEC, t.NFS4Who.GROUP),
-    t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),                      _NFS4_READ_EXEC, t.NFS4Who.EVERYONE),
+    t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), _NFS4_FULL, t.NFS4Who.OWNER),
+    t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.IDENTIFIER_GROUP, _NFS4_READ_EXEC, t.NFS4Who.GROUP),
+    t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), _NFS4_READ_EXEC, t.NFS4Who.EVERYONE),
 ]
 
 
@@ -107,85 +106,87 @@ _BASE_NFS4_ACES = [
 # Module symbols
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_functions_present():
-    for name in ('fgetacl', 'fsetacl', 'fsetacl_nfs4', 'fsetacl_posix'):
-        assert callable(getattr(t, name)), f'missing function: {name}'
+    for name in ("fgetacl", "fsetacl", "fsetacl_nfs4", "fsetacl_posix"):
+        assert callable(getattr(t, name)), f"missing function: {name}"
 
 
 def test_nfs4_enums_present():
-    for name in ('NFS4AceType', 'NFS4Who', 'NFS4Perm', 'NFS4Flag', 'NFS4ACLFlag'):
-        assert hasattr(t, name), f'missing enum: {name}'
+    for name in ("NFS4AceType", "NFS4Who", "NFS4Perm", "NFS4Flag", "NFS4ACLFlag"):
+        assert hasattr(t, name), f"missing enum: {name}"
 
 
 def test_posix_enums_present():
-    for name in ('POSIXTag', 'POSIXPerm'):
-        assert hasattr(t, name), f'missing enum: {name}'
+    for name in ("POSIXTag", "POSIXPerm"):
+        assert hasattr(t, name), f"missing enum: {name}"
 
 
 def test_types_present():
-    for name in ('NFS4Ace', 'NFS4ACL', 'POSIXAce', 'POSIXACL'):
-        assert hasattr(t, name), f'missing type: {name}'
+    for name in ("NFS4Ace", "NFS4ACL", "POSIXAce", "POSIXACL"):
+        assert hasattr(t, name), f"missing type: {name}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # NFS4 enum values
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_nfs4_ace_type_values():
     assert t.NFS4AceType.ALLOW == 0
-    assert t.NFS4AceType.DENY  == 1
+    assert t.NFS4AceType.DENY == 1
     assert t.NFS4AceType.AUDIT == 2
     assert t.NFS4AceType.ALARM == 3
 
 
 def test_nfs4_who_values():
-    assert t.NFS4Who.NAMED    == 0
-    assert t.NFS4Who.OWNER    == 1
-    assert t.NFS4Who.GROUP    == 2
+    assert t.NFS4Who.NAMED == 0
+    assert t.NFS4Who.OWNER == 1
+    assert t.NFS4Who.GROUP == 2
     assert t.NFS4Who.EVERYONE == 3
 
 
 def test_nfs4_perm_values():
-    assert t.NFS4Perm.READ_DATA         == 0x00000001
-    assert t.NFS4Perm.WRITE_DATA        == 0x00000002
-    assert t.NFS4Perm.APPEND_DATA       == 0x00000004
-    assert t.NFS4Perm.READ_NAMED_ATTRS  == 0x00000008
+    assert t.NFS4Perm.READ_DATA == 0x00000001
+    assert t.NFS4Perm.WRITE_DATA == 0x00000002
+    assert t.NFS4Perm.APPEND_DATA == 0x00000004
+    assert t.NFS4Perm.READ_NAMED_ATTRS == 0x00000008
     assert t.NFS4Perm.WRITE_NAMED_ATTRS == 0x00000010
-    assert t.NFS4Perm.EXECUTE           == 0x00000020
-    assert t.NFS4Perm.DELETE_CHILD      == 0x00000040
-    assert t.NFS4Perm.READ_ATTRIBUTES   == 0x00000080
-    assert t.NFS4Perm.WRITE_ATTRIBUTES  == 0x00000100
-    assert t.NFS4Perm.DELETE            == 0x00010000
-    assert t.NFS4Perm.READ_ACL          == 0x00020000
-    assert t.NFS4Perm.WRITE_ACL         == 0x00040000
-    assert t.NFS4Perm.WRITE_OWNER       == 0x00080000
-    assert t.NFS4Perm.SYNCHRONIZE       == 0x00100000
+    assert t.NFS4Perm.EXECUTE == 0x00000020
+    assert t.NFS4Perm.DELETE_CHILD == 0x00000040
+    assert t.NFS4Perm.READ_ATTRIBUTES == 0x00000080
+    assert t.NFS4Perm.WRITE_ATTRIBUTES == 0x00000100
+    assert t.NFS4Perm.DELETE == 0x00010000
+    assert t.NFS4Perm.READ_ACL == 0x00020000
+    assert t.NFS4Perm.WRITE_ACL == 0x00040000
+    assert t.NFS4Perm.WRITE_OWNER == 0x00080000
+    assert t.NFS4Perm.SYNCHRONIZE == 0x00100000
 
 
 def test_nfs4_flag_values():
-    assert t.NFS4Flag.FILE_INHERIT         == 0x00000001
-    assert t.NFS4Flag.DIRECTORY_INHERIT    == 0x00000002
+    assert t.NFS4Flag.FILE_INHERIT == 0x00000001
+    assert t.NFS4Flag.DIRECTORY_INHERIT == 0x00000002
     assert t.NFS4Flag.NO_PROPAGATE_INHERIT == 0x00000004
-    assert t.NFS4Flag.INHERIT_ONLY         == 0x00000008
-    assert t.NFS4Flag.SUCCESSFUL_ACCESS    == 0x00000010
-    assert t.NFS4Flag.FAILED_ACCESS        == 0x00000020
-    assert t.NFS4Flag.IDENTIFIER_GROUP     == 0x00000040
-    assert t.NFS4Flag.INHERITED            == 0x00000080
+    assert t.NFS4Flag.INHERIT_ONLY == 0x00000008
+    assert t.NFS4Flag.SUCCESSFUL_ACCESS == 0x00000010
+    assert t.NFS4Flag.FAILED_ACCESS == 0x00000020
+    assert t.NFS4Flag.IDENTIFIER_GROUP == 0x00000040
+    assert t.NFS4Flag.INHERITED == 0x00000080
 
 
 def test_nfs4_acl_flag_values():
-    assert t.NFS4ACLFlag.AUTO_INHERIT  == 0x0001
-    assert t.NFS4ACLFlag.PROTECTED     == 0x0002
-    assert t.NFS4ACLFlag.DEFAULTED     == 0x0004
+    assert t.NFS4ACLFlag.AUTO_INHERIT == 0x0001
+    assert t.NFS4ACLFlag.PROTECTED == 0x0002
+    assert t.NFS4ACLFlag.DEFAULTED == 0x0004
     assert t.NFS4ACLFlag.ACL_IS_TRIVIAL == 0x10000
-    assert t.NFS4ACLFlag.ACL_IS_DIR    == 0x20000
+    assert t.NFS4ACLFlag.ACL_IS_DIR == 0x20000
 
 
 def test_nfs4_perm_combination():
     combo = t.NFS4Perm.READ_DATA | t.NFS4Perm.EXECUTE
     assert int(combo) == 0x00000021
-    assert t.NFS4Perm.READ_DATA  in combo
-    assert t.NFS4Perm.EXECUTE    in combo
+    assert t.NFS4Perm.READ_DATA in combo
+    assert t.NFS4Perm.EXECUTE in combo
     assert t.NFS4Perm.WRITE_DATA not in combo
 
 
@@ -197,26 +198,27 @@ def test_nfs4_acl_flag_combination():
 # POSIX enum values
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_posix_tag_values():
-    assert t.POSIXTag.USER_OBJ  == 0x0001
-    assert t.POSIXTag.USER      == 0x0002
+    assert t.POSIXTag.USER_OBJ == 0x0001
+    assert t.POSIXTag.USER == 0x0002
     assert t.POSIXTag.GROUP_OBJ == 0x0004
-    assert t.POSIXTag.GROUP     == 0x0008
-    assert t.POSIXTag.MASK      == 0x0010
-    assert t.POSIXTag.OTHER     == 0x0020
+    assert t.POSIXTag.GROUP == 0x0008
+    assert t.POSIXTag.MASK == 0x0010
+    assert t.POSIXTag.OTHER == 0x0020
 
 
 def test_posix_perm_values():
     assert t.POSIXPerm.EXECUTE == 0x01
-    assert t.POSIXPerm.WRITE   == 0x02
-    assert t.POSIXPerm.READ    == 0x04
+    assert t.POSIXPerm.WRITE == 0x02
+    assert t.POSIXPerm.READ == 0x04
 
 
 def test_posix_perm_combination():
     rwx = t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE
     assert int(rwx) == 0x07
-    assert t.POSIXPerm.READ    in rwx
-    assert t.POSIXPerm.WRITE   in rwx
+    assert t.POSIXPerm.READ in rwx
+    assert t.POSIXPerm.WRITE in rwx
     assert t.POSIXPerm.EXECUTE in rwx
 
 
@@ -224,60 +226,76 @@ def test_posix_perm_combination():
 # NFS4Ace construction
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_nfs4ace_special_owner():
-    ace = t.NFS4Ace(ace_type=t.NFS4AceType.ALLOW, ace_flags=t.NFS4Flag(0),
-                    access_mask=t.NFS4Perm.READ_DATA, who_type=t.NFS4Who.OWNER)
-    assert ace.ace_type    == t.NFS4AceType.ALLOW
-    assert ace.ace_flags   == t.NFS4Flag(0)
+    ace = t.NFS4Ace(
+        ace_type=t.NFS4AceType.ALLOW,
+        ace_flags=t.NFS4Flag(0),
+        access_mask=t.NFS4Perm.READ_DATA,
+        who_type=t.NFS4Who.OWNER,
+    )
+    assert ace.ace_type == t.NFS4AceType.ALLOW
+    assert ace.ace_flags == t.NFS4Flag(0)
     assert ace.access_mask == t.NFS4Perm.READ_DATA
-    assert ace.who_type    == t.NFS4Who.OWNER
-    assert ace.who_id      == -1
+    assert ace.who_type == t.NFS4Who.OWNER
+    assert ace.who_id == -1
 
 
 def test_nfs4ace_named_user():
-    ace = t.NFS4Ace(ace_type=t.NFS4AceType.DENY, ace_flags=t.NFS4Flag.FILE_INHERIT,
-                    access_mask=t.NFS4Perm.WRITE_DATA, who_type=t.NFS4Who.NAMED,
-                    who_id=1001)
+    ace = t.NFS4Ace(
+        ace_type=t.NFS4AceType.DENY,
+        ace_flags=t.NFS4Flag.FILE_INHERIT,
+        access_mask=t.NFS4Perm.WRITE_DATA,
+        who_type=t.NFS4Who.NAMED,
+        who_id=1001,
+    )
     assert ace.who_type == t.NFS4Who.NAMED
-    assert ace.who_id   == 1001
+    assert ace.who_id == 1001
 
 
 def test_nfs4ace_repr():
-    ace = t.NFS4Ace(ace_type=t.NFS4AceType.ALLOW, ace_flags=t.NFS4Flag(0),
-                    access_mask=t.NFS4Perm.EXECUTE, who_type=t.NFS4Who.EVERYONE)
+    ace = t.NFS4Ace(
+        ace_type=t.NFS4AceType.ALLOW,
+        ace_flags=t.NFS4Flag(0),
+        access_mask=t.NFS4Perm.EXECUTE,
+        who_type=t.NFS4Who.EVERYONE,
+    )
     r = repr(ace)
-    assert 'NFS4Ace'  in r
-    assert 'ALLOW'    in r
-    assert 'EVERYONE' in r
+    assert "NFS4Ace" in r
+    assert "ALLOW" in r
+    assert "EVERYONE" in r
 
 
 def test_nfs4ace_all_who_types():
     for who in (t.NFS4Who.OWNER, t.NFS4Who.GROUP, t.NFS4Who.EVERYONE):
-        ace = t.NFS4Ace(ace_type=t.NFS4AceType.ALLOW, ace_flags=t.NFS4Flag(0),
-                        access_mask=t.NFS4Perm.READ_DATA, who_type=who)
+        ace = t.NFS4Ace(
+            ace_type=t.NFS4AceType.ALLOW, ace_flags=t.NFS4Flag(0), access_mask=t.NFS4Perm.READ_DATA, who_type=who
+        )
         assert ace.who_type == who
-        assert ace.who_id   == -1
+        assert ace.who_id == -1
 
 
 def test_nfs4ace_all_ace_types():
-    for atype in (t.NFS4AceType.ALLOW, t.NFS4AceType.DENY,
-                  t.NFS4AceType.AUDIT, t.NFS4AceType.ALARM):
-        ace = t.NFS4Ace(ace_type=atype, ace_flags=t.NFS4Flag(0),
-                        access_mask=t.NFS4Perm.READ_DATA, who_type=t.NFS4Who.OWNER)
+    for atype in (t.NFS4AceType.ALLOW, t.NFS4AceType.DENY, t.NFS4AceType.AUDIT, t.NFS4AceType.ALARM):
+        ace = t.NFS4Ace(
+            ace_type=atype, ace_flags=t.NFS4Flag(0), access_mask=t.NFS4Perm.READ_DATA, who_type=t.NFS4Who.OWNER
+        )
         assert ace.ace_type == atype
 
 
 def test_nfs4ace_combined_flags():
     flags = t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT
-    ace = t.NFS4Ace(ace_type=t.NFS4AceType.ALLOW, ace_flags=flags,
-                    access_mask=t.NFS4Perm.READ_DATA, who_type=t.NFS4Who.OWNER)
-    assert t.NFS4Flag.FILE_INHERIT      in ace.ace_flags
+    ace = t.NFS4Ace(
+        ace_type=t.NFS4AceType.ALLOW, ace_flags=flags, access_mask=t.NFS4Perm.READ_DATA, who_type=t.NFS4Who.OWNER
+    )
+    assert t.NFS4Flag.FILE_INHERIT in ace.ace_flags
     assert t.NFS4Flag.DIRECTORY_INHERIT in ace.ace_flags
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # NFS4ACL construction and binary encoding
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_nfs4acl_construct_from_empty_bytes():
     acl = t.NFS4ACL(_NFS4_HDR.pack(0, 0))
@@ -292,11 +310,11 @@ def test_nfs4acl_construct_from_bytes_single_ace():
     acl = t.NFS4ACL(hdr + ace)
     assert len(acl) == 1
     p = acl.aces[0]
-    assert p.ace_type    == t.NFS4AceType.ALLOW
-    assert p.ace_flags   == t.NFS4Flag(0)
+    assert p.ace_type == t.NFS4AceType.ALLOW
+    assert p.ace_flags == t.NFS4Flag(0)
     assert p.access_mask == t.NFS4Perm.READ_DATA
-    assert p.who_type    == t.NFS4Who.OWNER
-    assert p.who_id      == -1
+    assert p.who_type == t.NFS4Who.OWNER
+    assert p.who_id == -1
 
 
 def test_nfs4acl_construct_from_bytes_named_user():
@@ -304,14 +322,11 @@ def test_nfs4acl_construct_from_bytes_named_user():
     ace = _NFS4_ACE.pack(0, 0, 0, int(t.NFS4Perm.WRITE_DATA), 1001)
     acl = t.NFS4ACL(hdr + ace)
     assert acl.aces[0].who_type == t.NFS4Who.NAMED
-    assert acl.aces[0].who_id   == 1001
+    assert acl.aces[0].who_id == 1001
 
 
 def test_nfs4acl_from_aces_header():
-    acl = t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)
-    ])
+    acl = t.NFS4ACL.from_aces([t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)])
     raw_flags, raw_naces = _NFS4_HDR.unpack_from(bytes(acl), 0)
     assert raw_flags == 0
     assert raw_naces == 1
@@ -319,84 +334,66 @@ def test_nfs4acl_from_aces_header():
 
 def test_nfs4acl_from_aces_acl_flags_in_header():
     flags = t.NFS4ACLFlag.PROTECTED | t.NFS4ACLFlag.AUTO_INHERIT
-    acl = t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)
-    ], acl_flags=flags)
+    acl = t.NFS4ACL.from_aces(
+        [t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)], acl_flags=flags
+    )
     raw_flags, _ = _NFS4_HDR.unpack_from(bytes(acl), 0)
     assert raw_flags == int(flags)
 
 
 def test_nfs4acl_from_aces_size():
-    acl = t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)
-    ] * 3)
+    acl = t.NFS4ACL.from_aces(
+        [t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)] * 3
+    )
     assert len(bytes(acl)) == 8 + 3 * 20
     assert len(acl) == 3
 
 
 def test_nfs4acl_special_owner_encoding():
-    acl = t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)
-    ])
+    acl = t.NFS4ACL.from_aces([t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)])
     _, aces = _unpack_nfs4_acl(bytes(acl))
     ace_type, ace_flags, iflag, access_mask, who = aces[0]
-    assert iflag       == 1
-    assert who         == 1
-    assert ace_type    == 0
+    assert iflag == 1
+    assert who == 1
+    assert ace_type == 0
     assert access_mask == int(t.NFS4Perm.READ_DATA)
 
 
 def test_nfs4acl_special_group_encoding():
-    acl = t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.GROUP)
-    ])
+    acl = t.NFS4ACL.from_aces([t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.GROUP)])
     _, aces = _unpack_nfs4_acl(bytes(acl))
     _, _, iflag, _, who = aces[0]
     assert iflag == 1
-    assert who   == 2
+    assert who == 2
 
 
 def test_nfs4acl_special_everyone_encoding():
-    acl = t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.EVERYONE)
-    ])
+    acl = t.NFS4ACL.from_aces([t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.EVERYONE)])
     _, aces = _unpack_nfs4_acl(bytes(acl))
     _, _, iflag, _, who = aces[0]
     assert iflag == 1
-    assert who   == 3
+    assert who == 3
 
 
 def test_nfs4acl_named_user_encoding():
-    acl = t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, who_id=1234)
-    ])
+    acl = t.NFS4ACL.from_aces(
+        [t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, who_id=1234)]
+    )
     _, aces = _unpack_nfs4_acl(bytes(acl))
     _, _, iflag, _, who = aces[0]
     assert iflag == 0
-    assert who   == 1234
+    assert who == 1234
 
 
 def test_nfs4acl_big_endian():
     """access_mask bytes must be big-endian."""
-    acl = t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  t.NFS4Perm.DELETE, t.NFS4Who.OWNER)
-    ])
+    acl = t.NFS4ACL.from_aces([t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.DELETE, t.NFS4Who.OWNER)])
     # DELETE=0x00010000; access_mask is 4th u32 in ACE (offset 8+12=20)
-    assert bytes(acl)[8 + 12 : 8 + 16] == b'\x00\x01\x00\x00'
+    assert bytes(acl)[8 + 12 : 8 + 16] == b"\x00\x01\x00\x00"
 
 
 def test_nfs4acl_deny_type_encoded():
-    acl = t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0),
-                  t.NFS4Perm.WRITE_DATA, t.NFS4Who.EVERYONE)
-    ])
+    acl = t.NFS4ACL.from_aces([t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0), t.NFS4Perm.WRITE_DATA, t.NFS4Who.EVERYONE)])
     _, aces = _unpack_nfs4_acl(bytes(acl))
     assert aces[0][0] == 1  # DENY
 
@@ -404,12 +401,11 @@ def test_nfs4acl_deny_type_encoded():
 def test_nfs4acl_multiple_aces():
     # from_aces canonicalises: deny+noinherit < deny+inherit < allow+noinherit < allow+inherit
     aces_in = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.FILE_INHERIT,
-                  t.NFS4Perm.READ_DATA | t.NFS4Perm.EXECUTE, t.NFS4Who.OWNER),
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, who_id=500),
-        t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0),
-                  t.NFS4Perm.WRITE_DATA, t.NFS4Who.EVERYONE),
+        t.NFS4Ace(
+            t.NFS4AceType.ALLOW, t.NFS4Flag.FILE_INHERIT, t.NFS4Perm.READ_DATA | t.NFS4Perm.EXECUTE, t.NFS4Who.OWNER
+        ),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, who_id=500),
+        t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0), t.NFS4Perm.WRITE_DATA, t.NFS4Who.EVERYONE),
     ]
     acl = t.NFS4ACL.from_aces(aces_in)
     assert len(acl) == 3
@@ -423,7 +419,7 @@ def test_nfs4acl_multiple_aces():
     assert acl.aces[1].who_type == t.NFS4Who.OWNER
     assert acl.aces[2].ace_type == t.NFS4AceType.ALLOW
     assert acl.aces[2].who_type == t.NFS4Who.NAMED
-    assert acl.aces[2].who_id   == 500
+    assert acl.aces[2].who_id == 500
 
 
 def test_nfs4acl_from_aces_empty():
@@ -433,24 +429,21 @@ def test_nfs4acl_from_aces_empty():
 
 
 def test_nfs4acl_all_nfs4_flags_encoded():
-    all_flags = (t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT |
-                 t.NFS4Flag.INHERIT_ONLY | t.NFS4Flag.INHERITED)
-    acl = t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.ALLOW, all_flags,
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)
-    ])
+    all_flags = t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT | t.NFS4Flag.INHERIT_ONLY | t.NFS4Flag.INHERITED
+    acl = t.NFS4ACL.from_aces([t.NFS4Ace(t.NFS4AceType.ALLOW, all_flags, t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)])
     _, aces = _unpack_nfs4_acl(bytes(acl))
     assert aces[0][1] == int(all_flags)
 
 
 def test_nfs4acl_round_trip_bytes_unchanged():
     aces_in = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW,
-                  t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT,
-                  t.NFS4Perm.READ_DATA | t.NFS4Perm.EXECUTE | t.NFS4Perm.READ_ATTRIBUTES,
-                  t.NFS4Who.OWNER),
-        t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0),
-                  t.NFS4Perm.WRITE_DATA, t.NFS4Who.NAMED, who_id=1001),
+        t.NFS4Ace(
+            t.NFS4AceType.ALLOW,
+            t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT,
+            t.NFS4Perm.READ_DATA | t.NFS4Perm.EXECUTE | t.NFS4Perm.READ_ATTRIBUTES,
+            t.NFS4Who.OWNER,
+        ),
+        t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0), t.NFS4Perm.WRITE_DATA, t.NFS4Who.NAMED, who_id=1001),
     ]
     acl1 = t.NFS4ACL.from_aces(aces_in, acl_flags=t.NFS4ACLFlag.PROTECTED)
     acl2 = t.NFS4ACL.from_aces(acl1.aces, acl_flags=acl1.acl_flags)
@@ -459,46 +452,45 @@ def test_nfs4acl_round_trip_bytes_unchanged():
 
 def test_nfs4acl_round_trip_acl_flags():
     flags = t.NFS4ACLFlag.AUTO_INHERIT | t.NFS4ACLFlag.DEFAULTED
-    acl = t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)
-    ], acl_flags=flags)
+    acl = t.NFS4ACL.from_aces(
+        [t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)], acl_flags=flags
+    )
     assert acl.acl_flags == flags
 
 
 def test_nfs4acl_round_trip_all_perm_bits():
     all_perms = (
-        t.NFS4Perm.READ_DATA | t.NFS4Perm.WRITE_DATA | t.NFS4Perm.APPEND_DATA |
-        t.NFS4Perm.EXECUTE   | t.NFS4Perm.DELETE      | t.NFS4Perm.READ_ACL   |
-        t.NFS4Perm.WRITE_ACL | t.NFS4Perm.WRITE_OWNER | t.NFS4Perm.SYNCHRONIZE
+        t.NFS4Perm.READ_DATA
+        | t.NFS4Perm.WRITE_DATA
+        | t.NFS4Perm.APPEND_DATA
+        | t.NFS4Perm.EXECUTE
+        | t.NFS4Perm.DELETE
+        | t.NFS4Perm.READ_ACL
+        | t.NFS4Perm.WRITE_ACL
+        | t.NFS4Perm.WRITE_OWNER
+        | t.NFS4Perm.SYNCHRONIZE
     )
-    acl = t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), all_perms, t.NFS4Who.OWNER)
-    ])
+    acl = t.NFS4ACL.from_aces([t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), all_perms, t.NFS4Who.OWNER)])
     assert acl.aces[0].access_mask == all_perms
 
 
 def test_nfs4acl_len_and_bytes_consistency():
-    acl = t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)
-    ] * 5)
+    acl = t.NFS4ACL.from_aces(
+        [t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)] * 5
+    )
     assert len(acl) == 5
     assert len(bytes(acl)) == 8 + 5 * 20
 
 
 def test_nfs4acl_repr():
-    acl = t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)
-    ])
-    assert 'NFS4ACL' in repr(acl)
-    assert 'aces'    in repr(acl)
+    acl = t.NFS4ACL.from_aces([t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)])
+    assert "NFS4ACL" in repr(acl)
+    assert "aces" in repr(acl)
 
 
 def test_nfs4acl_wrong_type_raises():
     with pytest.raises(TypeError):
-        t.NFS4ACL.from_aces(['not an ace'])
+        t.NFS4ACL.from_aces(["not an ace"])
 
 
 def test_nfs4acl_bytes_constructor_requires_bytes():
@@ -533,19 +525,17 @@ def test_nfs4acl_trivial_empty_bytes():
 #   NP  = NO_PROPAGATE_INHERIT
 #   INH = INHERITED
 
-_FI  = t.NFS4Flag.FILE_INHERIT
-_DI  = t.NFS4Flag.DIRECTORY_INHERIT
-_IO  = t.NFS4Flag.INHERIT_ONLY
-_NP  = t.NFS4Flag.NO_PROPAGATE_INHERIT
+_FI = t.NFS4Flag.FILE_INHERIT
+_DI = t.NFS4Flag.DIRECTORY_INHERIT
+_IO = t.NFS4Flag.INHERIT_ONLY
+_NP = t.NFS4Flag.NO_PROPAGATE_INHERIT
 _INH = t.NFS4Flag.INHERITED
 _PROP_FLAGS = _FI | _DI | _IO | _NP
 
 
 def _make_ace(flags):
     """Return a single-ACE NFS4ACL with ALLOW / OWNER@ / full-perms."""
-    return t.NFS4ACL.from_aces([
-        t.NFS4Ace(t.NFS4AceType.ALLOW, flags, _NFS4_FULL, t.NFS4Who.OWNER)
-    ])
+    return t.NFS4ACL.from_aces([t.NFS4Ace(t.NFS4AceType.ALLOW, flags, _NFS4_FULL, t.NFS4Who.OWNER)])
 
 
 def _flags_of(acl, idx=0):
@@ -553,6 +543,7 @@ def _flags_of(acl, idx=0):
 
 
 # ── file child (is_dir=False) ────────────────────────────────────────────────
+
 
 def test_nfs4_inherit_file_child_clears_all_inherit_flags():
     """File child: all propagation flags must be cleared, INHERITED set."""
@@ -583,16 +574,17 @@ def test_nfs4_inherit_file_child_inherit_only_cleared():
 
 # ── directory child, no NO_PROPAGATE_INHERIT ─────────────────────────────────
 
+
 def test_nfs4_inherit_dir_child_fi_and_di_clears_inherit_only():
     """FILE_INHERIT + DIRECTORY_INHERIT without NO_PROPAGATE: INHERIT_ONLY cleared."""
     src = _make_ace(_FI | _DI)
     child = src.generate_inherited_acl(is_dir=True)
     f = _flags_of(child)
     assert _INH in f
-    assert _FI  in f
-    assert _DI  in f
-    assert _IO  not in f
-    assert _NP  not in f
+    assert _FI in f
+    assert _DI in f
+    assert _IO not in f
+    assert _NP not in f
 
 
 def test_nfs4_inherit_dir_child_di_only_clears_inherit_only():
@@ -601,8 +593,8 @@ def test_nfs4_inherit_dir_child_di_only_clears_inherit_only():
     child = src.generate_inherited_acl(is_dir=True)
     f = _flags_of(child)
     assert _INH in f
-    assert _DI  in f
-    assert _IO  not in f
+    assert _DI in f
+    assert _IO not in f
 
 
 def test_nfs4_inherit_dir_child_fi_only_inherit_only_stays_set():
@@ -613,10 +605,10 @@ def test_nfs4_inherit_dir_child_fi_only_inherit_only_stays_set():
     child = src.generate_inherited_acl(is_dir=True)
     f = _flags_of(child)
     assert _INH in f
-    assert _FI  in f
-    assert _DI  not in f
-    assert _IO  in f   # must stay set — the bug that was fixed
-    assert _NP  not in f
+    assert _FI in f
+    assert _DI not in f
+    assert _IO in f  # must stay set — the bug that was fixed
+    assert _NP not in f
 
 
 def test_nfs4_inherit_dir_child_fi_only_inherit_only_gets_set():
@@ -627,9 +619,9 @@ def test_nfs4_inherit_dir_child_fi_only_inherit_only_gets_set():
     child = src.generate_inherited_acl(is_dir=True)
     f = _flags_of(child)
     assert _INH in f
-    assert _FI  in f
-    assert _DI  not in f
-    assert _IO  in f   # must be set even though source had it clear
+    assert _FI in f
+    assert _DI not in f
+    assert _IO in f  # must be set even though source had it clear
 
 
 def test_nfs4_inherit_dir_child_fi_di_with_inherit_only_set():
@@ -639,12 +631,13 @@ def test_nfs4_inherit_dir_child_fi_di_with_inherit_only_set():
     child = src.generate_inherited_acl(is_dir=True)
     f = _flags_of(child)
     assert _INH in f
-    assert _FI  in f
-    assert _DI  in f
-    assert _IO  not in f
+    assert _FI in f
+    assert _DI in f
+    assert _IO not in f
 
 
 # ── directory child, NO_PROPAGATE_INHERIT set ────────────────────────────────
+
 
 def test_nfs4_inherit_dir_child_no_propagate_inherit_only_set():
     """NO_PROPAGATE + INHERIT_ONLY (was propagation-only on parent):
@@ -654,10 +647,10 @@ def test_nfs4_inherit_dir_child_no_propagate_inherit_only_set():
     child = src.generate_inherited_acl(is_dir=True)
     f = _flags_of(child)
     assert _INH in f
-    assert _FI  in f
-    assert _DI  in f
-    assert _NP  in f
-    assert _IO  not in f   # must be cleared — second bug that was fixed
+    assert _FI in f
+    assert _DI in f
+    assert _NP in f
+    assert _IO not in f  # must be cleared — second bug that was fixed
 
 
 def test_nfs4_inherit_dir_child_no_propagate_inherit_only_set_di_only():
@@ -684,9 +677,10 @@ def test_nfs4_inherit_dir_child_no_propagate_inherit_only_clear():
 
 # ── error cases ──────────────────────────────────────────────────────────────
 
+
 def test_nfs4_inherit_no_inheritable_aces_raises():
     """An ACL with no inheritable ACEs must raise ValueError."""
-    src = _make_ace(t.NFS4Flag(0))   # no FILE_INHERIT or DIRECTORY_INHERIT
+    src = _make_ace(t.NFS4Flag(0))  # no FILE_INHERIT or DIRECTORY_INHERIT
     with pytest.raises(ValueError):
         src.generate_inherited_acl(is_dir=False)
     with pytest.raises(ValueError):
@@ -704,19 +698,19 @@ def test_nfs4_inherit_dir_child_no_dir_inherit_not_inherited_by_dir():
 # POSIXAce construction
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_posixace_user_obj():
-    ace = t.POSIXAce(tag=t.POSIXTag.USER_OBJ,
-                     perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE)
-    assert ace.tag     == t.POSIXTag.USER_OBJ
-    assert ace.perms   == t.POSIXPerm.READ | t.POSIXPerm.WRITE
-    assert ace.id      == -1
+    ace = t.POSIXAce(tag=t.POSIXTag.USER_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE)
+    assert ace.tag == t.POSIXTag.USER_OBJ
+    assert ace.perms == t.POSIXPerm.READ | t.POSIXPerm.WRITE
+    assert ace.id == -1
     assert ace.default is False
 
 
 def test_posixace_named_user():
     ace = t.POSIXAce(tag=t.POSIXTag.USER, perms=t.POSIXPerm.READ, id=1001)
     assert ace.tag == t.POSIXTag.USER
-    assert ace.id  == 1001
+    assert ace.id == 1001
 
 
 def test_posixace_default_flag():
@@ -726,27 +720,27 @@ def test_posixace_default_flag():
 
 def test_posixace_repr():
     ace = t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ, perms=t.POSIXPerm.EXECUTE)
-    assert 'POSIXAce'  in repr(ace)
-    assert 'GROUP_OBJ' in repr(ace)
+    assert "POSIXAce" in repr(ace)
+    assert "GROUP_OBJ" in repr(ace)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # POSIXACL construction and binary encoding
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_posixacl_construct_from_bytes():
-    buf  = _POSIX_HDR.pack(2)
-    buf += _POSIX_ACE.pack(int(t.POSIXTag.USER_OBJ), int(t.POSIXPerm.READ),
-                           POSIX_SPECIAL_ID)
+    buf = _POSIX_HDR.pack(2)
+    buf += _POSIX_ACE.pack(int(t.POSIXTag.USER_OBJ), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID)
     acl = t.POSIXACL(buf)
-    assert acl.aces[0].tag   == t.POSIXTag.USER_OBJ
+    assert acl.aces[0].tag == t.POSIXTag.USER_OBJ
     assert acl.aces[0].perms == t.POSIXPerm.READ
-    assert acl.aces[0].id    == -1
+    assert acl.aces[0].id == -1
 
 
 def test_posixacl_no_default_gives_empty():
     acl = t.POSIXACL.from_aces(_MINIMAL_POSIX_ACES)
-    assert acl.default_aces  == []
+    assert acl.default_aces == []
     assert acl.default_bytes() is None
 
 
@@ -785,23 +779,20 @@ def test_posixacl_mask_encodes_special_id():
 
 def test_posixacl_little_endian():
     """Perm field must be little-endian."""
-    acl = t.POSIXACL.from_aces([
-        t.POSIXAce(tag=t.POSIXTag.USER_OBJ, perms=t.POSIXPerm.READ)
-    ])
+    acl = t.POSIXACL.from_aces([t.POSIXAce(tag=t.POSIXTag.USER_OBJ, perms=t.POSIXPerm.READ)])
     # perm is bytes 2-3 of the first entry (offset 4 + 2)
-    assert acl.access_bytes()[4 + 2 : 4 + 4] == b'\x04\x00'
+    assert acl.access_bytes()[4 + 2 : 4 + 4] == b"\x04\x00"
 
 
 def test_posixacl_default_aces_separated():
     aces = list(_MINIMAL_POSIX_ACES) + [
-        t.POSIXAce(tag=t.POSIXTag.USER_OBJ,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
+        t.POSIXAce(tag=t.POSIXTag.USER_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
         t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0), default=True),
     ]
     acl = t.POSIXACL.from_aces(aces)
-    _, access  = _unpack_posix_acl(acl.access_bytes())
+    _, access = _unpack_posix_acl(acl.access_bytes())
     _, default = _unpack_posix_acl(acl.default_bytes())
-    assert len(access)  == 3
+    assert len(access) == 3
     assert len(default) == 2
 
 
@@ -813,34 +804,32 @@ def test_posixacl_round_trip_access_bytes():
 
 def test_posixacl_round_trip_with_default():
     aces = list(_MINIMAL_POSIX_ACES) + [
-        t.POSIXAce(tag=t.POSIXTag.USER_OBJ,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
-        t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
+        t.POSIXAce(tag=t.POSIXTag.USER_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
+        t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
         t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0), default=True),
     ]
     acl1 = t.POSIXACL.from_aces(aces)
     acl2 = t.POSIXACL.from_aces(acl1.aces + acl1.default_aces)
-    assert acl1.access_bytes()  == acl2.access_bytes()
+    assert acl1.access_bytes() == acl2.access_bytes()
     assert acl1.default_bytes() == acl2.default_bytes()
 
 
 def test_posixacl_round_trip_tag_and_perm():
     acl = t.POSIXACL.from_aces(_EXTENDED_POSIX_ACES)
     for orig, parsed in zip(_EXTENDED_POSIX_ACES, acl.aces):
-        assert parsed.tag   == orig.tag
+        assert parsed.tag == orig.tag
         assert parsed.perms == orig.perms
 
 
 def test_posixacl_repr():
     acl = t.POSIXACL.from_aces(_MINIMAL_POSIX_ACES)
-    assert 'POSIXACL' in repr(acl)
-    assert 'aces'     in repr(acl)
+    assert "POSIXACL" in repr(acl)
+    assert "aces" in repr(acl)
 
 
 def test_posixacl_wrong_type_raises():
     with pytest.raises(TypeError):
-        t.POSIXACL.from_aces(['not an ace'])
+        t.POSIXACL.from_aces(["not an ace"])
 
 
 def test_posixacl_bytes_constructor_requires_bytes():
@@ -875,6 +864,7 @@ def test_posixacl_trivial_with_default_is_false():
 # (posix_dataset: ZFS posixacl dataset, or tmpdir fallback)
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_posix_fgetacl_returns_posixacl(posix_dataset):
     fd = _open_file(posix_dataset)
     try:
@@ -890,14 +880,14 @@ def test_posix_fsetacl_fgetacl_round_trip_file(posix_dataset):
     fd = _open_file(posix_dataset)
     try:
         t.fsetacl(fd, acl_out)
-        acl_in  = t.fgetacl(fd)
+        acl_in = t.fgetacl(fd)
         tags_in = {a.tag for a in acl_in.aces}
-        assert t.POSIXTag.USER_OBJ  in tags_in
+        assert t.POSIXTag.USER_OBJ in tags_in
         assert t.POSIXTag.GROUP_OBJ in tags_in
-        assert t.POSIXTag.OTHER     in tags_in
+        assert t.POSIXTag.OTHER in tags_in
 
         uo_out = next(a for a in acl_out.aces if a.tag == t.POSIXTag.USER_OBJ)
-        uo_in  = next(a for a in acl_in.aces  if a.tag == t.POSIXTag.USER_OBJ)
+        uo_in = next(a for a in acl_in.aces if a.tag == t.POSIXTag.USER_OBJ)
         assert uo_in.perms == uo_out.perms
     finally:
         os.close(fd)
@@ -905,17 +895,15 @@ def test_posix_fsetacl_fgetacl_round_trip_file(posix_dataset):
 
 def test_posix_fsetacl_named_user(posix_dataset):
     aces = list(_MINIMAL_POSIX_ACES) + [
-        t.POSIXAce(tag=t.POSIXTag.USER,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, id=os.getuid()),
-        t.POSIXAce(tag=t.POSIXTag.MASK,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
+        t.POSIXAce(tag=t.POSIXTag.USER, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, id=os.getuid()),
+        t.POSIXAce(tag=t.POSIXTag.MASK, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
     ]
-    fd = _open_file(posix_dataset, 'named_user')
+    fd = _open_file(posix_dataset, "named_user")
     try:
         t.fsetacl(fd, t.POSIXACL.from_aces(aces))
         named = [a for a in t.fgetacl(fd).aces if a.tag == t.POSIXTag.USER]
         assert len(named) == 1
-        assert named[0].id    == os.getuid()
+        assert named[0].id == os.getuid()
         assert named[0].perms == t.POSIXPerm.READ | t.POSIXPerm.EXECUTE
     finally:
         os.close(fd)
@@ -924,14 +912,14 @@ def test_posix_fsetacl_named_user(posix_dataset):
 def test_posix_fsetacl_named_group(posix_dataset):
     aces = list(_MINIMAL_POSIX_ACES) + [
         t.POSIXAce(tag=t.POSIXTag.GROUP, perms=t.POSIXPerm.READ, id=os.getgid()),
-        t.POSIXAce(tag=t.POSIXTag.MASK,  perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
+        t.POSIXAce(tag=t.POSIXTag.MASK, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
     ]
-    fd = _open_file(posix_dataset, 'named_group')
+    fd = _open_file(posix_dataset, "named_group")
     try:
         t.fsetacl(fd, t.POSIXACL.from_aces(aces))
         groups = [a for a in t.fgetacl(fd).aces if a.tag == t.POSIXTag.GROUP]
         assert len(groups) == 1
-        assert groups[0].id    == os.getgid()
+        assert groups[0].id == os.getgid()
         assert groups[0].perms == t.POSIXPerm.READ
     finally:
         os.close(fd)
@@ -939,13 +927,11 @@ def test_posix_fsetacl_named_group(posix_dataset):
 
 def test_posix_fsetacl_default_acl_on_directory(posix_dataset):
     default_aces = [
-        t.POSIXAce(tag=t.POSIXTag.USER_OBJ,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
-                   default=True),
-        t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
-        t.POSIXAce(tag=t.POSIXTag.MASK,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
+        t.POSIXAce(
+            tag=t.POSIXTag.USER_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE, default=True
+        ),
+        t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
+        t.POSIXAce(tag=t.POSIXTag.MASK, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
         t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0), default=True),
     ]
     fd = _open_dir(posix_dataset)
@@ -953,23 +939,21 @@ def test_posix_fsetacl_default_acl_on_directory(posix_dataset):
         t.fsetacl(fd, t.POSIXACL.from_aces(list(_MINIMAL_POSIX_ACES) + default_aces))
         acl_in = t.fgetacl(fd)
         default_tags = {a.tag for a in acl_in.default_aces}
-        assert t.POSIXTag.USER_OBJ  in default_tags
+        assert t.POSIXTag.USER_OBJ in default_tags
         assert t.POSIXTag.GROUP_OBJ in default_tags
-        assert t.POSIXTag.OTHER     in default_tags
+        assert t.POSIXTag.OTHER in default_tags
     finally:
         os.close(fd)
 
 
 def test_posix_fsetacl_removes_default_acl(posix_dataset):
     default_aces = [
-        t.POSIXAce(tag=t.POSIXTag.USER_OBJ,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
+        t.POSIXAce(tag=t.POSIXTag.USER_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
         t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ, perms=t.POSIXPerm.READ, default=True),
-        t.POSIXAce(tag=t.POSIXTag.MASK,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
+        t.POSIXAce(tag=t.POSIXTag.MASK, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
         t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0), default=True),
     ]
-    fd = _open_dir(posix_dataset, 'rmdefault')
+    fd = _open_dir(posix_dataset, "rmdefault")
     try:
         t.fsetacl(fd, t.POSIXACL.from_aces(list(_MINIMAL_POSIX_ACES) + default_aces))
         assert t.fgetacl(fd).default_aces != []
@@ -983,7 +967,7 @@ def test_posix_fsetacl_removes_default_acl(posix_dataset):
 def test_posix_fsetacl_raw_bytes_interface(posix_dataset):
     # Extended ACL so the kernel stores an xattr (minimal ACL → mode bits only).
     acl_out = t.POSIXACL.from_aces(_EXTENDED_POSIX_ACES)
-    fd = _open_file(posix_dataset, 'raw_bytes')
+    fd = _open_file(posix_dataset, "raw_bytes")
     try:
         t.fsetacl_posix(fd, acl_out.access_bytes(), None)
         acl_in = t.fgetacl(fd)
@@ -999,7 +983,7 @@ def test_posix_fgetacl_bad_fd_raises(posix_dataset):
 
 
 def test_posix_fsetacl_wrong_type_raises(posix_dataset):
-    fd = _open_file(posix_dataset, 'wrongtype')
+    fd = _open_file(posix_dataset, "wrongtype")
     try:
         with pytest.raises(TypeError):
             t.fsetacl(fd, "not an acl")
@@ -1009,7 +993,7 @@ def test_posix_fsetacl_wrong_type_raises(posix_dataset):
 
 def test_posix_fsetacl_none_removes_acl(posix_dataset):
     # Set an extended ACL, verify it's present, then remove and verify it's gone.
-    fd = _open_file(posix_dataset, 'remove_acl')
+    fd = _open_file(posix_dataset, "remove_acl")
     try:
         t.fsetacl(fd, t.POSIXACL.from_aces(_EXTENDED_POSIX_ACES))
         assert isinstance(t.fgetacl(fd), t.POSIXACL)
@@ -1028,7 +1012,7 @@ def test_posix_fsetacl_none_removes_acl(posix_dataset):
 
 def test_posix_fsetacl_none_idempotent(posix_dataset):
     # Calling fsetacl(fd, None) when no xattr exists must not raise.
-    fd = _open_file(posix_dataset, 'remove_acl_empty')
+    fd = _open_file(posix_dataset, "remove_acl_empty")
     try:
         t.fsetacl(fd, None)  # must not raise
     finally:
@@ -1036,7 +1020,7 @@ def test_posix_fsetacl_none_idempotent(posix_dataset):
 
 
 def test_posix_trivial_false_after_set(posix_dataset):
-    fd = _open_file(posix_dataset, 'trivial_set')
+    fd = _open_file(posix_dataset, "trivial_set")
     try:
         t.fsetacl(fd, t.POSIXACL.from_aces(_EXTENDED_POSIX_ACES))
         assert t.fgetacl(fd).trivial is False
@@ -1045,7 +1029,7 @@ def test_posix_trivial_false_after_set(posix_dataset):
 
 
 def test_posix_trivial_true_after_removal(posix_dataset):
-    fd = _open_file(posix_dataset, 'trivial_remove')
+    fd = _open_file(posix_dataset, "trivial_remove")
     try:
         t.fsetacl(fd, t.POSIXACL.from_aces(_EXTENDED_POSIX_ACES))
         assert t.fgetacl(fd).trivial is False
@@ -1069,20 +1053,15 @@ def test_posix_inherited_acl_matches_kernel(posix_dataset):
     # Extended default ACL: named USER entry forces a MASK entry and an
     # explicit xattr on every child created under the directory.
     default_aces = [
-        t.POSIXAce(tag=t.POSIXTag.USER_OBJ,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
-                   default=True),
-        t.POSIXAce(tag=t.POSIXTag.USER,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE,
-                   id=os.getuid(), default=True),
-        t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
-        t.POSIXAce(tag=t.POSIXTag.MASK,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
-                   default=True),
+        t.POSIXAce(
+            tag=t.POSIXTag.USER_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE, default=True
+        ),
+        t.POSIXAce(tag=t.POSIXTag.USER, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, id=os.getuid(), default=True),
+        t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
+        t.POSIXAce(tag=t.POSIXTag.MASK, perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE, default=True),
         t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0), default=True),
     ]
-    parent_path = os.path.join(posix_dataset, 'inh_posix')
+    parent_path = os.path.join(posix_dataset, "inh_posix")
     os.makedirs(parent_path, exist_ok=True)
     parent_fd = os.open(parent_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -1090,12 +1069,12 @@ def test_posix_inherited_acl_matches_kernel(posix_dataset):
         t.fsetacl(parent_fd, parent_acl)
 
         lib_file_acl = parent_acl.generate_inherited_acl(is_dir=False)
-        lib_dir_acl  = parent_acl.generate_inherited_acl(is_dir=True)
+        lib_dir_acl = parent_acl.generate_inherited_acl(is_dir=True)
 
         old_umask = os.umask(0)
         try:
             # ── file child ───────────────────────────────────────────────
-            file_path = os.path.join(parent_path, 'child_file')
+            file_path = os.path.join(parent_path, "child_file")
             fd = os.open(file_path, os.O_CREAT | os.O_RDWR, 0o777)
             try:
                 kern = t.fgetacl(fd)
@@ -1106,12 +1085,12 @@ def test_posix_inherited_acl_matches_kernel(posix_dataset):
                 os.close(fd)
 
             # ── directory child ──────────────────────────────────────────
-            dir_path = os.path.join(parent_path, 'child_dir')
+            dir_path = os.path.join(parent_path, "child_dir")
             os.mkdir(dir_path, 0o777)
             fd = os.open(dir_path, os.O_RDONLY | os.O_DIRECTORY)
             try:
                 kern = t.fgetacl(fd)
-                assert kern.access_bytes()  == lib_dir_acl.access_bytes()
+                assert kern.access_bytes() == lib_dir_acl.access_bytes()
                 assert kern.default_bytes() == lib_dir_acl.default_bytes()
             finally:
                 os.close(fd)
@@ -1125,56 +1104,59 @@ def test_posix_inherited_acl_matches_kernel(posix_dataset):
 # fgetacl: ENODATA synthesis — access ACL absent, synthesised from mode bits
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_posix_fgetacl_fresh_file_has_nonempty_aces(posix_dataset):
     """A freshly created file has no system.posix_acl_access xattr.
     fgetacl must synthesise the trivial access ACL from mode bits so that
     aces is never an empty list."""
-    path = os.path.join(posix_dataset, 'synth_fresh')
+    path = os.path.join(posix_dataset, "synth_fresh")
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
     try:
-        assert 'system.posix_acl_access' not in os.listxattr(fd)
+        assert "system.posix_acl_access" not in os.listxattr(fd)
         acl = t.fgetacl(fd)
         assert isinstance(acl, t.POSIXACL)
         assert len(acl.aces) == 3
         tags = {a.tag for a in acl.aces}
-        assert t.POSIXTag.USER_OBJ  in tags
+        assert t.POSIXTag.USER_OBJ in tags
         assert t.POSIXTag.GROUP_OBJ in tags
-        assert t.POSIXTag.OTHER     in tags
+        assert t.POSIXTag.OTHER in tags
     finally:
         os.close(fd)
         os.unlink(path)
 
 
-@pytest.mark.parametrize('name,mode,user_p,group_p,other_p', [
-    ('synth_777', 0o777,
-     t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
-     t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
-     t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE),
-    ('synth_750', 0o750,
-     t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
-     t.POSIXPerm.READ | t.POSIXPerm.EXECUTE,
-     t.POSIXPerm(0)),
-    ('synth_640', 0o640,
-     t.POSIXPerm.READ | t.POSIXPerm.WRITE,
-     t.POSIXPerm.READ,
-     t.POSIXPerm(0)),
-    ('synth_400', 0o400,
-     t.POSIXPerm.READ,
-     t.POSIXPerm(0),
-     t.POSIXPerm(0)),
-])
-def test_posix_fgetacl_synthesised_access_reflects_mode(
-        posix_dataset, name, mode, user_p, group_p, other_p):
+@pytest.mark.parametrize(
+    "name,mode,user_p,group_p,other_p",
+    [
+        (
+            "synth_777",
+            0o777,
+            t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
+            t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
+            t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
+        ),
+        (
+            "synth_750",
+            0o750,
+            t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
+            t.POSIXPerm.READ | t.POSIXPerm.EXECUTE,
+            t.POSIXPerm(0),
+        ),
+        ("synth_640", 0o640, t.POSIXPerm.READ | t.POSIXPerm.WRITE, t.POSIXPerm.READ, t.POSIXPerm(0)),
+        ("synth_400", 0o400, t.POSIXPerm.READ, t.POSIXPerm(0), t.POSIXPerm(0)),
+    ],
+)
+def test_posix_fgetacl_synthesised_access_reflects_mode(posix_dataset, name, mode, user_p, group_p, other_p):
     """Synthesised access aces must faithfully reflect the inode mode bits."""
     path = os.path.join(posix_dataset, name)
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        os.fchmod(fd, mode)                        # set exact mode, bypass umask
-        assert 'system.posix_acl_access' not in os.listxattr(fd)
+        os.fchmod(fd, mode)  # set exact mode, bypass umask
+        assert "system.posix_acl_access" not in os.listxattr(fd)
         tags = {a.tag: a for a in t.fgetacl(fd).aces}
-        assert tags[t.POSIXTag.USER_OBJ].perms  == user_p
+        assert tags[t.POSIXTag.USER_OBJ].perms == user_p
         assert tags[t.POSIXTag.GROUP_OBJ].perms == group_p
-        assert tags[t.POSIXTag.OTHER].perms     == other_p
+        assert tags[t.POSIXTag.OTHER].perms == other_p
     finally:
         os.close(fd)
         os.unlink(path)
@@ -1182,10 +1164,10 @@ def test_posix_fgetacl_synthesised_access_reflects_mode(
 
 def test_posix_fgetacl_synthesised_aces_have_default_false(posix_dataset):
     """Synthesised access aces must have default=False."""
-    path = os.path.join(posix_dataset, 'synth_not_default')
+    path = os.path.join(posix_dataset, "synth_not_default")
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o755)
     try:
-        assert 'system.posix_acl_access' not in os.listxattr(fd)
+        assert "system.posix_acl_access" not in os.listxattr(fd)
         assert all(not a.default for a in t.fgetacl(fd).aces)
     finally:
         os.close(fd)
@@ -1197,40 +1179,36 @@ def test_posix_fgetacl_default_xattr_only_preserves_default_aces(posix_dataset):
     return both the synthesised access aces (from mode) and the real
     default_aces read from the default xattr."""
     default_aces = [
-        t.POSIXAce(tag=t.POSIXTag.USER_OBJ,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE,
-                   default=True),
-        t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
+        t.POSIXAce(
+            tag=t.POSIXTag.USER_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE, default=True
+        ),
+        t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
         t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0), default=True),
     ]
-    path = os.path.join(posix_dataset, 'default_only_dir')
+    path = os.path.join(posix_dataset, "default_only_dir")
     os.makedirs(path, exist_ok=True)
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         t.fsetacl(fd, t.POSIXACL.from_aces(list(_MINIMAL_POSIX_ACES) + default_aces))
         # Strip the access xattr, leaving only the default xattr.
-        os.removexattr(fd, 'system.posix_acl_access')
-        assert 'system.posix_acl_access' not in os.listxattr(fd)
-        assert 'system.posix_acl_default'     in os.listxattr(fd)
+        os.removexattr(fd, "system.posix_acl_access")
+        assert "system.posix_acl_access" not in os.listxattr(fd)
+        assert "system.posix_acl_default" in os.listxattr(fd)
 
         acl = t.fgetacl(fd)
 
         # Access ACL: synthesised from mode bits, always 3 entries, default=False.
         assert len(acl.aces) == 3
         assert all(not a.default for a in acl.aces)
-        assert {a.tag for a in acl.aces} == {
-            t.POSIXTag.USER_OBJ, t.POSIXTag.GROUP_OBJ, t.POSIXTag.OTHER}
+        assert {a.tag for a in acl.aces} == {t.POSIXTag.USER_OBJ, t.POSIXTag.GROUP_OBJ, t.POSIXTag.OTHER}
 
         # Default ACL: intact, all entries marked default=True.
         assert len(acl.default_aces) == 3
         assert all(a.default for a in acl.default_aces)
         d = {a.tag: a for a in acl.default_aces}
-        assert d[t.POSIXTag.USER_OBJ].perms  == (
-            t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE)
-        assert d[t.POSIXTag.GROUP_OBJ].perms == (
-            t.POSIXPerm.READ | t.POSIXPerm.EXECUTE)
-        assert d[t.POSIXTag.OTHER].perms     == t.POSIXPerm(0)
+        assert d[t.POSIXTag.USER_OBJ].perms == (t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE)
+        assert d[t.POSIXTag.GROUP_OBJ].perms == (t.POSIXPerm.READ | t.POSIXPerm.EXECUTE)
+        assert d[t.POSIXTag.OTHER].perms == t.POSIXPerm(0)
     finally:
         os.close(fd)
         os.rmdir(path)
@@ -1240,6 +1218,7 @@ def test_posix_fgetacl_default_xattr_only_preserves_default_aces(posix_dataset):
 # Live NFS4ACL — fgetacl / fsetacl
 # (nfs4_dataset: ZFS nfsv4 dataset; skipped if ZFS unavailable)
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_nfs4_fgetacl_returns_nfs4acl(nfs4_dataset):
     fd = _open_file(nfs4_dataset)
@@ -1259,60 +1238,56 @@ def test_nfs4_fsetacl_fgetacl_round_trip(nfs4_dataset):
         assert isinstance(acl_in, t.NFS4ACL)
         assert len(acl_in) == len(acl_out)
         for out_ace, in_ace in zip(acl_out.aces, acl_in.aces):
-            assert in_ace.ace_type    == out_ace.ace_type
-            assert in_ace.ace_flags   == out_ace.ace_flags
+            assert in_ace.ace_type == out_ace.ace_type
+            assert in_ace.ace_flags == out_ace.ace_flags
             assert in_ace.access_mask == out_ace.access_mask
-            assert in_ace.who_type    == out_ace.who_type
-            assert in_ace.who_id      == out_ace.who_id
+            assert in_ace.who_type == out_ace.who_type
+            assert in_ace.who_id == out_ace.who_id
     finally:
         os.close(fd)
 
 
 def test_nfs4_fsetacl_acl_flags_preserved(nfs4_dataset):
     flags = t.NFS4ACLFlag.PROTECTED | t.NFS4ACLFlag.AUTO_INHERIT
-    fd = _open_file(nfs4_dataset, 'aclflags')
+    fd = _open_file(nfs4_dataset, "aclflags")
     try:
         t.fsetacl(fd, t.NFS4ACL.from_aces(_BASE_NFS4_ACES, acl_flags=flags))
         acl_in = t.fgetacl(fd)
-        assert t.NFS4ACLFlag.PROTECTED    in acl_in.acl_flags
+        assert t.NFS4ACLFlag.PROTECTED in acl_in.acl_flags
         assert t.NFS4ACLFlag.AUTO_INHERIT in acl_in.acl_flags
     finally:
         os.close(fd)
 
 
 def test_nfs4_fsetacl_named_user_preserved(nfs4_dataset):
-    uid  = os.getuid()
+    uid = os.getuid()
     mask = t.NFS4Perm.READ_DATA | t.NFS4Perm.EXECUTE
     aces = list(_BASE_NFS4_ACES) + [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), mask,
-                  t.NFS4Who.NAMED, who_id=uid),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), mask, t.NFS4Who.NAMED, who_id=uid),
     ]
-    fd = _open_file(nfs4_dataset, 'named_user')
+    fd = _open_file(nfs4_dataset, "named_user")
     try:
         t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
-        named = [a for a in t.fgetacl(fd).aces
-                 if a.who_type == t.NFS4Who.NAMED and a.who_id == uid]
+        named = [a for a in t.fgetacl(fd).aces if a.who_type == t.NFS4Who.NAMED and a.who_id == uid]
         assert len(named) == 1
         assert t.NFS4Perm.READ_DATA in named[0].access_mask
-        assert t.NFS4Perm.EXECUTE   in named[0].access_mask
+        assert t.NFS4Perm.EXECUTE in named[0].access_mask
     finally:
         os.close(fd)
 
 
 def test_nfs4_fsetacl_named_group_preserved(nfs4_dataset):
-    gid  = os.getgid()
+    gid = os.getgid()
     aces = list(_BASE_NFS4_ACES) + [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.IDENTIFIER_GROUP,
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, who_id=gid),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.IDENTIFIER_GROUP, t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, who_id=gid),
     ]
-    fd = _open_file(nfs4_dataset, 'named_group')
+    fd = _open_file(nfs4_dataset, "named_group")
     try:
         t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
         named_grp = [
-            a for a in t.fgetacl(fd).aces
-            if a.who_type == t.NFS4Who.NAMED
-            and t.NFS4Flag.IDENTIFIER_GROUP in a.ace_flags
-            and a.who_id == gid
+            a
+            for a in t.fgetacl(fd).aces
+            if a.who_type == t.NFS4Who.NAMED and t.NFS4Flag.IDENTIFIER_GROUP in a.ace_flags and a.who_id == gid
         ]
         assert len(named_grp) == 1
     finally:
@@ -1325,18 +1300,18 @@ def test_nfs4_fsetacl_deny_entry_preserved(nfs4_dataset):
     uid = 501
     deny_mask = t.NFS4Perm.WRITE_DATA | t.NFS4Perm.APPEND_DATA
     aces = [
-        t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0), deny_mask,
-                  t.NFS4Who.NAMED, who_id=uid),
+        t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0), deny_mask, t.NFS4Who.NAMED, who_id=uid),
     ] + list(_BASE_NFS4_ACES)
-    fd = _open_file(nfs4_dataset, 'deny')
+    fd = _open_file(nfs4_dataset, "deny")
     try:
         t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
-        deny_aces = [a for a in t.fgetacl(fd).aces
-                     if a.ace_type == t.NFS4AceType.DENY
-                     and a.who_type == t.NFS4Who.NAMED
-                     and a.who_id == uid]
+        deny_aces = [
+            a
+            for a in t.fgetacl(fd).aces
+            if a.ace_type == t.NFS4AceType.DENY and a.who_type == t.NFS4Who.NAMED and a.who_id == uid
+        ]
         assert len(deny_aces) >= 1
-        assert t.NFS4Perm.WRITE_DATA  in deny_aces[0].access_mask
+        assert t.NFS4Perm.WRITE_DATA in deny_aces[0].access_mask
         assert t.NFS4Perm.APPEND_DATA in deny_aces[0].access_mask
     finally:
         os.close(fd)
@@ -1345,24 +1320,23 @@ def test_nfs4_fsetacl_deny_entry_preserved(nfs4_dataset):
 def test_nfs4_fsetacl_inherit_flags_on_directory(nfs4_dataset):
     inherit = t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT
     aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_FULL,      t.NFS4Who.OWNER),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_FULL, t.NFS4Who.OWNER),
         t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_READ_EXEC, t.NFS4Who.EVERYONE),
     ]
     fd = _open_dir(nfs4_dataset)
     try:
         t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
         owner_ace = next(
-            a for a in t.fgetacl(fd).aces
-            if a.who_type == t.NFS4Who.OWNER and a.ace_type == t.NFS4AceType.ALLOW
+            a for a in t.fgetacl(fd).aces if a.who_type == t.NFS4Who.OWNER and a.ace_type == t.NFS4AceType.ALLOW
         )
-        assert t.NFS4Flag.FILE_INHERIT      in owner_ace.ace_flags
+        assert t.NFS4Flag.FILE_INHERIT in owner_ace.ace_flags
         assert t.NFS4Flag.DIRECTORY_INHERIT in owner_ace.ace_flags
     finally:
         os.close(fd)
 
 
 def test_nfs4_fgetacl_on_directory_returns_nfs4acl(nfs4_dataset):
-    fd = _open_dir(nfs4_dataset, 'dir_type_check')
+    fd = _open_dir(nfs4_dataset, "dir_type_check")
     try:
         assert isinstance(t.fgetacl(fd), t.NFS4ACL)
     finally:
@@ -1371,7 +1345,7 @@ def test_nfs4_fgetacl_on_directory_returns_nfs4acl(nfs4_dataset):
 
 def test_nfs4_fsetacl_raw_bytes_interface(nfs4_dataset):
     acl_out = t.NFS4ACL.from_aces(_BASE_NFS4_ACES)
-    fd = _open_file(nfs4_dataset, 'raw_bytes')
+    fd = _open_file(nfs4_dataset, "raw_bytes")
     try:
         t.fsetacl_nfs4(fd, bytes(acl_out))
         acl_in = t.fgetacl(fd)
@@ -1384,10 +1358,10 @@ def test_nfs4_fsetacl_raw_bytes_interface(nfs4_dataset):
 def test_nfs4_fsetacl_multiple_round_trips_stable(nfs4_dataset):
     """Writing the same ACL twice must produce identical bytes on read-back."""
     acl_out = t.NFS4ACL.from_aces(_BASE_NFS4_ACES)
-    fd = _open_file(nfs4_dataset, 'stable')
+    fd = _open_file(nfs4_dataset, "stable")
     try:
         t.fsetacl(fd, acl_out)
-        first  = bytes(t.fgetacl(fd))
+        first = bytes(t.fgetacl(fd))
         t.fsetacl(fd, acl_out)
         second = bytes(t.fgetacl(fd))
         assert first == second
@@ -1401,7 +1375,7 @@ def test_nfs4_fgetacl_bad_fd_raises(nfs4_dataset):
 
 
 def test_nfs4_fsetacl_wrong_type_raises(nfs4_dataset):
-    fd = _open_file(nfs4_dataset, 'wrongtype')
+    fd = _open_file(nfs4_dataset, "wrongtype")
     try:
         with pytest.raises(TypeError):
             t.fsetacl(fd, "not an acl")
@@ -1415,10 +1389,10 @@ def test_nfs4_fsetacl_none_removes_acl(nfs4_dataset):
     # NFS4ACLFlag.ACL_IS_TRIVIAL in the returned acl_flags.
     inherit = t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT
     aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_FULL,      t.NFS4Who.OWNER),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_FULL, t.NFS4Who.OWNER),
         t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_READ_EXEC, t.NFS4Who.EVERYONE),
     ]
-    fd = _open_dir(nfs4_dataset, 'remove_acl')
+    fd = _open_dir(nfs4_dataset, "remove_acl")
     try:
         t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
         assert t.NFS4ACLFlag.ACL_IS_TRIVIAL not in t.fgetacl(fd).acl_flags
@@ -1430,7 +1404,7 @@ def test_nfs4_fsetacl_none_removes_acl(nfs4_dataset):
 
 def test_nfs4_fsetacl_none_idempotent(nfs4_dataset):
     # Calling fsetacl(fd, None) when no xattr is set must not raise.
-    fd = _open_file(nfs4_dataset, 'remove_acl_empty')
+    fd = _open_file(nfs4_dataset, "remove_acl_empty")
     try:
         t.fsetacl(fd, None)  # must not raise
     finally:
@@ -1440,10 +1414,10 @@ def test_nfs4_fsetacl_none_idempotent(nfs4_dataset):
 def test_nfs4_trivial_false_after_set(nfs4_dataset):
     inherit = t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT
     aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_FULL,      t.NFS4Who.OWNER),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_FULL, t.NFS4Who.OWNER),
         t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_READ_EXEC, t.NFS4Who.EVERYONE),
     ]
-    fd = _open_dir(nfs4_dataset, 'trivial_set')
+    fd = _open_dir(nfs4_dataset, "trivial_set")
     try:
         t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
         assert t.fgetacl(fd).trivial is False
@@ -1454,10 +1428,10 @@ def test_nfs4_trivial_false_after_set(nfs4_dataset):
 def test_nfs4_trivial_true_after_removal(nfs4_dataset):
     inherit = t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT
     aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_FULL,      t.NFS4Who.OWNER),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_FULL, t.NFS4Who.OWNER),
         t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_READ_EXEC, t.NFS4Who.EVERYONE),
     ]
-    fd = _open_dir(nfs4_dataset, 'trivial_remove')
+    fd = _open_dir(nfs4_dataset, "trivial_remove")
     try:
         t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
         assert t.fgetacl(fd).trivial is False
@@ -1485,19 +1459,19 @@ def test_nfs4_inherited_acl_matches_kernel(nfs4_dataset):
         have INHERIT_ONLY cleared.
     """
     FILE_INH = t.NFS4Flag.FILE_INHERIT
-    DIR_INH  = t.NFS4Flag.DIRECTORY_INHERIT
-    inherit  = FILE_INH | DIR_INH
+    DIR_INH = t.NFS4Flag.DIRECTORY_INHERIT
+    inherit = FILE_INH | DIR_INH
     INHERITED = t.NFS4Flag.INHERITED
     PROP_FLAGS = FILE_INH | DIR_INH | t.NFS4Flag.NO_PROPAGATE_INHERIT | t.NFS4Flag.INHERIT_ONLY
 
     uid = os.getuid()
     parent_aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_FULL,      t.NFS4Who.OWNER),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_FULL, t.NFS4Who.OWNER),
         # Named-user ACE: can never be expressed as mode bits → non-trivial
         t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_READ_EXEC, t.NFS4Who.NAMED, who_id=uid),
         t.NFS4Ace(t.NFS4AceType.ALLOW, inherit, _NFS4_READ_EXEC, t.NFS4Who.EVERYONE),
     ]
-    parent_path = os.path.join(nfs4_dataset, 'inh_nfs4')
+    parent_path = os.path.join(nfs4_dataset, "inh_nfs4")
     os.makedirs(parent_path, exist_ok=True)
     parent_fd = os.open(parent_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -1505,44 +1479,40 @@ def test_nfs4_inherited_acl_matches_kernel(nfs4_dataset):
         t.fsetacl(parent_fd, parent_acl)
 
         lib_file_acl = parent_acl.generate_inherited_acl(is_dir=False)
-        lib_dir_acl  = parent_acl.generate_inherited_acl(is_dir=True)
+        lib_dir_acl = parent_acl.generate_inherited_acl(is_dir=True)
 
         def _structural(ace):
             return (ace.ace_type, ace.ace_flags, ace.who_type, ace.who_id)
 
         # ── file child ───────────────────────────────────────────────────
-        file_path = os.path.join(parent_path, 'child_file')
+        file_path = os.path.join(parent_path, "child_file")
         fd = os.open(file_path, os.O_CREAT | os.O_RDWR, 0o644)
         os.close(fd)
         fd = os.open(file_path, os.O_RDONLY)
         try:
             kern = t.fgetacl(fd)
             assert not kern.trivial, "file child inherited ACL must not be trivial"
-            assert len(kern) == len(lib_file_acl), \
-                f"file ACE count: kernel={len(kern)}, lib={len(lib_file_acl)}"
+            assert len(kern) == len(lib_file_acl), f"file ACE count: kernel={len(kern)}, lib={len(lib_file_acl)}"
             for k, lib in zip(kern.aces, lib_file_acl.aces):
-                assert INHERITED     in k.ace_flags, "INHERITED must be set"
-                assert PROP_FLAGS & k.ace_flags == t.NFS4Flag(0), \
-                    "no propagation flags on file ACE"
+                assert INHERITED in k.ace_flags, "INHERITED must be set"
+                assert PROP_FLAGS & k.ace_flags == t.NFS4Flag(0), "no propagation flags on file ACE"
                 assert _structural(k) == _structural(lib)
         finally:
             os.close(fd)
 
         # ── directory child ──────────────────────────────────────────────
-        dir_path = os.path.join(parent_path, 'child_dir')
+        dir_path = os.path.join(parent_path, "child_dir")
         os.makedirs(dir_path, exist_ok=True)
         fd = os.open(dir_path, os.O_RDONLY | os.O_DIRECTORY)
         try:
             kern = t.fgetacl(fd)
             assert not kern.trivial, "dir child inherited ACL must not be trivial"
-            assert len(kern) == len(lib_dir_acl), \
-                f"dir ACE count: kernel={len(kern)}, lib={len(lib_dir_acl)}"
+            assert len(kern) == len(lib_dir_acl), f"dir ACE count: kernel={len(kern)}, lib={len(lib_dir_acl)}"
             for k, lib in zip(kern.aces, lib_dir_acl.aces):
                 assert INHERITED in k.ace_flags, "INHERITED must be set"
-                assert FILE_INH  in k.ace_flags, "FILE_INHERIT must propagate"
-                assert DIR_INH   in k.ace_flags, "DIRECTORY_INHERIT must propagate"
-                assert t.NFS4Flag.INHERIT_ONLY not in k.ace_flags, \
-                    "INHERIT_ONLY must be cleared on dir child"
+                assert FILE_INH in k.ace_flags, "FILE_INHERIT must propagate"
+                assert DIR_INH in k.ace_flags, "DIRECTORY_INHERIT must propagate"
+                assert t.NFS4Flag.INHERIT_ONLY not in k.ace_flags, "INHERIT_ONLY must be cleared on dir child"
                 assert _structural(k) == _structural(lib)
         finally:
             os.close(fd)
@@ -1554,34 +1524,32 @@ def test_nfs4_inherited_acl_matches_kernel(nfs4_dataset):
 # NFS4ACL validation (nfs4acl_valid)
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_nfs4_valid_deny_owner_rejected(nfs4_dataset):
-    aces = [t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0),
-                      t.NFS4Perm.WRITE_DATA, t.NFS4Who.OWNER)]
-    fd = _open_file(nfs4_dataset, 'val_deny_owner')
+    aces = [t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0), t.NFS4Perm.WRITE_DATA, t.NFS4Who.OWNER)]
+    fd = _open_file(nfs4_dataset, "val_deny_owner")
     try:
-        with pytest.raises(ValueError, match='DENY'):
+        with pytest.raises(ValueError, match="DENY"):
             t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
     finally:
         os.close(fd)
 
 
 def test_nfs4_valid_deny_group_rejected(nfs4_dataset):
-    aces = [t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0),
-                      t.NFS4Perm.WRITE_DATA, t.NFS4Who.GROUP)]
-    fd = _open_file(nfs4_dataset, 'val_deny_group')
+    aces = [t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0), t.NFS4Perm.WRITE_DATA, t.NFS4Who.GROUP)]
+    fd = _open_file(nfs4_dataset, "val_deny_group")
     try:
-        with pytest.raises(ValueError, match='DENY'):
+        with pytest.raises(ValueError, match="DENY"):
             t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
     finally:
         os.close(fd)
 
 
 def test_nfs4_valid_deny_everyone_rejected(nfs4_dataset):
-    aces = [t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0),
-                      t.NFS4Perm.WRITE_DATA, t.NFS4Who.EVERYONE)]
-    fd = _open_file(nfs4_dataset, 'val_deny_everyone')
+    aces = [t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0), t.NFS4Perm.WRITE_DATA, t.NFS4Who.EVERYONE)]
+    fd = _open_file(nfs4_dataset, "val_deny_everyone")
     try:
-        with pytest.raises(ValueError, match='DENY'):
+        with pytest.raises(ValueError, match="DENY"):
             t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
     finally:
         os.close(fd)
@@ -1590,12 +1558,11 @@ def test_nfs4_valid_deny_everyone_rejected(nfs4_dataset):
 def test_nfs4_valid_inherit_only_without_propagation_rejected(nfs4_dataset):
     # INHERIT_ONLY without FILE_INHERIT or DIRECTORY_INHERIT is invalid.
     aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.INHERIT_ONLY,
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.EVERYONE),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.INHERIT_ONLY, t.NFS4Perm.READ_DATA, t.NFS4Who.EVERYONE),
     ] + list(_BASE_NFS4_ACES)
-    fd = _open_file(nfs4_dataset, 'val_inherit_only')
+    fd = _open_file(nfs4_dataset, "val_inherit_only")
     try:
-        with pytest.raises(ValueError, match='INHERIT_ONLY'):
+        with pytest.raises(ValueError, match="INHERIT_ONLY"):
             t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
     finally:
         os.close(fd)
@@ -1604,14 +1571,17 @@ def test_nfs4_valid_inherit_only_without_propagation_rejected(nfs4_dataset):
 def test_nfs4_valid_inherit_only_with_file_inherit_accepted(nfs4_dataset):
     # INHERIT_ONLY is valid when paired with FILE_INHERIT (on a directory).
     aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW,
-                  t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.INHERIT_ONLY,
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.EVERYONE),
-        t.NFS4Ace(t.NFS4AceType.ALLOW,
-                  t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT,
-                  _NFS4_FULL, t.NFS4Who.OWNER),
+        t.NFS4Ace(
+            t.NFS4AceType.ALLOW,
+            t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.INHERIT_ONLY,
+            t.NFS4Perm.READ_DATA,
+            t.NFS4Who.EVERYONE,
+        ),
+        t.NFS4Ace(
+            t.NFS4AceType.ALLOW, t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT, _NFS4_FULL, t.NFS4Who.OWNER
+        ),
     ]
-    fd = _open_dir(nfs4_dataset, 'val_inherit_only_ok')
+    fd = _open_dir(nfs4_dataset, "val_inherit_only_ok")
     try:
         t.fsetacl(fd, t.NFS4ACL.from_aces(aces))  # must not raise
     finally:
@@ -1620,12 +1590,11 @@ def test_nfs4_valid_inherit_only_with_file_inherit_accepted(nfs4_dataset):
 
 def test_nfs4_valid_file_inherit_on_file_rejected(nfs4_dataset):
     aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.FILE_INHERIT,
-                  _NFS4_FULL, t.NFS4Who.OWNER),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.FILE_INHERIT, _NFS4_FULL, t.NFS4Who.OWNER),
     ] + list(_BASE_NFS4_ACES)
-    fd = _open_file(nfs4_dataset, 'val_file_inherit_on_file')
+    fd = _open_file(nfs4_dataset, "val_file_inherit_on_file")
     try:
-        with pytest.raises(ValueError, match='only valid on directories'):
+        with pytest.raises(ValueError, match="only valid on directories"):
             t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
     finally:
         os.close(fd)
@@ -1633,12 +1602,11 @@ def test_nfs4_valid_file_inherit_on_file_rejected(nfs4_dataset):
 
 def test_nfs4_valid_dir_inherit_on_file_rejected(nfs4_dataset):
     aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.DIRECTORY_INHERIT,
-                  _NFS4_FULL, t.NFS4Who.OWNER),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.DIRECTORY_INHERIT, _NFS4_FULL, t.NFS4Who.OWNER),
     ] + list(_BASE_NFS4_ACES)
-    fd = _open_file(nfs4_dataset, 'val_dir_inherit_on_file')
+    fd = _open_file(nfs4_dataset, "val_dir_inherit_on_file")
     try:
-        with pytest.raises(ValueError, match='only valid on directories'):
+        with pytest.raises(ValueError, match="only valid on directories"):
             t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
     finally:
         os.close(fd)
@@ -1646,12 +1614,11 @@ def test_nfs4_valid_dir_inherit_on_file_rejected(nfs4_dataset):
 
 def test_nfs4_valid_no_propagate_inherit_on_file_rejected(nfs4_dataset):
     aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.NO_PROPAGATE_INHERIT,
-                  _NFS4_FULL, t.NFS4Who.OWNER),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.NO_PROPAGATE_INHERIT, _NFS4_FULL, t.NFS4Who.OWNER),
     ] + list(_BASE_NFS4_ACES)
-    fd = _open_file(nfs4_dataset, 'val_nopropagate_on_file')
+    fd = _open_file(nfs4_dataset, "val_nopropagate_on_file")
     try:
-        with pytest.raises(ValueError, match='only valid on directories'):
+        with pytest.raises(ValueError, match="only valid on directories"):
             t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
     finally:
         os.close(fd)
@@ -1661,15 +1628,14 @@ def test_nfs4_valid_no_propagate_without_propagation_rejected(nfs4_dataset):
     # NO_PROPAGATE_INHERIT without FILE_INHERIT or DIRECTORY_INHERIT is invalid,
     # even when other ACEs in the same ACL have FILE_INHERIT (per-ACE check).
     aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.NO_PROPAGATE_INHERIT,
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.EVERYONE),
-        t.NFS4Ace(t.NFS4AceType.ALLOW,
-                  t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT,
-                  _NFS4_FULL, t.NFS4Who.OWNER),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.NO_PROPAGATE_INHERIT, t.NFS4Perm.READ_DATA, t.NFS4Who.EVERYONE),
+        t.NFS4Ace(
+            t.NFS4AceType.ALLOW, t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT, _NFS4_FULL, t.NFS4Who.OWNER
+        ),
     ]
-    fd = _open_dir(nfs4_dataset, 'val_no_propagate_no_inherit')
+    fd = _open_dir(nfs4_dataset, "val_no_propagate_no_inherit")
     try:
-        with pytest.raises(ValueError, match='NO_PROPAGATE_INHERIT'):
+        with pytest.raises(ValueError, match="NO_PROPAGATE_INHERIT"):
             t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
     finally:
         os.close(fd)
@@ -1678,14 +1644,17 @@ def test_nfs4_valid_no_propagate_without_propagation_rejected(nfs4_dataset):
 def test_nfs4_valid_no_propagate_with_file_inherit_accepted(nfs4_dataset):
     # NO_PROPAGATE_INHERIT is valid when paired with FILE_INHERIT.
     aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW,
-                  t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.NO_PROPAGATE_INHERIT,
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.EVERYONE),
-        t.NFS4Ace(t.NFS4AceType.ALLOW,
-                  t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT,
-                  _NFS4_FULL, t.NFS4Who.OWNER),
+        t.NFS4Ace(
+            t.NFS4AceType.ALLOW,
+            t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.NO_PROPAGATE_INHERIT,
+            t.NFS4Perm.READ_DATA,
+            t.NFS4Who.EVERYONE,
+        ),
+        t.NFS4Ace(
+            t.NFS4AceType.ALLOW, t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT, _NFS4_FULL, t.NFS4Who.OWNER
+        ),
     ]
-    fd = _open_dir(nfs4_dataset, 'val_no_propagate_ok')
+    fd = _open_dir(nfs4_dataset, "val_no_propagate_ok")
     try:
         t.fsetacl(fd, t.NFS4ACL.from_aces(aces))  # must not raise
     finally:
@@ -1694,9 +1663,9 @@ def test_nfs4_valid_no_propagate_with_file_inherit_accepted(nfs4_dataset):
 
 def test_nfs4_valid_directory_without_inheritable_rejected(nfs4_dataset):
     # _BASE_NFS4_ACES has no FILE_INHERIT or DIRECTORY_INHERIT — invalid on a dir.
-    fd = _open_dir(nfs4_dataset, 'val_dir_no_inherit')
+    fd = _open_dir(nfs4_dataset, "val_dir_no_inherit")
     try:
-        with pytest.raises(ValueError, match='directory ACL'):
+        with pytest.raises(ValueError, match="directory ACL"):
             t.fsetacl(fd, t.NFS4ACL.from_aces(_BASE_NFS4_ACES))
     finally:
         os.close(fd)
@@ -1705,6 +1674,7 @@ def test_nfs4_valid_directory_without_inheritable_rejected(nfs4_dataset):
 # ═══════════════════════════════════════════════════════════════════════════
 # POSIXACL validation (posixacl_valid)
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def _make_posix_blob(*entries):
     """Build a raw POSIX ACL blob from (tag, perm, xid) tuples."""
@@ -1717,15 +1687,13 @@ def _make_posix_blob(*entries):
 def test_posix_valid_default_acl_on_file_rejected(posix_dataset):
     # A default ACL is only valid on a directory.
     aces = list(_EXTENDED_POSIX_ACES) + [
-        t.POSIXAce(tag=t.POSIXTag.USER_OBJ,
-                   perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
-        t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ,
-                   perms=t.POSIXPerm.READ, default=True),
+        t.POSIXAce(tag=t.POSIXTag.USER_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
+        t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ, perms=t.POSIXPerm.READ, default=True),
         t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0), default=True),
     ]
-    fd = _open_file(posix_dataset, 'val_default_on_file')
+    fd = _open_file(posix_dataset, "val_default_on_file")
     try:
-        with pytest.raises(ValueError, match='[Dd]efault'):
+        with pytest.raises(ValueError, match="[Dd]efault"):
             t.fsetacl(fd, t.POSIXACL.from_aces(aces))
     finally:
         os.close(fd)
@@ -1733,12 +1701,12 @@ def test_posix_valid_default_acl_on_file_rejected(posix_dataset):
 
 def test_posix_valid_missing_user_obj_rejected(posix_dataset):
     blob = _make_posix_blob(
-        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ),    POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.OTHER),     int(t.POSIXPerm(0)),       POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.OTHER), int(t.POSIXPerm(0)), POSIX_SPECIAL_ID),
     )
-    fd = _open_file(posix_dataset, 'val_no_user_obj')
+    fd = _open_file(posix_dataset, "val_no_user_obj")
     try:
-        with pytest.raises(ValueError, match='USER_OBJ'):
+        with pytest.raises(ValueError, match="USER_OBJ"):
             t.fsetacl_posix(fd, blob, None)
     finally:
         os.close(fd)
@@ -1746,12 +1714,12 @@ def test_posix_valid_missing_user_obj_rejected(posix_dataset):
 
 def test_posix_valid_missing_group_obj_rejected(posix_dataset):
     blob = _make_posix_blob(
-        (int(t.POSIXTag.USER_OBJ),  int(t.POSIXPerm.READ),    POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.OTHER),     int(t.POSIXPerm(0)),       POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.USER_OBJ), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.OTHER), int(t.POSIXPerm(0)), POSIX_SPECIAL_ID),
     )
-    fd = _open_file(posix_dataset, 'val_no_group_obj')
+    fd = _open_file(posix_dataset, "val_no_group_obj")
     try:
-        with pytest.raises(ValueError, match='GROUP_OBJ'):
+        with pytest.raises(ValueError, match="GROUP_OBJ"):
             t.fsetacl_posix(fd, blob, None)
     finally:
         os.close(fd)
@@ -1759,12 +1727,12 @@ def test_posix_valid_missing_group_obj_rejected(posix_dataset):
 
 def test_posix_valid_missing_other_rejected(posix_dataset):
     blob = _make_posix_blob(
-        (int(t.POSIXTag.USER_OBJ),  int(t.POSIXPerm.READ),    POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ),    POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.USER_OBJ), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
     )
-    fd = _open_file(posix_dataset, 'val_no_other')
+    fd = _open_file(posix_dataset, "val_no_other")
     try:
-        with pytest.raises(ValueError, match='OTHER'):
+        with pytest.raises(ValueError, match="OTHER"):
             t.fsetacl_posix(fd, blob, None)
     finally:
         os.close(fd)
@@ -1772,15 +1740,15 @@ def test_posix_valid_missing_other_rejected(posix_dataset):
 
 def test_posix_valid_named_user_without_mask_rejected(posix_dataset):
     blob = _make_posix_blob(
-        (int(t.POSIXTag.USER_OBJ),  int(t.POSIXPerm.READ | t.POSIXPerm.WRITE), POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.USER),       int(t.POSIXPerm.READ),                     1001),
-        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ),                     POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.OTHER),     int(t.POSIXPerm(0)),                        POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.USER_OBJ), int(t.POSIXPerm.READ | t.POSIXPerm.WRITE), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.USER), int(t.POSIXPerm.READ), 1001),
+        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.OTHER), int(t.POSIXPerm(0)), POSIX_SPECIAL_ID),
         # MASK absent
     )
-    fd = _open_file(posix_dataset, 'val_named_no_mask')
+    fd = _open_file(posix_dataset, "val_named_no_mask")
     try:
-        with pytest.raises(ValueError, match='MASK'):
+        with pytest.raises(ValueError, match="MASK"):
             t.fsetacl_posix(fd, blob, None)
     finally:
         os.close(fd)
@@ -1788,15 +1756,15 @@ def test_posix_valid_named_user_without_mask_rejected(posix_dataset):
 
 def test_posix_valid_named_group_without_mask_rejected(posix_dataset):
     blob = _make_posix_blob(
-        (int(t.POSIXTag.USER_OBJ),  int(t.POSIXPerm.READ | t.POSIXPerm.WRITE), POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ),                     POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.GROUP),      int(t.POSIXPerm.READ),                     2001),
-        (int(t.POSIXTag.OTHER),     int(t.POSIXPerm(0)),                        POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.USER_OBJ), int(t.POSIXPerm.READ | t.POSIXPerm.WRITE), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.GROUP), int(t.POSIXPerm.READ), 2001),
+        (int(t.POSIXTag.OTHER), int(t.POSIXPerm(0)), POSIX_SPECIAL_ID),
         # MASK absent
     )
-    fd = _open_file(posix_dataset, 'val_named_grp_no_mask')
+    fd = _open_file(posix_dataset, "val_named_grp_no_mask")
     try:
-        with pytest.raises(ValueError, match='MASK'):
+        with pytest.raises(ValueError, match="MASK"):
             t.fsetacl_posix(fd, blob, None)
     finally:
         os.close(fd)
@@ -1804,16 +1772,16 @@ def test_posix_valid_named_group_without_mask_rejected(posix_dataset):
 
 def test_posix_valid_duplicate_mask_rejected(posix_dataset):
     blob = _make_posix_blob(
-        (int(t.POSIXTag.USER_OBJ),  int(t.POSIXPerm.READ | t.POSIXPerm.WRITE), POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.USER),       int(t.POSIXPerm.READ),                     1001),
-        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ),                     POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.MASK),       int(t.POSIXPerm.READ),                     POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.MASK),       int(t.POSIXPerm.READ),                     POSIX_SPECIAL_ID),  # duplicate
-        (int(t.POSIXTag.OTHER),     int(t.POSIXPerm(0)),                        POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.USER_OBJ), int(t.POSIXPerm.READ | t.POSIXPerm.WRITE), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.USER), int(t.POSIXPerm.READ), 1001),
+        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.MASK), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.MASK), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),  # duplicate
+        (int(t.POSIXTag.OTHER), int(t.POSIXPerm(0)), POSIX_SPECIAL_ID),
     )
-    fd = _open_file(posix_dataset, 'val_dup_mask')
+    fd = _open_file(posix_dataset, "val_dup_mask")
     try:
-        with pytest.raises(ValueError, match='MASK'):
+        with pytest.raises(ValueError, match="MASK"):
             t.fsetacl_posix(fd, blob, None)
     finally:
         os.close(fd)
@@ -1821,14 +1789,14 @@ def test_posix_valid_duplicate_mask_rejected(posix_dataset):
 
 def test_posix_valid_duplicate_user_obj_rejected(posix_dataset):
     blob = _make_posix_blob(
-        (int(t.POSIXTag.USER_OBJ),  int(t.POSIXPerm.READ),    POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.USER_OBJ),  int(t.POSIXPerm.WRITE),   POSIX_SPECIAL_ID),  # duplicate
-        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ),    POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.OTHER),     int(t.POSIXPerm(0)),       POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.USER_OBJ), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.USER_OBJ), int(t.POSIXPerm.WRITE), POSIX_SPECIAL_ID),  # duplicate
+        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.OTHER), int(t.POSIXPerm(0)), POSIX_SPECIAL_ID),
     )
-    fd = _open_file(posix_dataset, 'val_dup_user_obj')
+    fd = _open_file(posix_dataset, "val_dup_user_obj")
     try:
-        with pytest.raises(ValueError, match='USER_OBJ'):
+        with pytest.raises(ValueError, match="USER_OBJ"):
             t.fsetacl_posix(fd, blob, None)
     finally:
         os.close(fd)
@@ -1837,15 +1805,15 @@ def test_posix_valid_duplicate_user_obj_rejected(posix_dataset):
 def test_posix_valid_named_user_with_special_id_rejected(posix_dataset):
     # USER tag with id=0xFFFFFFFF is invalid; that sentinel means "no uid".
     blob = _make_posix_blob(
-        (int(t.POSIXTag.USER_OBJ),  int(t.POSIXPerm.READ),    POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.USER),       int(t.POSIXPerm.READ),    POSIX_SPECIAL_ID),  # bad
-        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ),    POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.MASK),       int(t.POSIXPerm.READ),    POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.OTHER),     int(t.POSIXPerm(0)),       POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.USER_OBJ), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.USER), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),  # bad
+        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.MASK), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.OTHER), int(t.POSIXPerm(0)), POSIX_SPECIAL_ID),
     )
-    fd = _open_file(posix_dataset, 'val_user_special_id')
+    fd = _open_file(posix_dataset, "val_user_special_id")
     try:
-        with pytest.raises(ValueError, match='uid'):
+        with pytest.raises(ValueError, match="uid"):
             t.fsetacl_posix(fd, blob, None)
     finally:
         os.close(fd)
@@ -1853,15 +1821,15 @@ def test_posix_valid_named_user_with_special_id_rejected(posix_dataset):
 
 def test_posix_valid_named_group_with_special_id_rejected(posix_dataset):
     blob = _make_posix_blob(
-        (int(t.POSIXTag.USER_OBJ),  int(t.POSIXPerm.READ),    POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ),    POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.GROUP),      int(t.POSIXPerm.READ),    POSIX_SPECIAL_ID),  # bad
-        (int(t.POSIXTag.MASK),       int(t.POSIXPerm.READ),    POSIX_SPECIAL_ID),
-        (int(t.POSIXTag.OTHER),     int(t.POSIXPerm(0)),       POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.USER_OBJ), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.GROUP_OBJ), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.GROUP), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),  # bad
+        (int(t.POSIXTag.MASK), int(t.POSIXPerm.READ), POSIX_SPECIAL_ID),
+        (int(t.POSIXTag.OTHER), int(t.POSIXPerm(0)), POSIX_SPECIAL_ID),
     )
-    fd = _open_file(posix_dataset, 'val_group_special_id')
+    fd = _open_file(posix_dataset, "val_group_special_id")
     try:
-        with pytest.raises(ValueError, match='gid'):
+        with pytest.raises(ValueError, match="gid"):
             t.fsetacl_posix(fd, blob, None)
     finally:
         os.close(fd)
@@ -1871,11 +1839,11 @@ def test_posix_valid_named_group_with_special_id_rejected(posix_dataset):
 # Boundary tests — large ACL counts
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_nfs4acl_encoding_1000_aces():
     """NFS4ACL.from_aces must encode 1000 ACEs without error (no filesystem needed)."""
     aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, who_id=i)
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, who_id=i)
         for i in range(1, 998)
     ] + list(_BASE_NFS4_ACES)
     acl = t.NFS4ACL.from_aces(aces)
@@ -1886,11 +1854,10 @@ def test_nfs4acl_encoding_1000_aces():
 def test_nfs4_fsetacl_1000_aces_live(nfs4_dataset):
     """Live filesystem must accept a 1000-entry NFS4 ACL on a file."""
     aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, who_id=i)
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, who_id=i)
         for i in range(1, 998)
     ] + list(_BASE_NFS4_ACES)
-    fd = _open_file(nfs4_dataset, 'boundary_1000')
+    fd = _open_file(nfs4_dataset, "boundary_1000")
     try:
         t.fsetacl(fd, t.NFS4ACL.from_aces(aces))
         assert len(t.fgetacl(fd)) == 1000
@@ -1901,15 +1868,13 @@ def test_nfs4_fsetacl_1000_aces_live(nfs4_dataset):
 def test_posixacl_encoding_32_entries():
     """POSIXACL.from_aces must encode a 32-entry ACL (28 named users + 4 required) without error."""
     aces = (
-        [t.POSIXAce(tag=t.POSIXTag.USER_OBJ,
-                    perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE)]
-        + [t.POSIXAce(tag=t.POSIXTag.USER, perms=t.POSIXPerm.READ, id=1000 + i)
-           for i in range(28)]
-        + [t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ,
-                      perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
-           t.POSIXAce(tag=t.POSIXTag.MASK,
-                      perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
-           t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0))]
+        [t.POSIXAce(tag=t.POSIXTag.USER_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE)]
+        + [t.POSIXAce(tag=t.POSIXTag.USER, perms=t.POSIXPerm.READ, id=1000 + i) for i in range(28)]
+        + [
+            t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
+            t.POSIXAce(tag=t.POSIXTag.MASK, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
+            t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0)),
+        ]
     )
     acl = t.POSIXACL.from_aces(aces)
     _, entries = _unpack_posix_acl(acl.access_bytes())
@@ -1919,17 +1884,15 @@ def test_posixacl_encoding_32_entries():
 def test_posix_fsetacl_32_entries_live(posix_dataset):
     """Live filesystem must accept a 32-entry POSIX ACL (28 named users)."""
     aces = (
-        [t.POSIXAce(tag=t.POSIXTag.USER_OBJ,
-                    perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE)]
-        + [t.POSIXAce(tag=t.POSIXTag.USER, perms=t.POSIXPerm.READ, id=1000 + i)
-           for i in range(28)]
-        + [t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ,
-                      perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
-           t.POSIXAce(tag=t.POSIXTag.MASK,
-                      perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
-           t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0))]
+        [t.POSIXAce(tag=t.POSIXTag.USER_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE)]
+        + [t.POSIXAce(tag=t.POSIXTag.USER, perms=t.POSIXPerm.READ, id=1000 + i) for i in range(28)]
+        + [
+            t.POSIXAce(tag=t.POSIXTag.GROUP_OBJ, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
+            t.POSIXAce(tag=t.POSIXTag.MASK, perms=t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
+            t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0)),
+        ]
     )
-    fd = _open_file(posix_dataset, 'boundary_32')
+    fd = _open_file(posix_dataset, "boundary_32")
     try:
         t.fsetacl(fd, t.POSIXACL.from_aces(aces))
         named = [a for a in t.fgetacl(fd).aces if a.tag == t.POSIXTag.USER]

@@ -8,15 +8,15 @@ import truenas_os
 
 def test_module_import():
     """Test that the module can be imported successfully."""
-    assert hasattr(truenas_os, 'fhandle')
+    assert hasattr(truenas_os, "fhandle")
 
 
 def test_fhandle_type_exists():
     """Test that fhandle type has expected attributes."""
-    assert hasattr(truenas_os.fhandle, '__init__')
-    assert hasattr(truenas_os.fhandle, '__bytes__')
-    assert hasattr(truenas_os.fhandle, 'open')
-    assert hasattr(truenas_os.fhandle, 'mount_id')
+    assert hasattr(truenas_os.fhandle, "__init__")
+    assert hasattr(truenas_os.fhandle, "__bytes__")
+    assert hasattr(truenas_os.fhandle, "open")
+    assert hasattr(truenas_os.fhandle, "mount_id")
 
 
 def test_fhandle_from_path():
@@ -59,7 +59,7 @@ def test_fhandle_bytes_structure():
     serialized = bytes(fh)
 
     # Parse the header
-    handle_bytes, handle_type = struct.unpack('II', serialized[:8])
+    handle_bytes, handle_type = struct.unpack("II", serialized[:8])
 
     # handle_bytes should match actual data length
     expected_size = 8 + handle_bytes
@@ -129,19 +129,19 @@ def test_fhandle_bytes_without_mount_id():
 def test_fhandle_empty_bytes():
     """Test that empty handle_bytes raises error."""
     with pytest.raises(ValueError, match="handle_bytes too small"):
-        truenas_os.fhandle(handle_bytes=b'', mount_id=123)
+        truenas_os.fhandle(handle_bytes=b"", mount_id=123)
 
 
 def test_fhandle_invalid_bytes():
     """Test that invalid handle_bytes raises error."""
     with pytest.raises(ValueError, match="handle_bytes too small"):
-        truenas_os.fhandle(handle_bytes=b'abc', mount_id=123)
+        truenas_os.fhandle(handle_bytes=b"abc", mount_id=123)
 
 
 def test_fhandle_incomplete_bytes():
     """Test that incomplete handle_bytes structure raises error."""
     # Create a valid header but incomplete data
-    incomplete = struct.pack('II', 100, 0) + b'\x00' * 8
+    incomplete = struct.pack("II", 100, 0) + b"\x00" * 8
 
     with pytest.raises(ValueError, match="Incorrect encoded handle length"):
         truenas_os.fhandle(handle_bytes=incomplete, mount_id=123)
@@ -153,9 +153,9 @@ def test_fhandle_repr():
     repr_str = repr(fh)
 
     assert isinstance(repr_str, str)
-    assert 'truenas_os.Fhandle' in repr_str
-    assert 'mount_id=' in repr_str
-    assert '<UNINITIALIZED>' not in repr_str
+    assert "truenas_os.Fhandle" in repr_str
+    assert "mount_id=" in repr_str
+    assert "<UNINITIALIZED>" not in repr_str
 
 
 def test_fhandle_with_flags():
@@ -168,11 +168,11 @@ def test_fhandle_with_flags():
 
 def test_flag_constants_exist():
     """Test that flag constants are defined."""
-    assert hasattr(truenas_os, 'FH_AT_SYMLINK_FOLLOW')
-    assert hasattr(truenas_os, 'FH_AT_EMPTY_PATH')
-    assert hasattr(truenas_os, 'FH_AT_HANDLE_FID')
-    assert hasattr(truenas_os, 'FH_AT_HANDLE_CONNECTABLE')
-    assert hasattr(truenas_os, 'FH_AT_HANDLE_MNT_ID_UNIQUE')
+    assert hasattr(truenas_os, "FH_AT_SYMLINK_FOLLOW")
+    assert hasattr(truenas_os, "FH_AT_EMPTY_PATH")
+    assert hasattr(truenas_os, "FH_AT_HANDLE_FID")
+    assert hasattr(truenas_os, "FH_AT_HANDLE_CONNECTABLE")
+    assert hasattr(truenas_os, "FH_AT_HANDLE_MNT_ID_UNIQUE")
 
     # Check they are integers
     assert isinstance(truenas_os.FH_AT_SYMLINK_FOLLOW, int)

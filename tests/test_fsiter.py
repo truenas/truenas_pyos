@@ -11,13 +11,13 @@ import time
 
 def test_iter_filesystem_exists():
     """Test that iter_filesystem_contents function exists."""
-    assert hasattr(truenas_os, 'iter_filesystem_contents')
+    assert hasattr(truenas_os, "iter_filesystem_contents")
 
 
 def test_iter_types_exist():
     """Test that iterator types are available."""
-    assert hasattr(truenas_os, 'FilesystemIterState')
-    assert hasattr(truenas_os, 'IterInstance')
+    assert hasattr(truenas_os, "FilesystemIterState")
+    assert hasattr(truenas_os, "IterInstance")
 
 
 @pytest.fixture
@@ -74,10 +74,7 @@ def get_filesystem_name(path):
 
 def test_iter_basic_iteration(temp_mount_tree):
     """Test basic iteration over a directory tree."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     items = list(iterator)
 
@@ -87,33 +84,30 @@ def test_iter_basic_iteration(temp_mount_tree):
     # Each item should be an IterInstance
     for item in items:
         assert isinstance(item, truenas_os.IterInstance)
-        assert hasattr(item, 'parent')
-        assert hasattr(item, 'name')
-        assert hasattr(item, 'fd')
-        assert hasattr(item, 'statxinfo')
-        assert hasattr(item, 'isdir')
-        assert hasattr(item, 'islnk')
-        assert hasattr(item, 'isreg')
+        assert hasattr(item, "parent")
+        assert hasattr(item, "name")
+        assert hasattr(item, "fd")
+        assert hasattr(item, "statxinfo")
+        assert hasattr(item, "isdir")
+        assert hasattr(item, "islnk")
+        assert hasattr(item, "isreg")
 
 
 def test_iter_instance_fields(temp_mount_tree):
     """Test that IterInstance has all expected fields."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Get first item
     item = next(iterator)
 
     # Check required fields
-    assert hasattr(item, 'parent')
-    assert hasattr(item, 'name')
-    assert hasattr(item, 'fd')
-    assert hasattr(item, 'statxinfo')
-    assert hasattr(item, 'isdir')
-    assert hasattr(item, 'islnk')
-    assert hasattr(item, 'isreg')
+    assert hasattr(item, "parent")
+    assert hasattr(item, "name")
+    assert hasattr(item, "fd")
+    assert hasattr(item, "statxinfo")
+    assert hasattr(item, "isdir")
+    assert hasattr(item, "islnk")
+    assert hasattr(item, "isreg")
 
     # Parent and name should be strings
     assert isinstance(item.parent, str)
@@ -138,22 +132,19 @@ def test_iter_instance_fields(temp_mount_tree):
 
 def test_iter_filesystem_state(temp_mount_tree):
     """Test FilesystemIterState structure."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Iterator should have get_stats method
-    assert hasattr(iterator, 'get_stats')
+    assert hasattr(iterator, "get_stats")
 
     # Get initial stats
     stats = iterator.get_stats()
     assert isinstance(stats, truenas_os.FilesystemIterState)
 
     # Check fields exist
-    assert hasattr(stats, 'cnt')
-    assert hasattr(stats, 'cnt_bytes')
-    assert hasattr(stats, 'current_directory')
+    assert hasattr(stats, "cnt")
+    assert hasattr(stats, "cnt_bytes")
+    assert hasattr(stats, "current_directory")
 
     # Initial count should be 0
     assert stats.cnt == 0
@@ -165,10 +156,7 @@ def test_iter_filesystem_state(temp_mount_tree):
 
 def test_iter_updates_counters(temp_mount_tree):
     """Test that iteration updates cnt and cnt_bytes."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Consume a few items
     items = []
@@ -190,14 +178,11 @@ def test_iter_updates_counters(temp_mount_tree):
 
 def test_iter_is_iterator_protocol(temp_mount_tree):
     """Test that iterator follows Python iterator protocol."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Should have __iter__ and __next__
-    assert hasattr(iterator, '__iter__')
-    assert hasattr(iterator, '__next__')
+    assert hasattr(iterator, "__iter__")
+    assert hasattr(iterator, "__next__")
 
     # __iter__ should return self
     assert iter(iterator) is iterator
@@ -209,10 +194,7 @@ def test_iter_is_iterator_protocol(temp_mount_tree):
 
 def test_iter_exhaustion(temp_mount_tree):
     """Test that iterator properly exhausts and raises StopIteration."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Exhaust the iterator
     items = list(iterator)
@@ -227,9 +209,7 @@ def test_iter_relative_path(temp_mount_tree):
     """Test iteration with a relative_path parameter."""
     # Iterate only within dir1 subdirectory
     iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree),
-        relative_path="dir1"
+        str(temp_mount_tree), get_filesystem_name(temp_mount_tree), relative_path="dir1"
     )
 
     items = list(iterator)
@@ -247,9 +227,7 @@ def test_iter_btime_cutoff(temp_mount_tree):
     past_time = int(time.time()) - 86400 * 365  # 1 year ago
 
     iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree),
-        btime_cutoff=past_time
+        str(temp_mount_tree), get_filesystem_name(temp_mount_tree), btime_cutoff=past_time
     )
 
     items = list(iterator)
@@ -266,9 +244,7 @@ def test_iter_file_open_flags(temp_mount_tree):
     """Test file_open_flags parameter."""
     # Use O_RDONLY flag
     iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree),
-        file_open_flags=os.O_RDONLY
+        str(temp_mount_tree), get_filesystem_name(temp_mount_tree), file_open_flags=os.O_RDONLY
     )
 
     # Should be able to iterate
@@ -279,10 +255,7 @@ def test_iter_file_open_flags(temp_mount_tree):
 def test_iter_invalid_mountpoint():
     """Test that invalid mountpoint raises OSError."""
     with pytest.raises(OSError):
-        iterator = truenas_os.iter_filesystem_contents(
-            "/nonexistent/path",
-            "fake_filesystem"
-        )
+        iterator = truenas_os.iter_filesystem_contents("/nonexistent/path", "fake_filesystem")
         # Try to get first item to trigger error
         next(iterator)
 
@@ -294,10 +267,7 @@ def test_iter_not_a_directory(tmp_path):
     testfile.write_text("test")
 
     with pytest.raises((OSError, NotADirectoryError)):
-        iterator = truenas_os.iter_filesystem_contents(
-            str(testfile),
-            get_filesystem_name(testfile)
-        )
+        iterator = truenas_os.iter_filesystem_contents(str(testfile), get_filesystem_name(testfile))
         next(iterator)
 
 
@@ -308,10 +278,7 @@ def test_iter_fd_cleanup(temp_mount_tree):
     initial_fds = len(os.listdir(f"/proc/{pid}/fd"))
 
     # Create and exhaust iterator
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     items = list(iterator)
 
@@ -326,24 +293,24 @@ def test_iter_fd_cleanup(temp_mount_tree):
     assert final_fds <= initial_fds + 5
 
 
-@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ZFSFLAGS'), reason='needs TrueNAS kernel headers')
+@pytest.mark.skipif(not hasattr(truenas_os, "STATX_ZFSFLAGS"), reason="needs TrueNAS kernel headers")
 def test_iter_statx_has_zfsflags(nfs4_dataset):
     """On ZFS each entry's statxinfo carries stx_zfsflags."""
-    open(os.path.join(nfs4_dataset, 'zfsflags_file'), 'w').close()
+    open(os.path.join(nfs4_dataset, "zfsflags_file"), "w").close()
     for item in truenas_os.iter_filesystem_contents(nfs4_dataset, get_filesystem_name(nfs4_dataset)):
-        if item.name == 'zfsflags_file':
+        if item.name == "zfsflags_file":
             assert item.statxinfo.stx_mask & truenas_os.STATX_ZFSFLAGS
             assert truenas_os.ZFSFlags.ACL_TRIVIAL in truenas_os.ZFSFlags(item.statxinfo.stx_zfsflags)
             return
-    pytest.fail('zfsflags_file not yielded')
+    pytest.fail("zfsflags_file not yielded")
 
 
-@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ACL'), reason='needs TrueNAS kernel headers')
+@pytest.mark.skipif(not hasattr(truenas_os, "STATX_ACL"), reason="needs TrueNAS kernel headers")
 def test_iter_statx_has_posix_acls(posix_dataset):
     """On a POSIX ACL dataset each entry's statxinfo says whether it has an access ACL."""
     t, P = truenas_os, truenas_os.POSIXPerm
-    for name in ('plain', 'named'):
-        open(os.path.join(posix_dataset, name), 'w').close()
+    for name in ("plain", "named"):
+        open(os.path.join(posix_dataset, name), "w").close()
     aces = [
         t.POSIXAce(tag=t.POSIXTag.USER_OBJ, perms=P.READ | P.WRITE),
         t.POSIXAce(tag=t.POSIXTag.USER, perms=P.READ, id=8675309),
@@ -351,37 +318,34 @@ def test_iter_statx_has_posix_acls(posix_dataset):
         t.POSIXAce(tag=t.POSIXTag.MASK, perms=P.READ),
         t.POSIXAce(tag=t.POSIXTag.OTHER, perms=P(0)),
     ]
-    fd = os.open(os.path.join(posix_dataset, 'named'), os.O_RDONLY)
+    fd = os.open(os.path.join(posix_dataset, "named"), os.O_RDONLY)
     try:
         t.fsetacl(fd, t.POSIXACL.from_aces(aces))
     finally:
         os.close(fd)
     seen = {}
     for item in t.iter_filesystem_contents(posix_dataset, get_filesystem_name(posix_dataset)):
-        if item.name in ('plain', 'named'):
+        if item.name in ("plain", "named"):
             assert item.statxinfo.stx_mask & t.STATX_ACL
             seen[item.name] = item.statxinfo.stx_attributes & t.STATX_ATTR_ACL_ACCESS
-    assert seen == {'plain': 0, 'named': t.STATX_ATTR_ACL_ACCESS}
+    assert seen == {"plain": 0, "named": t.STATX_ATTR_ACL_ACCESS}
 
 
 def test_iter_statx_info_complete(temp_mount_tree):
     """Test that statxinfo contains all expected data."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     item = next(iterator)
     st = item.statxinfo
 
     # Should have all basic statx fields
-    assert hasattr(st, 'stx_mode')
-    assert hasattr(st, 'stx_size')
-    assert hasattr(st, 'stx_uid')
-    assert hasattr(st, 'stx_gid')
-    assert hasattr(st, 'stx_ino')
-    assert hasattr(st, 'stx_mtime')
-    assert hasattr(st, 'stx_btime')  # Birth time should be included
+    assert hasattr(st, "stx_mode")
+    assert hasattr(st, "stx_size")
+    assert hasattr(st, "stx_uid")
+    assert hasattr(st, "stx_gid")
+    assert hasattr(st, "stx_ino")
+    assert hasattr(st, "stx_mtime")
+    assert hasattr(st, "stx_btime")  # Birth time should be included
 
     # Mode should match file type
     if item.isdir:
@@ -392,10 +356,7 @@ def test_iter_statx_info_complete(temp_mount_tree):
 
 def test_iter_path_accuracy(temp_mount_tree):
     """Test that reported paths are accurate."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # All parent paths should start with the mount point
     mount_point = str(temp_mount_tree)
@@ -418,15 +379,9 @@ def test_iter_path_accuracy(temp_mount_tree):
 
 def test_iter_multiple_iterators_independent(temp_mount_tree):
     """Test that multiple iterators are independent."""
-    iter1 = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iter1 = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
-    iter2 = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iter2 = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Advance first iterator
     item1 = next(iter1)
@@ -444,10 +399,7 @@ def test_iter_empty_directory(tmp_path):
     emptydir = tmp_path / "empty"
     emptydir.mkdir()
 
-    iterator = truenas_os.iter_filesystem_contents(
-        str(emptydir),
-        get_filesystem_name(emptydir)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(emptydir), get_filesystem_name(emptydir))
 
     items = list(iterator)
 
@@ -467,10 +419,7 @@ def test_iter_deep_nesting(tmp_path):
     # Create a file at the bottom
     (current / "deep_file.txt").write_bytes(b"deep")
 
-    iterator = truenas_os.iter_filesystem_contents(
-        str(tmp_path),
-        get_filesystem_name(tmp_path)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(tmp_path), get_filesystem_name(tmp_path))
 
     items = list(iterator)
 
@@ -486,18 +435,14 @@ def test_iter_reporting_callback_basic(temp_mount_tree):
     calls = []
 
     def callback(dir_stack, state, private_data):
-        calls.append({
-            'cnt': state.cnt,
-            'private_data': private_data,
-            'dir_stack': dir_stack
-        })
+        calls.append({"cnt": state.cnt, "private_data": private_data, "dir_stack": dir_stack})
 
     iterator = truenas_os.iter_filesystem_contents(
         str(temp_mount_tree),
         get_filesystem_name(temp_mount_tree),
         reporting_increment=3,
         reporting_callback=callback,
-        reporting_private_data="test_data"
+        reporting_private_data="test_data",
     )
 
     # Consume iterator
@@ -509,18 +454,20 @@ def test_iter_reporting_callback_basic(temp_mount_tree):
 
     # All calls except possibly the last should be at multiples of 3
     for i, call in enumerate(calls[:-1]):
-        assert call['cnt'] % 3 == 0, f"Call {i} should be at multiple of 3, got {call['cnt']}"
-        assert call['private_data'] == "test_data"
+        assert call["cnt"] % 3 == 0, f"Call {i} should be at multiple of 3, got {call['cnt']}"
+        assert call["private_data"] == "test_data"
         # dir_stack should be a tuple of tuples
-        assert isinstance(call['dir_stack'], tuple)
-        if len(call['dir_stack']) > 0:
-            assert isinstance(call['dir_stack'][0], tuple)
-            assert len(call['dir_stack'][0]) == 2
+        assert isinstance(call["dir_stack"], tuple)
+        if len(call["dir_stack"]) > 0:
+            assert isinstance(call["dir_stack"][0], tuple)
+            assert len(call["dir_stack"][0]) == 2
 
     # The final call should have the total count (may or may not be a multiple of 3)
     final_call = calls[-1]
-    assert final_call['cnt'] == total_count, f"Final callback should report total count {total_count}, got {final_call['cnt']}"
-    assert final_call['private_data'] == "test_data"
+    assert final_call["cnt"] == total_count, (
+        f"Final callback should report total count {total_count}, got {final_call['cnt']}"
+    )
+    assert final_call["private_data"] == "test_data"
 
 
 def test_iter_reporting_callback_no_callback(temp_mount_tree):
@@ -528,7 +475,7 @@ def test_iter_reporting_callback_no_callback(temp_mount_tree):
     iterator = truenas_os.iter_filesystem_contents(
         str(temp_mount_tree),
         get_filesystem_name(temp_mount_tree),
-        reporting_increment=5
+        reporting_increment=5,
         # No callback provided
     )
 
@@ -539,10 +486,7 @@ def test_iter_reporting_callback_no_callback(temp_mount_tree):
 def test_iter_reporting_callback_none(temp_mount_tree):
     """Test that None callback is handled correctly."""
     iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree),
-        reporting_increment=5,
-        reporting_callback=None
+        str(temp_mount_tree), get_filesystem_name(temp_mount_tree), reporting_increment=5, reporting_callback=None
     )
 
     items = list(iterator)
@@ -554,18 +498,11 @@ def test_iter_reporting_callback_final_always_called(temp_mount_tree):
     calls = []
 
     def callback(dir_stack, state, private_data):
-        calls.append({
-            'cnt': state.cnt,
-            'cnt_bytes': state.cnt_bytes,
-            'current_directory': state.current_directory
-        })
+        calls.append({"cnt": state.cnt, "cnt_bytes": state.cnt_bytes, "current_directory": state.current_directory})
 
     # Use an increment that is unlikely to divide evenly into total count
     iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree),
-        reporting_increment=7,
-        reporting_callback=callback
+        str(temp_mount_tree), get_filesystem_name(temp_mount_tree), reporting_increment=7, reporting_callback=callback
     )
 
     items = list(iterator)
@@ -576,26 +513,31 @@ def test_iter_reporting_callback_final_always_called(temp_mount_tree):
 
     # The last callback should always be the final count
     final_call = calls[-1]
-    assert final_call['cnt'] == total_count, \
+    assert final_call["cnt"] == total_count, (
         f"Final callback should report total count {total_count}, got {final_call['cnt']}"
+    )
 
     # Verify that if total_count is not a multiple of 7, we got an extra final callback
     if total_count % 7 != 0:
         # The second-to-last callback (if exists) should be a multiple of 7
         if len(calls) > 1:
-            assert calls[-2]['cnt'] % 7 == 0, \
+            assert calls[-2]["cnt"] % 7 == 0, (
                 f"Second-to-last callback should be at multiple of 7, got {calls[-2]['cnt']}"
+            )
         # The final callback count should NOT be a multiple of 7
-        assert final_call['cnt'] % 7 != 0, \
+        assert final_call["cnt"] % 7 != 0, (
             f"Final callback should not be a multiple of 7 in this test, got {final_call['cnt']}"
+        )
 
     # Verify final callback has the root directory path (we're still in root when callback is made)
-    assert final_call['current_directory'] == str(temp_mount_tree), \
+    assert final_call["current_directory"] == str(temp_mount_tree), (
         f"Final callback should have root directory path, got {final_call['current_directory']}"
+    )
 
 
 def test_iter_reporting_callback_exception(temp_mount_tree):
     """Test that callback exceptions stop iteration."""
+
     def bad_callback(dir_stack, state, private_data):
         if state.cnt >= 3:
             raise ValueError("Callback error at cnt=3")
@@ -604,7 +546,7 @@ def test_iter_reporting_callback_exception(temp_mount_tree):
         str(temp_mount_tree),
         get_filesystem_name(temp_mount_tree),
         reporting_increment=1,
-        reporting_callback=bad_callback
+        reporting_callback=bad_callback,
     )
 
     # Should raise ValueError from callback
@@ -616,9 +558,7 @@ def test_iter_reporting_callback_not_callable(temp_mount_tree):
     """Test that non-callable callback raises TypeError."""
     with pytest.raises(TypeError, match="reporting_callback must be callable"):
         truenas_os.iter_filesystem_contents(
-            str(temp_mount_tree),
-            get_filesystem_name(temp_mount_tree),
-            reporting_callback="not a function"
+            str(temp_mount_tree), get_filesystem_name(temp_mount_tree), reporting_callback="not a function"
         )
 
 
@@ -633,7 +573,7 @@ def test_iter_reporting_increment_zero(temp_mount_tree):
         str(temp_mount_tree),
         get_filesystem_name(temp_mount_tree),
         reporting_increment=0,  # Should disable periodic callbacks
-        reporting_callback=callback
+        reporting_callback=callback,
     )
 
     list(iterator)
@@ -645,10 +585,7 @@ def test_iter_reporting_increment_zero(temp_mount_tree):
 
 def test_iter_skip_directory(temp_mount_tree):
     """Test that skip() prevents recursion into a directory."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     items_found = []
     for item in iterator:
@@ -671,10 +608,7 @@ def test_iter_skip_directory(temp_mount_tree):
 
 def test_iter_skip_on_file_raises_error(temp_mount_tree):
     """Test that calling skip() on a file raises ValueError."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Find first file
     for item in iterator:
@@ -687,21 +621,15 @@ def test_iter_skip_on_file_raises_error(temp_mount_tree):
 
 def test_iter_skip_method_exists(temp_mount_tree):
     """Test that iterator has skip() method."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
-    assert hasattr(iterator, 'skip')
+    assert hasattr(iterator, "skip")
     assert callable(iterator.skip)
 
 
 def test_iter_skip_all_directories(temp_mount_tree):
     """Test skipping all directories to only iterate files in root."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     items_found = []
     for item in iterator:
@@ -727,21 +655,15 @@ def test_iter_skip_all_directories(temp_mount_tree):
 
 def test_iter_dir_stack_method_exists(temp_mount_tree):
     """Test that iterator has dir_stack() method."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
-    assert hasattr(iterator, 'dir_stack')
+    assert hasattr(iterator, "dir_stack")
     assert callable(iterator.dir_stack)
 
 
 def test_iter_dir_stack_initial_state(temp_mount_tree):
     """Test that dir_stack() returns root directory initially."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     stack = iterator.dir_stack()
 
@@ -765,10 +687,7 @@ def test_iter_dir_stack_initial_state(temp_mount_tree):
 
 def test_iter_dir_stack_during_iteration(temp_mount_tree):
     """Test that dir_stack() changes during iteration."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     max_depth = 0
     for item in iterator:
@@ -795,10 +714,7 @@ def test_iter_dir_stack_during_iteration(temp_mount_tree):
 
 def test_iter_dir_stack_after_completion(temp_mount_tree):
     """Test that dir_stack() returns empty tuple after iteration completes."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Exhaust iterator
     list(iterator)
@@ -811,10 +727,7 @@ def test_iter_dir_stack_after_completion(temp_mount_tree):
 
 def test_iter_dir_stack_with_skip(temp_mount_tree):
     """Test that dir_stack() works correctly with skip()."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     found_dir1 = False
     for item in iterator:
@@ -833,16 +746,14 @@ def test_iter_dir_stack_with_skip(temp_mount_tree):
 
 def test_iter_restore_error_exists():
     """Test that IteratorRestoreError exception exists."""
-    assert hasattr(truenas_os, 'IteratorRestoreError')
+    assert hasattr(truenas_os, "IteratorRestoreError")
     assert issubclass(truenas_os.IteratorRestoreError, Exception)
 
 
 def test_iter_dir_stack_parameter_none(temp_mount_tree):
     """Test that dir_stack=None parameter is accepted."""
     iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree),
-        dir_stack=None
+        str(temp_mount_tree), get_filesystem_name(temp_mount_tree), dir_stack=None
     )
 
     # Should iterate normally
@@ -853,9 +764,7 @@ def test_iter_dir_stack_parameter_none(temp_mount_tree):
 def test_iter_dir_stack_parameter_empty(temp_mount_tree):
     """Test that dir_stack=() parameter is accepted."""
     iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree),
-        dir_stack=()
+        str(temp_mount_tree), get_filesystem_name(temp_mount_tree), dir_stack=()
     )
 
     # Should iterate normally
@@ -867,9 +776,7 @@ def test_iter_dir_stack_invalid_type(temp_mount_tree):
     """Test that invalid dir_stack type raises TypeError."""
     with pytest.raises(TypeError, match="dir_stack must be a tuple"):
         truenas_os.iter_filesystem_contents(
-            str(temp_mount_tree),
-            get_filesystem_name(temp_mount_tree),
-            dir_stack="invalid"
+            str(temp_mount_tree), get_filesystem_name(temp_mount_tree), dir_stack="invalid"
         )
 
 
@@ -880,7 +787,7 @@ def test_iter_dir_stack_invalid_entry_format(temp_mount_tree):
         truenas_os.iter_filesystem_contents(
             str(temp_mount_tree),
             get_filesystem_name(temp_mount_tree),
-            dir_stack=(("path",),)  # Missing inode
+            dir_stack=(("path",),),  # Missing inode
         )
 
 
@@ -888,9 +795,7 @@ def test_iter_dir_stack_invalid_inode_type(temp_mount_tree):
     """Test that dir_stack with invalid inode type raises TypeError."""
     with pytest.raises(TypeError, match="inode must be an integer"):
         truenas_os.iter_filesystem_contents(
-            str(temp_mount_tree),
-            get_filesystem_name(temp_mount_tree),
-            dir_stack=(("/path", "not_an_int"),)
+            str(temp_mount_tree), get_filesystem_name(temp_mount_tree), dir_stack=(("/path", "not_an_int"),)
         )
 
 
@@ -908,10 +813,7 @@ def test_iter_dir_stack_restoration_failure_recovery(temp_mount_tree):
     (deep_path / "deepfile.txt").write_bytes(b"deep")
 
     # First iteration - descend to depth 3 and save dir_stack
-    iterator1 = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator1 = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     saved_stack = None
     for item in iterator1:
@@ -927,15 +829,14 @@ def test_iter_dir_stack_restoration_failure_recovery(temp_mount_tree):
 
     # Delete the deepest directory from filesystem
     import shutil
+
     deepest_dir = saved_stack[-1][0]
     shutil.rmtree(deepest_dir)
 
     # Try to restore - should fail with IteratorRestoreError
     try:
         iterator2 = truenas_os.iter_filesystem_contents(
-            str(temp_mount_tree),
-            get_filesystem_name(temp_mount_tree),
-            dir_stack=saved_stack
+            str(temp_mount_tree), get_filesystem_name(temp_mount_tree), dir_stack=saved_stack
         )
         # Try to iterate - should raise error when can't find the path
         list(iterator2)
@@ -943,19 +844,17 @@ def test_iter_dir_stack_restoration_failure_recovery(temp_mount_tree):
     except truenas_os.IteratorRestoreError as e:
         # Verify the exception tells us which depth failed
         # It should fail at depth 2 (0-indexed), trying to find subdir
-        assert hasattr(e, 'depth'), "Exception should have depth attribute"
-        assert hasattr(e, 'path'), "Exception should have path attribute"
+        assert hasattr(e, "depth"), "Exception should have depth attribute"
+        assert hasattr(e, "path"), "Exception should have path attribute"
         assert e.depth == 2, f"Expected failure at depth 2, got {e.depth}"
 
         # Slice the dir_stack to remove the problematic entry
-        recovered_stack = saved_stack[:e.depth]
+        recovered_stack = saved_stack[: e.depth]
         assert len(recovered_stack) == 2  # root + dir2
 
     # Now try to restore with the sliced stack - should succeed
     iterator3 = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree),
-        dir_stack=recovered_stack
+        str(temp_mount_tree), get_filesystem_name(temp_mount_tree), dir_stack=recovered_stack
     )
 
     # Should be able to iterate from dir2 level
@@ -976,10 +875,7 @@ def test_iter_dir_stack_restoration_simple(temp_mount_tree):
     from the beginning (can't seek within DIR* streams).
     """
     # First iteration - save state when we've just entered dir1
-    iterator1 = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator1 = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     saved_stack = None
 
@@ -999,9 +895,7 @@ def test_iter_dir_stack_restoration_simple(temp_mount_tree):
 
     # Restore from saved state
     iterator2 = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree),
-        dir_stack=saved_stack
+        str(temp_mount_tree), get_filesystem_name(temp_mount_tree), dir_stack=saved_stack
     )
 
     # Collect items from restored iterator
@@ -1016,9 +910,7 @@ def test_iter_dir_stack_restoration_simple(temp_mount_tree):
 
     # 2. The restored iterator should NOT have re-yielded dir1 itself
     # (we descended into it silently during restoration)
-    assert "dir1" not in items_after_names, (
-        f"Restored iterator should not re-yield dir1. Got: {items_after_names}"
-    )
+    assert "dir1" not in items_after_names, f"Restored iterator should not re-yield dir1. Got: {items_after_names}"
 
 
 @pytest.fixture
@@ -1052,19 +944,16 @@ def temp_mount_tree_with_symlinks(tmp_path):
 def test_iter_islnk_field_exists():
     """Test that IterInstance has islnk field."""
     # This test just checks the type exists and has the field
-    assert hasattr(truenas_os.IterInstance, '__mro__')
+    assert hasattr(truenas_os.IterInstance, "__mro__")
 
 
 def test_iter_islnk_false_for_regular_files(temp_mount_tree):
     """Test that islnk is False for regular files."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Find a regular file
     for item in iterator:
-        if not item.isdir and item.name.endswith('.txt'):
+        if not item.isdir and item.name.endswith(".txt"):
             # Should be a regular file, not a symlink
             assert item.islnk is False
             assert stat.S_ISREG(item.statxinfo.stx_mode)
@@ -1073,10 +962,7 @@ def test_iter_islnk_false_for_regular_files(temp_mount_tree):
 
 def test_iter_islnk_false_for_directories(temp_mount_tree):
     """Test that islnk is False for directories."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Find a directory
     for item in iterator:
@@ -1090,8 +976,7 @@ def test_iter_islnk_false_for_directories(temp_mount_tree):
 def test_iter_symlinks_basic(temp_mount_tree_with_symlinks):
     """Test basic iteration over a tree with symlinks."""
     iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree_with_symlinks),
-        get_filesystem_name(temp_mount_tree_with_symlinks)
+        str(temp_mount_tree_with_symlinks), get_filesystem_name(temp_mount_tree_with_symlinks)
     )
 
     items = list(iterator)
@@ -1114,8 +999,7 @@ def test_iter_symlinks_basic(temp_mount_tree_with_symlinks):
 def test_iter_symlink_to_file_not_yielded(temp_mount_tree_with_symlinks):
     """Test that symlinks to files are not yielded (openat2 with RESOLVE_NO_SYMLINKS fails)."""
     iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree_with_symlinks),
-        get_filesystem_name(temp_mount_tree_with_symlinks)
+        str(temp_mount_tree_with_symlinks), get_filesystem_name(temp_mount_tree_with_symlinks)
     )
 
     items = list(iterator)
@@ -1135,11 +1019,7 @@ def test_iter_symlink_readdir_detection(temp_mount_tree_with_symlinks):
     so they won't be yielded. This test documents expected behavior.
     """
     # Manually check that symlinks exist in directory
-    symlinks = [
-        "symlink_to_file1.txt",
-        "symlink_to_dir1",
-        "broken_symlink"
-    ]
+    symlinks = ["symlink_to_file1.txt", "symlink_to_dir1", "broken_symlink"]
 
     for name in symlinks:
         path = temp_mount_tree_with_symlinks / name
@@ -1147,8 +1027,7 @@ def test_iter_symlink_readdir_detection(temp_mount_tree_with_symlinks):
 
     # Iterator won't yield them due to RESOLVE_NO_SYMLINKS
     iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree_with_symlinks),
-        get_filesystem_name(temp_mount_tree_with_symlinks)
+        str(temp_mount_tree_with_symlinks), get_filesystem_name(temp_mount_tree_with_symlinks)
     )
 
     items = list(iterator)
@@ -1161,17 +1040,12 @@ def test_iter_symlink_readdir_detection(temp_mount_tree_with_symlinks):
 
 def test_iter_islnk_consistency_with_statx(temp_mount_tree):
     """Test that islnk is consistent with statxinfo.stx_mode."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     for item in iterator:
         # islnk should match S_ISLNK check on statx mode
         expected_islnk = stat.S_ISLNK(item.statxinfo.stx_mode)
-        assert item.islnk == expected_islnk, (
-            f"islnk={item.islnk} but S_ISLNK={expected_islnk} for {item.name}"
-        )
+        assert item.islnk == expected_islnk, f"islnk={item.islnk} but S_ISLNK={expected_islnk} for {item.name}"
 
 
 def test_iter_islnk_and_isdir_mutually_exclusive(temp_mount_tree):
@@ -1181,10 +1055,7 @@ def test_iter_islnk_and_isdir_mutually_exclusive(temp_mount_tree):
     symlinks are not yielded, so we won't see islnk=True items.
     But if we did, they should not also be marked as directories.
     """
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     for item in iterator:
         # In a proper filesystem, these should never both be True
@@ -1196,14 +1067,11 @@ def test_iter_islnk_and_isdir_mutually_exclusive(temp_mount_tree):
 
 def test_iter_all_items_have_islnk_field(temp_mount_tree):
     """Test that all yielded items have the islnk field set."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     count = 0
     for item in iterator:
-        assert hasattr(item, 'islnk'), f"Item {item.name} missing islnk field"
+        assert hasattr(item, "islnk"), f"Item {item.name} missing islnk field"
         assert isinstance(item.islnk, bool), f"Item {item.name} islnk is not bool"
         count += 1
 
@@ -1212,15 +1080,12 @@ def test_iter_all_items_have_islnk_field(temp_mount_tree):
 
 def test_iter_isreg_true_for_regular_files(temp_mount_tree):
     """Test that isreg is True for regular files."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     found_regular_file = False
     # Find a regular file
     for item in iterator:
-        if not item.isdir and item.name.endswith('.txt'):
+        if not item.isdir and item.name.endswith(".txt"):
             # Should be a regular file
             assert item.isreg is True
             assert stat.S_ISREG(item.statxinfo.stx_mode)
@@ -1232,10 +1097,7 @@ def test_iter_isreg_true_for_regular_files(temp_mount_tree):
 
 def test_iter_isreg_false_for_directories(temp_mount_tree):
     """Test that isreg is False for directories."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     found_directory = False
     # Find a directory
@@ -1252,25 +1114,17 @@ def test_iter_isreg_false_for_directories(temp_mount_tree):
 
 def test_iter_isreg_consistency_with_statx(temp_mount_tree):
     """Test that isreg is consistent with statxinfo.stx_mode."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     for item in iterator:
         # isreg should match S_ISREG check on statx mode
         expected_isreg = stat.S_ISREG(item.statxinfo.stx_mode)
-        assert item.isreg == expected_isreg, (
-            f"isreg={item.isreg} but S_ISREG={expected_isreg} for {item.name}"
-        )
+        assert item.isreg == expected_isreg, f"isreg={item.isreg} but S_ISREG={expected_isreg} for {item.name}"
 
 
 def test_iter_isreg_and_isdir_mutually_exclusive(temp_mount_tree):
     """Test that isreg and isdir are never both True."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     for item in iterator:
         # A file cannot be both a regular file and a directory
@@ -1282,14 +1136,11 @@ def test_iter_isreg_and_isdir_mutually_exclusive(temp_mount_tree):
 
 def test_iter_all_items_have_isreg_field(temp_mount_tree):
     """Test that all yielded items have the isreg field set."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     count = 0
     for item in iterator:
-        assert hasattr(item, 'isreg'), f"Item {item.name} missing isreg field"
+        assert hasattr(item, "isreg"), f"Item {item.name} missing isreg field"
         assert isinstance(item.isreg, bool), f"Item {item.name} isreg is not bool"
         count += 1
 
@@ -1298,10 +1149,7 @@ def test_iter_all_items_have_isreg_field(temp_mount_tree):
 
 def test_iter_file_type_flags_coverage(temp_mount_tree):
     """Test that file type flags (isdir, islnk, isreg) provide complete coverage."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     has_regular_file = False
     has_directory = False
@@ -1343,21 +1191,15 @@ def get_open_fds_for_path(base_path):
 
 def test_iter_close_method_exists(temp_mount_tree):
     """Test that iterator has close() method."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
-    assert hasattr(iterator, 'close')
+    assert hasattr(iterator, "close")
     assert callable(iterator.close)
 
 
 def test_iter_close_method_basic(temp_mount_tree):
     """Test that close() method works and prevents further iteration."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Get first item
     first = next(iterator)
@@ -1373,10 +1215,7 @@ def test_iter_close_method_basic(temp_mount_tree):
 
 def test_iter_close_idempotent(temp_mount_tree):
     """Test that close() can be called multiple times safely."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Get first item
     next(iterator)
@@ -1389,10 +1228,7 @@ def test_iter_close_idempotent(temp_mount_tree):
 
 def test_iter_close_prevents_get_stats(temp_mount_tree):
     """Test that get_stats() raises ValueError on closed iterator."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Close the iterator
     iterator.close()
@@ -1404,10 +1240,7 @@ def test_iter_close_prevents_get_stats(temp_mount_tree):
 
 def test_iter_close_prevents_dir_stack(temp_mount_tree):
     """Test that dir_stack() raises ValueError on closed iterator."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Close the iterator
     iterator.close()
@@ -1419,10 +1252,7 @@ def test_iter_close_prevents_dir_stack(temp_mount_tree):
 
 def test_iter_close_prevents_skip(temp_mount_tree):
     """Test that skip() raises ValueError on closed iterator."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Get a directory
     for item in iterator:
@@ -1438,22 +1268,16 @@ def test_iter_close_prevents_skip(temp_mount_tree):
 
 def test_iter_context_manager_protocol(temp_mount_tree):
     """Test that iterator supports context manager protocol."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Check __enter__ and __exit__ exist
-    assert hasattr(iterator, '__enter__')
-    assert hasattr(iterator, '__exit__')
+    assert hasattr(iterator, "__enter__")
+    assert hasattr(iterator, "__exit__")
 
 
 def test_iter_context_manager_basic(temp_mount_tree):
     """Test basic usage of iterator as context manager."""
-    with truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    ) as iterator:
+    with truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree)) as iterator:
         # Should be able to iterate within context
         first = next(iterator)
         assert isinstance(first, truenas_os.IterInstance)
@@ -1467,10 +1291,7 @@ def test_iter_context_manager_full_iteration(temp_mount_tree):
     """Test full iteration within context manager."""
     items = []
 
-    with truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    ) as iterator:
+    with truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree)) as iterator:
         items = list(iterator)
 
     # Should have collected items
@@ -1486,10 +1307,7 @@ def test_iter_context_manager_exception_handling(temp_mount_tree):
     iterator = None
 
     try:
-        with truenas_os.iter_filesystem_contents(
-            str(temp_mount_tree),
-            get_filesystem_name(temp_mount_tree)
-        ) as it:
+        with truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree)) as it:
             iterator = it
             # Get first item
             next(iterator)
@@ -1506,10 +1324,7 @@ def test_iter_context_manager_exception_handling(temp_mount_tree):
 
 def test_iter_context_manager_enter_returns_self(temp_mount_tree):
     """Test that __enter__ returns the iterator itself."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     returned = iterator.__enter__()
     assert returned is iterator
@@ -1519,10 +1334,7 @@ def test_iter_context_manager_enter_returns_self(temp_mount_tree):
 
 def test_iter_context_manager_enter_on_closed_fails(temp_mount_tree):
     """Test that __enter__ on closed iterator raises ValueError."""
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     iterator.close()
 
@@ -1534,10 +1346,7 @@ def test_iter_context_manager_with_skip(temp_mount_tree):
     """Test that skip() works correctly within context manager."""
     items_found = []
 
-    with truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    ) as iterator:
+    with truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree)) as iterator:
         for item in iterator:
             items_found.append(item.name)
             # Skip recursion into dir1
@@ -1557,10 +1366,7 @@ def test_iter_fd_cleanup_with_close(temp_mount_tree):
     assert len(initial_fds) == 0, f"Unexpected open FDs before test: {initial_fds}"
 
     # Create iterator and consume some items (but don't exhaust)
-    iterator = truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    )
+    iterator = truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree))
 
     # Consume a few items - this will open FDs to temp_mount_tree
     for i, item in enumerate(iterator):
@@ -1587,10 +1393,7 @@ def test_iter_fd_cleanup_with_context_manager(temp_mount_tree):
     assert len(initial_fds) == 0, f"Unexpected open FDs before test: {initial_fds}"
 
     # Use context manager and consume some items (but don't exhaust)
-    with truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree),
-        get_filesystem_name(temp_mount_tree)
-    ) as iterator:
+    with truenas_os.iter_filesystem_contents(str(temp_mount_tree), get_filesystem_name(temp_mount_tree)) as iterator:
         for i, item in enumerate(iterator):
             if i >= 3:
                 break
@@ -1699,13 +1502,16 @@ def test_eacces_inaccessible_directory_raises(world_tmp_path):
 
 # ── include_symlinks=True ───────────────────────────────────────────────────
 
+
 def test_iter_yields_symlinks_when_enabled(temp_mount_tree_with_symlinks):
     """include_symlinks=True yields the symlink entries with islnk=True."""
-    items = list(truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree_with_symlinks),
-        get_filesystem_name(temp_mount_tree_with_symlinks),
-        include_symlinks=True,
-    ))
+    items = list(
+        truenas_os.iter_filesystem_contents(
+            str(temp_mount_tree_with_symlinks),
+            get_filesystem_name(temp_mount_tree_with_symlinks),
+            include_symlinks=True,
+        )
+    )
     by_name = {item.name: item for item in items}
 
     # File symlink, directory symlink, and broken symlink are all yielded.
@@ -1718,10 +1524,12 @@ def test_iter_yields_symlinks_when_enabled(temp_mount_tree_with_symlinks):
 
 def test_iter_default_still_skips_symlinks(temp_mount_tree_with_symlinks):
     """Default include_symlinks=False preserves the historical skip behavior."""
-    items = list(truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree_with_symlinks),
-        get_filesystem_name(temp_mount_tree_with_symlinks),
-    ))
+    items = list(
+        truenas_os.iter_filesystem_contents(
+            str(temp_mount_tree_with_symlinks),
+            get_filesystem_name(temp_mount_tree_with_symlinks),
+        )
+    )
     names = {item.name for item in items}
     for n in ("symlink_to_file1.txt", "symlink_to_dir1", "broken_symlink"):
         assert n not in names
@@ -1759,7 +1567,8 @@ def test_iter_symlink_fd_supports_statx(temp_mount_tree_with_symlinks):
         if not item.islnk:
             continue
         result = truenas_os.statx(
-            "", dir_fd=item.fd,
+            "",
+            dir_fd=item.fd,
             flags=truenas_os.AT_EMPTY_PATH,
             mask=truenas_os.STATX_BASIC_STATS,
         )
@@ -1770,22 +1579,22 @@ def test_iter_symlink_fd_supports_statx(temp_mount_tree_with_symlinks):
 
 def test_iter_symlinks_do_not_descend(temp_mount_tree_with_symlinks):
     """A symlink pointing to a directory must not cause iteration into its target."""
-    items = list(truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree_with_symlinks),
-        get_filesystem_name(temp_mount_tree_with_symlinks),
-        include_symlinks=True,
-    ))
+    items = list(
+        truenas_os.iter_filesystem_contents(
+            str(temp_mount_tree_with_symlinks),
+            get_filesystem_name(temp_mount_tree_with_symlinks),
+            include_symlinks=True,
+        )
+    )
     # nested1.txt lives inside dir1; if we accidentally descended through
     # symlink_to_dir1 we would see it twice.
-    nested_paths = [
-        os.path.join(item.parent, item.name)
-        for item in items if item.name == "nested1.txt"
-    ]
+    nested_paths = [os.path.join(item.parent, item.name) for item in items if item.name == "nested1.txt"]
     assert len(nested_paths) == 1
     assert nested_paths[0].endswith("/dir1/nested1.txt")
 
 
 # ── include_mountpoints=True ────────────────────────────────────────────────
+
 
 @pytest.fixture
 def temp_mount_tree_with_submount(temp_mount_tree):
@@ -1808,10 +1617,12 @@ def temp_mount_tree_with_submount(temp_mount_tree):
 @pytest.mark.skipif(os.geteuid() != 0, reason="requires root for mount(2)")
 def test_iter_default_skips_mountpoints(temp_mount_tree_with_submount):
     """Default include_mountpoints=False preserves the historical skip behavior."""
-    items = list(truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree_with_submount),
-        get_filesystem_name(temp_mount_tree_with_submount),
-    ))
+    items = list(
+        truenas_os.iter_filesystem_contents(
+            str(temp_mount_tree_with_submount),
+            get_filesystem_name(temp_mount_tree_with_submount),
+        )
+    )
     names = {i.name for i in items}
     assert "submount" not in names
     assert "inside.txt" not in names
@@ -1820,11 +1631,13 @@ def test_iter_default_skips_mountpoints(temp_mount_tree_with_submount):
 @pytest.mark.skipif(os.geteuid() != 0, reason="requires root for mount(2)")
 def test_iter_yields_mountpoints_when_enabled(temp_mount_tree_with_submount):
     """include_mountpoints=True yields the child mount root with ismount=True."""
-    items = list(truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree_with_submount),
-        get_filesystem_name(temp_mount_tree_with_submount),
-        include_mountpoints=True,
-    ))
+    items = list(
+        truenas_os.iter_filesystem_contents(
+            str(temp_mount_tree_with_submount),
+            get_filesystem_name(temp_mount_tree_with_submount),
+            include_mountpoints=True,
+        )
+    )
     by_name = {i.name: i for i in items}
 
     assert "submount" in by_name
@@ -1847,7 +1660,8 @@ def test_iter_mountpoint_fd_supports_statx(temp_mount_tree_with_submount):
         if not item.ismount:
             continue
         result = truenas_os.statx(
-            "", dir_fd=item.fd,
+            "",
+            dir_fd=item.fd,
             flags=truenas_os.AT_EMPTY_PATH,
             mask=truenas_os.STATX_BASIC_STATS,
         )
@@ -1860,11 +1674,13 @@ def test_iter_mountpoint_fd_supports_statx(temp_mount_tree_with_submount):
 @pytest.mark.skipif(os.geteuid() != 0, reason="requires root for mount(2)")
 def test_iter_does_not_descend_into_mountpoints(temp_mount_tree_with_submount):
     """File inside the child mount must not be yielded — the iter is scoped to one fs."""
-    items = list(truenas_os.iter_filesystem_contents(
-        str(temp_mount_tree_with_submount),
-        get_filesystem_name(temp_mount_tree_with_submount),
-        include_mountpoints=True,
-    ))
+    items = list(
+        truenas_os.iter_filesystem_contents(
+            str(temp_mount_tree_with_submount),
+            get_filesystem_name(temp_mount_tree_with_submount),
+            include_mountpoints=True,
+        )
+    )
     assert "inside.txt" not in {i.name for i in items}
 
 
@@ -1898,9 +1714,7 @@ def test_special_files_classify_without_hanging(tmp_path):
     os.mknod(tmp_path / "sock", stat.S_IFSOCK | 0o600)
 
     kinds = {}
-    for item in truenas_os.iter_filesystem_contents(
-        str(tmp_path), get_filesystem_name(tmp_path)
-    ):
+    for item in truenas_os.iter_filesystem_contents(str(tmp_path), get_filesystem_name(tmp_path)):
         kinds[item.name] = (item.isdir, item.islnk, item.isreg, item.ismount)
 
     assert kinds["regular"] == (False, False, True, False)
@@ -1912,7 +1726,7 @@ def test_special_files_classify_without_hanging(tmp_path):
 # Holds a write lease on argv[1] -- the same kernel object as an NFSv4 write
 # delegation held by knfsd -- and releases it 0.2 s after the break starts,
 # the way a client returns its delegation.
-_LEASE_HOLDER = r'''
+_LEASE_HOLDER = r"""
 import fcntl, os, signal, sys, time
 fd = os.open(sys.argv[1], os.O_RDWR)
 signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGIO])
@@ -1928,7 +1742,7 @@ if signal.sigtimedwait([signal.SIGIO], 10) is None:
 time.sleep(0.2)
 fcntl.fcntl(fd, fcntl.F_SETLEASE, fcntl.F_UNLCK)
 print('released', flush=True)
-'''
+"""
 
 
 def test_iter_waits_for_lease_break(tmp_path):
@@ -1945,7 +1759,8 @@ def test_iter_waits_for_lease_break(tmp_path):
 
     with subprocess.Popen(
         [sys.executable, "-c", _LEASE_HOLDER, str(leased)],
-        stdout=subprocess.PIPE, text=True,
+        stdout=subprocess.PIPE,
+        text=True,
     ) as holder:
         try:
             line = holder.stdout.readline()
@@ -1954,9 +1769,9 @@ def test_iter_waits_for_lease_break(tmp_path):
                 pytest.skip(f"no write lease here: {os.strerror(int(status[1]))}")
             assert status == ["ready"], line
 
-            names = {item.name for item in truenas_os.iter_filesystem_contents(
-                str(tmp_path), get_filesystem_name(tmp_path)
-            )}
+            names = {
+                item.name for item in truenas_os.iter_filesystem_contents(str(tmp_path), get_filesystem_name(tmp_path))
+            }
             out, _ = holder.communicate(timeout=20)
         finally:
             if holder.poll() is None:

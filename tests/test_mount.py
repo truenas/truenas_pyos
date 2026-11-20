@@ -6,25 +6,25 @@ import truenas_os
 
 def test_mount_functions_exist():
     """Test that mount functions are available."""
-    assert hasattr(truenas_os, 'listmount')
-    assert hasattr(truenas_os, 'statmount')
+    assert hasattr(truenas_os, "listmount")
+    assert hasattr(truenas_os, "statmount")
 
 
 def test_mount_constants_exist():
     """Test that STATMOUNT_* constants are defined."""
-    assert hasattr(truenas_os, 'STATMOUNT_SB_BASIC')
-    assert hasattr(truenas_os, 'STATMOUNT_MNT_BASIC')
-    assert hasattr(truenas_os, 'STATMOUNT_PROPAGATE_FROM')
-    assert hasattr(truenas_os, 'STATMOUNT_MNT_ROOT')
-    assert hasattr(truenas_os, 'STATMOUNT_MNT_POINT')
-    assert hasattr(truenas_os, 'STATMOUNT_FS_TYPE')
-    assert hasattr(truenas_os, 'STATMOUNT_MNT_NS_ID')
-    assert hasattr(truenas_os, 'STATMOUNT_MNT_OPTS')
+    assert hasattr(truenas_os, "STATMOUNT_SB_BASIC")
+    assert hasattr(truenas_os, "STATMOUNT_MNT_BASIC")
+    assert hasattr(truenas_os, "STATMOUNT_PROPAGATE_FROM")
+    assert hasattr(truenas_os, "STATMOUNT_MNT_ROOT")
+    assert hasattr(truenas_os, "STATMOUNT_MNT_POINT")
+    assert hasattr(truenas_os, "STATMOUNT_FS_TYPE")
+    assert hasattr(truenas_os, "STATMOUNT_MNT_NS_ID")
+    assert hasattr(truenas_os, "STATMOUNT_MNT_OPTS")
 
 
 def test_statmount_result_type_exists():
     """Test that StatmountResult type exists."""
-    assert hasattr(truenas_os, 'StatmountResult')
+    assert hasattr(truenas_os, "StatmountResult")
 
 
 def test_listmount_default():
@@ -85,12 +85,14 @@ def test_statmount_all_fields():
     mounts = truenas_os.listmount()
     assert len(mounts) > 0
 
-    mask = (truenas_os.STATMOUNT_MNT_BASIC |
-            truenas_os.STATMOUNT_SB_BASIC |
-            truenas_os.STATMOUNT_MNT_ROOT |
-            truenas_os.STATMOUNT_MNT_POINT |
-            truenas_os.STATMOUNT_FS_TYPE |
-            truenas_os.STATMOUNT_MNT_OPTS)
+    mask = (
+        truenas_os.STATMOUNT_MNT_BASIC
+        | truenas_os.STATMOUNT_SB_BASIC
+        | truenas_os.STATMOUNT_MNT_ROOT
+        | truenas_os.STATMOUNT_MNT_POINT
+        | truenas_os.STATMOUNT_FS_TYPE
+        | truenas_os.STATMOUNT_MNT_OPTS
+    )
 
     sm = truenas_os.statmount(mounts[0], mask=mask)
     assert isinstance(sm, truenas_os.StatmountResult)
@@ -109,11 +111,25 @@ def test_statmount_result_fields():
 
     # Check all 19 fields exist
     expected_fields = [
-        'mnt_id', 'mnt_parent_id', 'mnt_id_old', 'mnt_parent_id_old',
-        'mnt_root', 'mnt_point', 'mnt_attr', 'mnt_propagation',
-        'mnt_peer_group', 'mnt_master', 'propagate_from', 'fs_type',
-        'mnt_ns_id', 'mnt_opts', 'sb_dev_major', 'sb_dev_minor',
-        'sb_magic', 'sb_flags', 'mask'
+        "mnt_id",
+        "mnt_parent_id",
+        "mnt_id_old",
+        "mnt_parent_id_old",
+        "mnt_root",
+        "mnt_point",
+        "mnt_attr",
+        "mnt_propagation",
+        "mnt_peer_group",
+        "mnt_master",
+        "propagate_from",
+        "fs_type",
+        "mnt_ns_id",
+        "mnt_opts",
+        "sb_dev_major",
+        "sb_dev_minor",
+        "sb_magic",
+        "sb_flags",
+        "mask",
     ]
 
     for field in expected_fields:
@@ -140,15 +156,13 @@ def test_statmount_root_mount():
     """Test statmount() on root filesystem."""
     mounts = truenas_os.listmount()
 
-    mask = (truenas_os.STATMOUNT_MNT_BASIC |
-            truenas_os.STATMOUNT_MNT_POINT |
-            truenas_os.STATMOUNT_FS_TYPE)
+    mask = truenas_os.STATMOUNT_MNT_BASIC | truenas_os.STATMOUNT_MNT_POINT | truenas_os.STATMOUNT_FS_TYPE
 
     # Find root mount
     found_root = False
     for mnt_id in mounts:
         sm = truenas_os.statmount(mnt_id, mask=mask)
-        if sm.mnt_point == '/':
+        if sm.mnt_point == "/":
             # Found root mount
             found_root = True
             assert sm.fs_type is not None
@@ -168,7 +182,7 @@ def test_statmount_invalid_mount_id():
 
 def test_iter_mount_exists():
     """Test that iter_mount function exists."""
-    assert hasattr(truenas_os, 'iter_mount')
+    assert hasattr(truenas_os, "iter_mount")
 
 
 def test_iter_mount_basic():
@@ -196,10 +210,12 @@ def test_iter_mount_returns_same_as_listmount():
 
 def test_iter_mount_with_flags():
     """Test iter_mount() with custom statmount_flags."""
-    flags = (truenas_os.STATMOUNT_MNT_BASIC |
-             truenas_os.STATMOUNT_SB_BASIC |
-             truenas_os.STATMOUNT_MNT_POINT |
-             truenas_os.STATMOUNT_FS_TYPE)
+    flags = (
+        truenas_os.STATMOUNT_MNT_BASIC
+        | truenas_os.STATMOUNT_SB_BASIC
+        | truenas_os.STATMOUNT_MNT_POINT
+        | truenas_os.STATMOUNT_FS_TYPE
+    )
 
     count = 0
     for mount_info in truenas_os.iter_mount(statmount_flags=flags):
@@ -233,8 +249,8 @@ def test_iter_mount_is_iterator():
     iterator = truenas_os.iter_mount()
 
     # Should have __iter__ and __next__
-    assert hasattr(iterator, '__iter__')
-    assert hasattr(iterator, '__next__')
+    assert hasattr(iterator, "__iter__")
+    assert hasattr(iterator, "__next__")
 
     # Should be able to call next() directly
     first = next(iterator)
@@ -289,13 +305,11 @@ def test_iter_mount_exhaustion():
 
 def test_iter_mount_finds_root():
     """Test that iter_mount can find the root filesystem."""
-    flags = (truenas_os.STATMOUNT_MNT_BASIC |
-             truenas_os.STATMOUNT_MNT_POINT |
-             truenas_os.STATMOUNT_FS_TYPE)
+    flags = truenas_os.STATMOUNT_MNT_BASIC | truenas_os.STATMOUNT_MNT_POINT | truenas_os.STATMOUNT_FS_TYPE
 
     found_root = False
     for mount_info in truenas_os.iter_mount(statmount_flags=flags):
-        if mount_info.mnt_point == '/':
+        if mount_info.mnt_point == "/":
             found_root = True
             assert mount_info.fs_type is not None
             assert isinstance(mount_info.fs_type, str)

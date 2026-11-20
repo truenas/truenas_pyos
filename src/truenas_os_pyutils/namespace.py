@@ -4,6 +4,7 @@ Context-manager wrapper around :func:`truenas_os.create_idmap_userns`,
 plus a process-wide cache keyed on ``(uid_map, gid_map)`` so the namespace
 is created at most once per distinct map for the lifetime of the process.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -131,14 +132,9 @@ def idmap_userns(
     for which, seq in (("uid_map", uid_list), ("gid_map", gid_list)):
         for i, entry in enumerate(seq):
             if not isinstance(entry, IdmapMappingEntry):
-                raise TypeError(
-                    f"{which}[{i}] must be an IdmapMappingEntry "
-                    "(use truenas_os.create_idmap_mapping)"
-                )
+                raise TypeError(f"{which}[{i}] must be an IdmapMappingEntry (use truenas_os.create_idmap_mapping)")
     if not uid_list or not gid_list:
-        raise ValueError(
-            "create_idmap_userns: uid_map and gid_map must be non-empty"
-        )
+        raise ValueError("create_idmap_userns: uid_map and gid_map must be non-empty")
 
     key = _key_for(uid_list, gid_list)
 
@@ -146,7 +142,8 @@ def idmap_userns(
         cached = _CACHE.get(key)
         if cached is None:
             cached = truenas_os.create_idmap_userns(
-                uid_map=uid_list, gid_map=gid_list,
+                uid_map=uid_list,
+                gid_map=gid_list,
             )
             _CACHE[key] = cached
         # dup inside the lock so we never observe a torn cache state
