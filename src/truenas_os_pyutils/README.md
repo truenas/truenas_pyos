@@ -15,12 +15,25 @@ Symlink-safe file I/O using `openat2(RESOLVE_NO_SYMLINKS)`.
 | Name | Type | Description |
 |---|---|---|
 | `SymlinkInPathError` | exception | Raised when a symlink is detected in a path. Subclass of `OSError` with `errno=ELOOP`. |
-| `safe_open(path, mode, ..., dir_fd)` | context manager | Drop-in for `open()` that rejects symlinks in any path component. |
+| `safe_open(path, mode, ..., dir_fd, resolve)` | context manager | Drop-in for `open()` that rejects symlinks in any path component. A mode that does not create the file (`'r'`, `'r+'`) refuses a FIFO, socket or device node with `EINVAL` before opening it, and waits out a lease break. |
+| `safe_open_raw(path, flags, *, dir_fd, mode, resolve)` | context manager | Yields a raw fd opened under the same rules as `safe_open`, except that a directory is allowed, and closes it on exit. Pass `O_NONBLOCK` to fail with `EWOULDBLOCK` on a lease instead of waiting. |
+| `safe_makedirs(path, mode, exist_ok, *, dir_fd, resolve)` | function | Like `os.makedirs()`, but creates each missing directory with `mkdirat` beneath an fd for its parent and raises `SymlinkInPathError` for a symlink anywhere in `path`, so nothing is created through one. As with `os.makedirs()`, an existing non-directory raises `FileExistsError` if it is the last component of `path`, and `NotADirectoryError` otherwise. |
 | `atomic_write(target, mode, *, tmppath, uid, gid, perms, noclobber)` | context manager | Yields a file object; atomically replaces `target` on clean exit using `renameat2(AT_RENAME_EXCHANGE)`. With `noclobber=True`, fails (`FileExistsError`) if `target` already exists and uses `AT_RENAME_NOREPLACE` to also fail on rename-time races. |
 | `atomic_replace(*, temp_path, target_file, data, uid, gid, perms)` | function | Writes `data` to `target_file` atomically. Thin wrapper around `atomic_write`. |
 
 All write operations use `RESOLVE_NO_SYMLINKS` for TOCTOU protection. Pass
 `uid=-1` or `gid=-1` to preserve the existing file's ownership.
+
+Without `O_CREAT`, `safe_open` and `safe_open_raw` open a directory directly
+with `O_DIRECTORY`. Anything else is opened `O_PATH`, checked with `fstat`, and
+reopened through `/proc/self/fd`, so nothing can be swapped in between. With
+`O_CREAT`, the flags go to `openat2` unchanged, so `fs.protected_regular` and
+`fs.protected_fifos` still apply.
+
+`resolve` adds `RESOLVE_*` flags, such as `RESOLVE_BENEATH` or
+`RESOLVE_NO_XDEV`, to `RESOLVE_NO_SYMLINKS`, which stays set; a path they
+refuse fails with `EXDEV`. `safe_makedirs` applies them to each component's
+lookup beneath its parent, so `RESOLVE_BENEATH` refuses any `..` in `path`.
 
 ---
 
