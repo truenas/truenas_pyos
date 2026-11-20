@@ -108,7 +108,8 @@ with idmap_userns(uid_entries, gid_entries) as userns_fd:
     try:
         # Bind the idmap to the detached clone.
         truenas_os.mount_setattr(
-            path="", dirfd=tree_fd,
+            path="",
+            dirfd=tree_fd,
             attr_set=truenas_os.MOUNT_ATTR_IDMAP,
             userns_fd=userns_fd,
             flags=truenas_os.AT_EMPTY_PATH,
@@ -116,13 +117,15 @@ with idmap_userns(uid_entries, gid_entries) as userns_fd:
         # Defensive slave propagation so a container-side umount of a
         # sub-mount can't propagate back to the host source.
         truenas_os.mount_setattr(
-            path="", dirfd=tree_fd,
+            path="",
+            dirfd=tree_fd,
             propagation=truenas_os.MS_SLAVE,
             flags=truenas_os.AT_EMPTY_PATH,
         )
         # Attach the now-idmapped clone at the container's rootfs target.
         truenas_os.move_mount(
-            from_path="", from_dirfd=tree_fd,
+            from_path="",
+            from_dirfd=tree_fd,
             to_path=target,
             flags=truenas_os.MOVE_MOUNT_F_EMPTY_PATH,
         )

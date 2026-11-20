@@ -73,11 +73,7 @@ CLONETREE_ROOT_DEPTH = 0
 # avoid descending into a user-visible snapshot directory.
 _ZFSCTL_INO_ROOT = 0x0000FFFFFFFFFFFF
 
-_STATX_DEFAULT_MASK = (
-    truenas_os.STATX_BASIC_STATS
-    | truenas_os.STATX_BTIME
-    | truenas_os.STATX_MNT_ID_UNIQUE
-)
+_STATX_DEFAULT_MASK = truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME | truenas_os.STATX_MNT_ID_UNIQUE
 
 # STATMOUNT_SB_SOURCE requires kernel 6.18+; the C extension defines the
 # constant only when the header has it.  When unavailable the traverse code
@@ -118,9 +114,7 @@ class CopyTreeOp(enum.Enum):
     USERSPACE = enum.auto()  # same as shutil.copyfileobj
 
 
-DEF_CP_FLAGS = (
-    CopyFlags.XATTRS | CopyFlags.PERMISSIONS | CopyFlags.OWNER | CopyFlags.TIMESTAMPS
-)
+DEF_CP_FLAGS = CopyFlags.XATTRS | CopyFlags.PERMISSIONS | CopyFlags.OWNER | CopyFlags.TIMESTAMPS
 
 
 # Same shape as truenas_os.iter_filesystem_contents' reporting_callback —
@@ -367,9 +361,7 @@ class _CopyTreeRunner:
 
         if flags & CopyFlags.PERMISSIONS:
             try:
-                copy_permissions(
-                    item.fd, dst_file_fd, xattrs, item.statxinfo.stx_mode
-                )
+                copy_permissions(item.fd, dst_file_fd, xattrs, item.statxinfo.stx_mode)
             except Exception:
                 if self.config.raise_error:
                     raise
@@ -409,8 +401,10 @@ class _CopyTreeRunner:
                 raise
 
         new_dir_fd = openat2(
-            item.name, O_DIRECTORY | O_NOFOLLOW,
-            dir_fd=parent_dst_fd, resolve=RESOLVE_NO_SYMLINKS,
+            item.name,
+            O_DIRECTORY | O_NOFOLLOW,
+            dir_fd=parent_dst_fd,
+            resolve=RESOLVE_NO_SYMLINKS,
         )
         try:
             flags = self.config.flags
@@ -419,9 +413,7 @@ class _CopyTreeRunner:
                 xattrs = flistxattr(item.fd)
 
             if flags & CopyFlags.PERMISSIONS:
-                copy_permissions(
-                    item.fd, new_dir_fd, xattrs, item.statxinfo.stx_mode
-                )
+                copy_permissions(item.fd, new_dir_fd, xattrs, item.statxinfo.stx_mode)
 
             if flags & CopyFlags.XATTRS:
                 copy_xattrs(item.fd, new_dir_fd, xattrs)
@@ -435,9 +427,7 @@ class _CopyTreeRunner:
 
         return new_dir_fd
 
-    def _handle_symlink(
-        self, item: truenas_os.IterInstance, dst_dir_fd: int
-    ) -> None:
+    def _handle_symlink(self, item: truenas_os.IterInstance, dst_dir_fd: int) -> None:
         """Recreate the source symlink ``item`` under ``dst_dir_fd``.
 
         ``item.fd`` is an O_PATH | O_NOFOLLOW fd from fsiter, so we read
@@ -455,9 +445,7 @@ class _CopyTreeRunner:
             if not self.config.exist_ok:
                 raise
 
-    def _handle_special(
-        self, item: truenas_os.IterInstance, dst_dir_fd: int
-    ) -> None:
+    def _handle_special(self, item: truenas_os.IterInstance, dst_dir_fd: int) -> None:
         """Recreate a special file (FIFO, socket, or device) by type.
 
         ``item.fd`` is an ``O_PATH`` fd from fsiter — a special file has no
@@ -484,15 +472,19 @@ class _CopyTreeRunner:
                     raise
         if flags & CopyFlags.OWNER:
             chown(
-                item.name, st.stx_uid, st.stx_gid,
-                dir_fd=dst_dir_fd, follow_symlinks=False,
+                item.name,
+                st.stx_uid,
+                st.stx_gid,
+                dir_fd=dst_dir_fd,
+                follow_symlinks=False,
             )
         if flags & CopyFlags.TIMESTAMPS:
             try:
                 utime(
                     item.name,
                     ns=(st.stx_atime_ns, st.stx_mtime_ns),
-                    dir_fd=dst_dir_fd, follow_symlinks=False,
+                    dir_fd=dst_dir_fd,
+                    follow_symlinks=False,
                 )
             except Exception:
                 if self.config.raise_error:
@@ -529,10 +521,7 @@ class _CopyTreeRunner:
         """
         if item.statxinfo.stx_ino != self.target_st.st_ino:
             return False
-        return (
-            makedev(item.statxinfo.stx_dev_major, item.statxinfo.stx_dev_minor)
-            == self.target_st.st_dev
-        )
+        return makedev(item.statxinfo.stx_dev_major, item.statxinfo.stx_dev_minor) == self.target_st.st_dev
 
     # ── per-mount processing ─────────────────────────────────────────────
 
@@ -591,9 +580,7 @@ class _CopyTreeRunner:
                     dst_dir_fd = self.frames[-1].dst_fd
 
                     if item.isdir:
-                        if item.name == ".zfs" and _path_in_ctldir(
-                            os.path.join(item.parent, item.name)
-                        ):
+                        if item.name == ".zfs" and _path_in_ctldir(os.path.join(item.parent, item.name)):
                             it.skip()
                             continue
                         if self._is_dst_into_self(item):
@@ -614,7 +601,8 @@ class _CopyTreeRunner:
                         # is set.  Without it the file stays
                         # owner-private — safer than 0o644 / umask.
                         dst_file_fd = openat2(
-                            item.name, open_flags,
+                            item.name,
+                            open_flags,
                             dir_fd=dst_dir_fd,
                             mode=0o600,
                             resolve=RESOLVE_NO_SYMLINKS,
@@ -641,9 +629,7 @@ class _CopyTreeRunner:
             # owns — we must NOT close it.
             while len(self.frames) > initial_len + 1:
                 self._pop_frame()
-            self._apply_root_metadata(
-                src_root_fd, root_dst_fd, root_xattrs, root_stat
-            )
+            self._apply_root_metadata(src_root_fd, root_dst_fd, root_xattrs, root_stat)
         finally:
             # Cleanup invariant: at function exit, frames length is
             # restored to ``initial_len``.  In the normal path only the
@@ -727,16 +713,20 @@ class _CopyTreeRunner:
         """
         try:
             return openat2(
-                rel, O_RDONLY | O_DIRECTORY,
-                dir_fd=self.dst_fd, resolve=RESOLVE_NO_SYMLINKS,
+                rel,
+                O_RDONLY | O_DIRECTORY,
+                dir_fd=self.dst_fd,
+                resolve=RESOLVE_NO_SYMLINKS,
             )
         except FileNotFoundError:
             head, _, tail = rel.rpartition("/")
             parent_fd = self.dst_fd
             if head:
                 parent_fd = openat2(
-                    head, O_RDONLY | O_DIRECTORY,
-                    dir_fd=self.dst_fd, resolve=RESOLVE_NO_SYMLINKS,
+                    head,
+                    O_RDONLY | O_DIRECTORY,
+                    dir_fd=self.dst_fd,
+                    resolve=RESOLVE_NO_SYMLINKS,
                 )
             try:
                 mkdir(tail, dir_fd=parent_fd)
@@ -744,8 +734,10 @@ class _CopyTreeRunner:
                 if parent_fd != self.dst_fd:
                     close(parent_fd)
             return openat2(
-                rel, O_RDONLY | O_DIRECTORY,
-                dir_fd=self.dst_fd, resolve=RESOLVE_NO_SYMLINKS,
+                rel,
+                O_RDONLY | O_DIRECTORY,
+                dir_fd=self.dst_fd,
+                resolve=RESOLVE_NO_SYMLINKS,
             )
 
     def _traverse_child_mounts(self, root_mnt_id: int) -> None:
@@ -753,9 +745,7 @@ class _CopyTreeRunner:
         # rstrip so a source root of "/" yields prefix "/", not "//" (which
         # nothing starts with, silently skipping every child mount).
         prefix = self.src_root_real.rstrip("/") + "/"
-        for entry in truenas_os.iter_mount(
-            mnt_id=root_mnt_id, statmount_flags=_STATMOUNT_TRAVERSE_FLAGS
-        ):
+        for entry in truenas_os.iter_mount(mnt_id=root_mnt_id, statmount_flags=_STATMOUNT_TRAVERSE_FLAGS):
             child_mnt = entry.mnt_point
             if child_mnt is None or not child_mnt.startswith(prefix):
                 continue
@@ -763,17 +753,11 @@ class _CopyTreeRunner:
             # Skip ZFS snapshot mounts: they are read-only and transient,
             # so destination writes (mkdir/setxattr/utime) would fail with
             # EROFS or expire mid-copy.
-            if (
-                entry.fs_type == "zfs"
-                and entry_sb_source is not None
-                and "@" in entry_sb_source
-            ):
+            if entry.fs_type == "zfs" and entry_sb_source is not None and "@" in entry_sb_source:
                 continue
-            child_fs_source = (
-                entry_sb_source if entry_sb_source is not None else child_mnt
-            )
+            child_fs_source = entry_sb_source if entry_sb_source is not None else child_mnt
 
-            rel = child_mnt[len(self.src_root_real):].lstrip("/")
+            rel = child_mnt[len(self.src_root_real) :].lstrip("/")
             child_src_fd = openat2(
                 child_mnt,
                 O_RDONLY | O_DIRECTORY,

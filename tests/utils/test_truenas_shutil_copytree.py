@@ -334,6 +334,7 @@ def zfs_dataset(zpool, zfs_enabled, request):
     if not zfs_enabled or zpool is None:
         pytest.skip("ZFS or root unavailable")
     from tests.conftest import _zfs_create_dataset, _zfs_destroy_dataset
+
     ds, mountpoint = _zfs_create_dataset(zpool, "posixacl")
     yield mountpoint
     _zfs_destroy_dataset(ds, mountpoint)
@@ -342,14 +343,14 @@ def zfs_dataset(zpool, zfs_enabled, request):
 def test_copytree_skips_zfs_ctldir(zfs_dataset, tmp_path):
     """`.zfs` ctldir is yielded by fsiter on ZFS but must not be copied."""
     import subprocess
+
     # Make a snapshot so .zfs/snapshot is populated.
     src = os.path.join(zfs_dataset, "src")
     os.makedirs(src)
     (open(os.path.join(src, "a.txt"), "w")).write("data")
     # Set snapdir=visible so .zfs is enumerable.
     pool_ds = subprocess.run(
-        ["zfs", "list", "-H", "-o", "name", zfs_dataset],
-        capture_output=True, text=True, check=True
+        ["zfs", "list", "-H", "-o", "name", zfs_dataset], capture_output=True, text=True, check=True
     ).stdout.strip()
     subprocess.run(["zfs", "set", "snapdir=visible", pool_ds], check=True)
     subprocess.run(["zfs", "snapshot", f"{pool_ds}@s1"], check=True)
@@ -361,9 +362,7 @@ def test_copytree_skips_zfs_ctldir(zfs_dataset, tmp_path):
         assert not os.path.exists(os.path.join(dst, ".zfs"))
         assert os.path.isfile(os.path.join(dst, "a.txt"))
     finally:
-        subprocess.run(
-            ["zfs", "destroy", f"{pool_ds}@s1"], check=False
-        )
+        subprocess.run(["zfs", "destroy", f"{pool_ds}@s1"], check=False)
 
 
 # ── Rich-tree end-to-end coverage ────────────────────────────────────────────
@@ -469,15 +468,11 @@ def _validate_attrs(src, dst, flags):
     assert op(s.st_gid, d.st_gid), f"gid: src={s.st_gid} dst={d.st_gid}"
 
     op = eq if flags & CopyFlags.PERMISSIONS else ne
-    assert op(s.st_mode, d.st_mode), (
-        f"mode: src={oct(s.st_mode)} dst={oct(d.st_mode)}"
-    )
+    assert op(s.st_mode, d.st_mode), f"mode: src={oct(s.st_mode)} dst={oct(d.st_mode)}"
 
     op = eq if flags & CopyFlags.TIMESTAMPS else ne
     # mtime is sufficient — atime gets bumped by reads in the test runner.
-    assert op(s.st_mtime_ns, d.st_mtime_ns), (
-        f"mtime: src={s.st_mtime_ns} dst={d.st_mtime_ns}"
-    )
+    assert op(s.st_mtime_ns, d.st_mtime_ns), f"mtime: src={s.st_mtime_ns} dst={d.st_mtime_ns}"
 
 
 def _validate_xattrs(src, dst, flags):
@@ -521,9 +516,7 @@ def _validate_tree(src, dst, flags):
     _validate_attrs(src, dst, flags)
 
 
-def test_copytree_e2e_default_flags_preserve_everything(
-    rich_source_tree, tmp_path
-):
+def test_copytree_e2e_default_flags_preserve_everything(rich_source_tree, tmp_path):
     src = rich_source_tree
     dst = tmp_path / "DEST"
     cfg = CopyTreeConfig()
@@ -535,12 +528,15 @@ def test_copytree_e2e_default_flags_preserve_everything(
     assert stats.symlinks > 0
 
 
-@pytest.mark.parametrize("flag", [
-    CopyFlags.XATTRS,
-    CopyFlags.PERMISSIONS,
-    CopyFlags.TIMESTAMPS,
-    CopyFlags.OWNER,
-])
+@pytest.mark.parametrize(
+    "flag",
+    [
+        CopyFlags.XATTRS,
+        CopyFlags.PERMISSIONS,
+        CopyFlags.TIMESTAMPS,
+        CopyFlags.OWNER,
+    ],
+)
 def test_copytree_e2e_per_flag(rich_source_tree, tmp_path, flag):
     """Each individual flag preserves only its own metadata category."""
     src = rich_source_tree
@@ -554,7 +550,8 @@ def test_copytree_e2e_userspace_op_full_tree(rich_source_tree, tmp_path):
     src = rich_source_tree
     dst = tmp_path / "DEST"
     copytree(
-        str(src), str(dst),
+        str(src),
+        str(dst),
         CopyTreeConfig(op=CopyTreeOp.USERSPACE),
     )
     _validate_tree(src, dst, DEF_CP_FLAGS)
@@ -629,8 +626,10 @@ def _mount_tmpfs(target):
         os.close(fs_fd)
     try:
         truenas_os.move_mount(
-            from_path="", to_path=str(target),
-            from_dirfd=mnt_fd, flags=truenas_os.MOVE_MOUNT_F_EMPTY_PATH,
+            from_path="",
+            to_path=str(target),
+            from_dirfd=mnt_fd,
+            flags=truenas_os.MOVE_MOUNT_F_EMPTY_PATH,
         )
     finally:
         os.close(mnt_fd)
@@ -640,7 +639,9 @@ def _traverse_child_body(src, dst):
     """Build a parent mount with one child mount, copy with ``traverse=True``,
     and verify the child mount's contents land in the destination."""
     truenas_os.mount_setattr(
-        path="/", propagation=truenas_os.MS_PRIVATE, flags=truenas_os.AT_RECURSIVE,
+        path="/",
+        propagation=truenas_os.MS_PRIVATE,
+        flags=truenas_os.AT_RECURSIVE,
     )
     _mount_tmpfs(src)
     _mount_tmpfs(dst)
@@ -686,9 +687,11 @@ def test_copytree_traverse_copies_child_mount(tmp_path):
                 payload = b"NOPRIV\n" + f"cannot create mounts here: {exc}".encode()
             else:
                 import traceback
+
                 payload = b"ERR\n" + traceback.format_exc().encode()
         except BaseException:
             import traceback
+
             payload = b"ERR\n" + traceback.format_exc().encode()
         try:
             os.write(write_fd, payload)

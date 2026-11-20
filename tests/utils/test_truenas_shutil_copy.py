@@ -117,6 +117,7 @@ def test_copysendfile_falls_back_when_sendfile_returns_zero(tmp_path, monkeypatc
 
     # Simulate sendfile being unavailable for this src/dst combo.
     import truenas_os_pyutils.truenas_shutil.copy as mod
+
     monkeypatch.setattr(mod, "sendfile", lambda *a, **kw: 0)
 
     src_fd = os.open(str(src), os.O_RDONLY)
@@ -334,12 +335,12 @@ def test_copy_permissions_skips_fchmod_when_acl_xattr_listed(tmp_path):
     src_fd = os.open(str(src), os.O_RDWR)
     dst_fd = os.open(str(dst), os.O_RDWR)
     try:
-        with mock.patch("truenas_os_pyutils.truenas_shutil.copy.fgetxattr") as g, \
-             mock.patch("truenas_os_pyutils.truenas_shutil.copy.fsetxattr") as s:
+        with (
+            mock.patch("truenas_os_pyutils.truenas_shutil.copy.fgetxattr") as g,
+            mock.patch("truenas_os_pyutils.truenas_shutil.copy.fsetxattr") as s,
+        ):
             g.return_value = b"\x00" * 12
-            copy_permissions(
-                src_fd, dst_fd, ["system.posix_acl_access"], 0o741
-            )
+            copy_permissions(src_fd, dst_fd, ["system.posix_acl_access"], 0o741)
             assert g.called and s.called
     finally:
         os.close(src_fd)
@@ -361,8 +362,10 @@ def test_copy_xattrs_skips_acl_and_system(tmp_path):
     src_fd = os.open(str(src), os.O_RDWR)
     dst_fd = os.open(str(dst), os.O_RDWR)
     try:
-        with mock.patch("truenas_os_pyutils.truenas_shutil.copy.fgetxattr") as g, \
-             mock.patch("truenas_os_pyutils.truenas_shutil.copy.fsetxattr") as s:
+        with (
+            mock.patch("truenas_os_pyutils.truenas_shutil.copy.fgetxattr") as g,
+            mock.patch("truenas_os_pyutils.truenas_shutil.copy.fsetxattr") as s,
+        ):
             g.return_value = b"value"
             copy_xattrs(
                 src_fd,
@@ -421,9 +424,7 @@ def test_clonefile_multi_megabyte(tmp_path):
     try:
         _write_random_chunks(src_fd, n_chunks, chunk_sz, seed=8675309)
         clonefile(src_fd, dst_fd)
-        assert _read_chunks(src_fd, n_chunks, chunk_sz) == _read_chunks(
-            dst_fd, n_chunks, chunk_sz
-        )
+        assert _read_chunks(src_fd, n_chunks, chunk_sz) == _read_chunks(dst_fd, n_chunks, chunk_sz)
     finally:
         os.close(src_fd)
         os.close(dst_fd)
@@ -448,17 +449,13 @@ def test_copyfile_full_fallthrough(tmp_path, monkeypatch):
 
         copyfile(src_fd, dst_fd)
 
-        assert _read_chunks(src_fd, n_chunks, chunk_sz) == _read_chunks(
-            dst_fd, n_chunks, chunk_sz
-        )
+        assert _read_chunks(src_fd, n_chunks, chunk_sz) == _read_chunks(dst_fd, n_chunks, chunk_sz)
     finally:
         os.close(src_fd)
         os.close(dst_fd)
 
 
-def test_copysendfile_does_not_fall_through_when_sendfile_works(
-    tmp_path, monkeypatch
-):
+def test_copysendfile_does_not_fall_through_when_sendfile_works(tmp_path, monkeypatch):
     """copysendfile must NOT invoke userspace fallback on a happy sendfile."""
     src = tmp_path / "sf_src"
     dst = tmp_path / "sf_dst"

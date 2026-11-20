@@ -192,7 +192,9 @@ def test_fsetxattr_invalid_flags_raises_value_error(fd):
     with pytest.raises(ValueError, match="XATTR_CREATE"):
         # Combined CREATE|REPLACE is rejected.
         truenas_os.fsetxattr(
-            fd, "user.bad", b"v",
+            fd,
+            "user.bad",
+            b"v",
             flags=truenas_os.XATTR_CREATE | truenas_os.XATTR_REPLACE,
         )
 

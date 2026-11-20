@@ -92,10 +92,7 @@ import truenas_os
 
 mounts = truenas_os.listmount()
 info = truenas_os.statmount(
-    mounts[0],
-    mask=truenas_os.STATMOUNT_MNT_BASIC |
-         truenas_os.STATMOUNT_MNT_POINT |
-         truenas_os.STATMOUNT_FS_TYPE
+    mounts[0], mask=truenas_os.STATMOUNT_MNT_BASIC | truenas_os.STATMOUNT_MNT_POINT | truenas_os.STATMOUNT_FS_TYPE
 )
 print(f"Mount point: {info.mnt_point}")
 print(f"Filesystem: {info.fs_type}")
@@ -141,9 +138,7 @@ Efficiently iterate over mounts, yielding StatmountResult objects.
 import truenas_os
 
 # Iterate over all mounts
-flags = (truenas_os.STATMOUNT_MNT_BASIC |
-         truenas_os.STATMOUNT_MNT_POINT |
-         truenas_os.STATMOUNT_FS_TYPE)
+flags = truenas_os.STATMOUNT_MNT_BASIC | truenas_os.STATMOUNT_MNT_POINT | truenas_os.STATMOUNT_FS_TYPE
 
 for mount_info in truenas_os.iter_mount(statmount_flags=flags):
     print(f"{mount_info.mnt_point}: {mount_info.fs_type}")
@@ -188,10 +183,7 @@ Move a mount from one location to another.
 ```python
 import truenas_os
 
-truenas_os.move_mount(
-    truenas_os.AT_FDCWD, "/old/path",
-    truenas_os.AT_FDCWD, "/new/path"
-)
+truenas_os.move_mount(truenas_os.AT_FDCWD, "/old/path", truenas_os.AT_FDCWD, "/new/path")
 ```
 
 **Parameters:**
@@ -221,17 +213,10 @@ Change properties of a mount or mount tree.
 import truenas_os
 
 # Make a mount read-only
-truenas_os.mount_setattr(
-    path='/mnt/data',
-    attr_set=truenas_os.MOUNT_ATTR_RDONLY
-)
+truenas_os.mount_setattr(path="/mnt/data", attr_set=truenas_os.MOUNT_ATTR_RDONLY)
 
 # Make entire mount tree read-only recursively
-truenas_os.mount_setattr(
-    path='/mnt/data',
-    attr_set=truenas_os.MOUNT_ATTR_RDONLY,
-    flags=truenas_os.AT_RECURSIVE
-)
+truenas_os.mount_setattr(path="/mnt/data", attr_set=truenas_os.MOUNT_ATTR_RDONLY, flags=truenas_os.AT_RECURSIVE)
 ```
 
 **Parameters (all keyword-only):**
@@ -267,10 +252,7 @@ Open a filesystem context for configuration.
 import truenas_os
 
 # Create a filesystem context for tmpfs
-fs_fd = truenas_os.fsopen(
-    fs_name='tmpfs',
-    flags=truenas_os.FSOPEN_CLOEXEC
-)
+fs_fd = truenas_os.fsopen(fs_name="tmpfs", flags=truenas_os.FSOPEN_CLOEXEC)
 ```
 
 **Parameters (all keyword-only):**
@@ -291,29 +273,16 @@ Configure a filesystem context.
 ```python
 import truenas_os
 
-fs_fd = truenas_os.fsopen(fs_name='tmpfs', flags=truenas_os.FSOPEN_CLOEXEC)
+fs_fd = truenas_os.fsopen(fs_name="tmpfs", flags=truenas_os.FSOPEN_CLOEXEC)
 
 # Set filesystem size
-truenas_os.fsconfig(
-    fs_fd=fs_fd,
-    cmd=truenas_os.FSCONFIG_SET_STRING,
-    key='size',
-    value='1G'
-)
+truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_SET_STRING, key="size", value="1G")
 
 # Set another option
-truenas_os.fsconfig(
-    fs_fd=fs_fd,
-    cmd=truenas_os.FSCONFIG_SET_STRING,
-    key='mode',
-    value='0755'
-)
+truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_SET_STRING, key="mode", value="0755")
 
 # Create the filesystem
-truenas_os.fsconfig(
-    fs_fd=fs_fd,
-    cmd=truenas_os.FSCONFIG_CMD_CREATE
-)
+truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_CMD_CREATE)
 ```
 
 **Parameters (all keyword-only):**
@@ -346,26 +315,16 @@ import truenas_os
 import os
 
 # Create and configure filesystem
-fs_fd = truenas_os.fsopen(fs_name='tmpfs', flags=truenas_os.FSOPEN_CLOEXEC)
-truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_SET_STRING,
-                    key='size', value='512M')
+fs_fd = truenas_os.fsopen(fs_name="tmpfs", flags=truenas_os.FSOPEN_CLOEXEC)
+truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_SET_STRING, key="size", value="512M")
 truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_CMD_CREATE)
 
 # Create mount object with read-only attribute
-mnt_fd = truenas_os.fsmount(
-    fs_fd=fs_fd,
-    flags=truenas_os.FSMOUNT_CLOEXEC,
-    attr_flags=truenas_os.MOUNT_ATTR_RDONLY
-)
+mnt_fd = truenas_os.fsmount(fs_fd=fs_fd, flags=truenas_os.FSMOUNT_CLOEXEC, attr_flags=truenas_os.MOUNT_ATTR_RDONLY)
 os.close(fs_fd)
 
 # Attach to filesystem tree
-truenas_os.move_mount(
-    from_path='',
-    to_path='/mnt/mytmpfs',
-    from_dirfd=mnt_fd,
-    flags=truenas_os.MOVE_MOUNT_F_EMPTY_PATH
-)
+truenas_os.move_mount(from_path="", to_path="/mnt/mytmpfs", from_dirfd=mnt_fd, flags=truenas_os.MOVE_MOUNT_F_EMPTY_PATH)
 os.close(mnt_fd)
 ```
 
@@ -386,31 +345,24 @@ import truenas_os
 import os
 
 # 1. Create filesystem context
-fs_fd = truenas_os.fsopen(fs_name='tmpfs', flags=truenas_os.FSOPEN_CLOEXEC)
+fs_fd = truenas_os.fsopen(fs_name="tmpfs", flags=truenas_os.FSOPEN_CLOEXEC)
 
 # 2. Configure filesystem options
-truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_SET_STRING,
-                    key='size', value='100M')
-truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_SET_STRING,
-                    key='nr_inodes', value='10k')
+truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_SET_STRING, key="size", value="100M")
+truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_SET_STRING, key="nr_inodes", value="10k")
 
 # 3. Create the filesystem
 truenas_os.fsconfig(fs_fd=fs_fd, cmd=truenas_os.FSCONFIG_CMD_CREATE)
 
 # 4. Create mount object with attributes
 mnt_fd = truenas_os.fsmount(
-    fs_fd=fs_fd,
-    flags=truenas_os.FSMOUNT_CLOEXEC,
-    attr_flags=truenas_os.MOUNT_ATTR_NOSUID | truenas_os.MOUNT_ATTR_NODEV
+    fs_fd=fs_fd, flags=truenas_os.FSMOUNT_CLOEXEC, attr_flags=truenas_os.MOUNT_ATTR_NOSUID | truenas_os.MOUNT_ATTR_NODEV
 )
 os.close(fs_fd)
 
 # 5. Attach mount to the filesystem tree
 truenas_os.move_mount(
-    from_path='',
-    to_path='/mnt/secure_tmp',
-    from_dirfd=mnt_fd,
-    flags=truenas_os.MOVE_MOUNT_F_EMPTY_PATH
+    from_path="", to_path="/mnt/secure_tmp", from_dirfd=mnt_fd, flags=truenas_os.MOVE_MOUNT_F_EMPTY_PATH
 )
 os.close(mnt_fd)
 
@@ -430,23 +382,13 @@ import truenas_os
 import os
 
 # Open file with symlink blocking
-fd = truenas_os.openat2(
-    truenas_os.AT_FDCWD,
-    "/path/to/file",
-    os.O_RDONLY,
-    resolve=truenas_os.RESOLVE_NO_SYMLINKS
-)
+fd = truenas_os.openat2(truenas_os.AT_FDCWD, "/path/to/file", os.O_RDONLY, resolve=truenas_os.RESOLVE_NO_SYMLINKS)
 os.close(fd)
 
 # Prevent directory escaping
 tmpdir_fd = os.open("/tmp", os.O_RDONLY | os.O_DIRECTORY)
 try:
-    fd = truenas_os.openat2(
-        tmpdir_fd,
-        "subdir/file",
-        os.O_RDONLY,
-        resolve=truenas_os.RESOLVE_BENEATH
-    )
+    fd = truenas_os.openat2(tmpdir_fd, "subdir/file", os.O_RDONLY, resolve=truenas_os.RESOLVE_BENEATH)
     os.close(fd)
 finally:
     os.close(tmpdir_fd)
@@ -479,9 +421,7 @@ Get extended file attributes.
 import truenas_os
 
 result = truenas_os.statx(
-    truenas_os.AT_FDCWD,
-    "/path/to/file",
-    mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME
+    truenas_os.AT_FDCWD, "/path/to/file", mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME
 )
 
 print(f"Size: {result.stx_size}")
@@ -532,6 +472,7 @@ fh2 = truenas_os.fhandle(handle_bytes=handle_bytes, mount_id=fh.mount_id)
 
 # Open file from handle
 import os
+
 mount_fd = os.open("/", os.O_RDONLY)
 fd = fh2.open(mount_fd=mount_fd, flags=os.O_RDONLY)
 # Use fd...
@@ -683,11 +624,7 @@ for item in iterator1:
         break
 
 # Later - restore from saved position
-iterator2 = truenas_os.iter_filesystem_contents(
-    "/mnt/tank",
-    "tank/dataset",
-    dir_stack=saved_stack
-)
+iterator2 = truenas_os.iter_filesystem_contents("/mnt/tank", "tank/dataset", dir_stack=saved_stack)
 
 # Iteration continues from the saved directory
 for item in iterator2:
@@ -789,8 +726,8 @@ ace = truenas_os.NFS4Ace(
 acl = truenas_os.NFS4ACL.from_aces([ace])
 
 # Inspect
-print(acl.acl_flags)   # NFS4ACLFlag
-print(acl.trivial)     # True if ACL_IS_TRIVIAL is set
+print(acl.acl_flags)  # NFS4ACLFlag
+print(acl.trivial)  # True if ACL_IS_TRIVIAL is set
 for ace in acl.aces:
     print(ace)
 
@@ -854,14 +791,14 @@ import truenas_os
 
 # Construct from ACE objects
 aces = [
-    truenas_os.POSIXAce(truenas_os.POSIXTag.USER_OBJ,  truenas_os.POSIXPerm.READ | truenas_os.POSIXPerm.WRITE),
+    truenas_os.POSIXAce(truenas_os.POSIXTag.USER_OBJ, truenas_os.POSIXPerm.READ | truenas_os.POSIXPerm.WRITE),
     truenas_os.POSIXAce(truenas_os.POSIXTag.GROUP_OBJ, truenas_os.POSIXPerm.READ),
-    truenas_os.POSIXAce(truenas_os.POSIXTag.OTHER,     truenas_os.POSIXPerm(0)),
+    truenas_os.POSIXAce(truenas_os.POSIXTag.OTHER, truenas_os.POSIXPerm(0)),
 ]
 acl = truenas_os.POSIXACL.from_aces(aces)
 
 # Inspect
-print(acl.trivial)        # True if no named users/groups and no MASK entry
+print(acl.trivial)  # True if no named users/groups and no MASK entry
 for ace in acl.aces:
     print(ace)
 for ace in acl.default_aces:
@@ -871,7 +808,7 @@ for ace in acl.default_aces:
 child_acl = acl.generate_inherited_acl(is_dir=True)
 
 # Raw bytes for each xattr
-access_raw  = acl.access_bytes()
+access_raw = acl.access_bytes()
 default_raw = acl.default_bytes()  # None if no default ACL
 ```
 
@@ -1029,7 +966,7 @@ Construct a validated `CredEntry` describing a credential identity.
 import truenas_os
 
 alice = truenas_os.create_cred_entry("alice", 1000, 1000, (1000, 100))
-root  = truenas_os.create_cred_entry("root", 0, 0, ())
+root = truenas_os.create_cred_entry("root", 0, 0, ())
 ```
 
 **Parameters:**
@@ -1056,7 +993,7 @@ import truenas_os
 
 creds = [
     truenas_os.create_cred_entry("alice", 1000, 1000, (1000,)),
-    truenas_os.create_cred_entry("bob",   1001, 1001, (1001,)),
+    truenas_os.create_cred_entry("bob", 1001, 1001, (1001,)),
 ]
 
 # Execute-traversal pre-flight: can each cred walk to /mnt/tank/share/sub/file?
@@ -1068,8 +1005,10 @@ for f in failures:
 # Single-path read probe: can libvirt read this ISO?
 libvirt = truenas_os.create_cred_entry("libvirt-qemu", 64055, 64055, ())
 failures = truenas_os.check_path_access(
-    creds=[libvirt], components=[b"/mnt/tank/iso/debian.iso"],
-    mode=os.R_OK, path_must_exist=True,
+    creds=[libvirt],
+    components=[b"/mnt/tank/iso/debian.iso"],
+    mode=os.R_OK,
+    path_must_exist=True,
 )
 ```
 
@@ -1107,9 +1046,7 @@ import os
 
 # List and inspect all mounts
 print("=== Filesystem Mounts ===")
-flags = (truenas_os.STATMOUNT_MNT_BASIC |
-         truenas_os.STATMOUNT_MNT_POINT |
-         truenas_os.STATMOUNT_FS_TYPE)
+flags = truenas_os.STATMOUNT_MNT_BASIC | truenas_os.STATMOUNT_MNT_POINT | truenas_os.STATMOUNT_FS_TYPE
 
 for mount_info in truenas_os.iter_mount(statmount_flags=flags):
     if mount_info.mnt_point and mount_info.fs_type:
@@ -1117,11 +1054,7 @@ for mount_info in truenas_os.iter_mount(statmount_flags=flags):
 
 # Get detailed file information
 print("\n=== File Statistics ===")
-info = truenas_os.statx(
-    truenas_os.AT_FDCWD,
-    "/etc/hosts",
-    mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME
-)
+info = truenas_os.statx(truenas_os.AT_FDCWD, "/etc/hosts", mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
 print(f"Size: {info.stx_size} bytes")
 print(f"Created: {info.stx_btime}")
 print(f"Mount ID: {info.stx_mnt_id}")
@@ -1129,12 +1062,7 @@ print(f"Mount ID: {info.stx_mnt_id}")
 # Safe file opening with path resolution control
 print("\n=== Safe File Opening ===")
 try:
-    fd = truenas_os.openat2(
-        truenas_os.AT_FDCWD,
-        "/etc/hosts",
-        os.O_RDONLY,
-        resolve=truenas_os.RESOLVE_NO_SYMLINKS
-    )
+    fd = truenas_os.openat2(truenas_os.AT_FDCWD, "/etc/hosts", os.O_RDONLY, resolve=truenas_os.RESOLVE_NO_SYMLINKS)
     data = os.read(fd, 100)
     print(f"Read {len(data)} bytes")
     os.close(fd)

@@ -7,7 +7,6 @@ import errno
 import multiprocessing
 import os
 import subprocess
-import tempfile
 import threading
 import time
 
@@ -25,6 +24,7 @@ NEEDS_ROOT = pytest.mark.skipif(
 
 
 # ── create_idmap_mapping: validation surface ────────────────────────────────
+
 
 def test_create_idmap_mapping_happy_path():
     e = truenas_os.create_idmap_mapping(0, 100000, 65536)
@@ -100,6 +100,7 @@ def test_create_idmap_mapping_wrong_arg_count():
 
 # ── create_idmap_userns: type strictness ────────────────────────────────────
 
+
 def test_create_idmap_userns_symbols_importable():
     assert hasattr(truenas_os, "create_idmap_userns")
     assert hasattr(truenas_os, "create_idmap_mapping")
@@ -129,6 +130,7 @@ def test_create_idmap_userns_requires_kwonly():
 
 
 # ── create_idmap_userns: kernel surface ─────────────────────────────────────
+
 
 def test_create_idmap_userns_identity_map():
     """Identity map (caller's own uid/gid → same) works without elevated caps."""
@@ -195,6 +197,7 @@ def test_create_idmap_userns_unprivileged_non_identity_fails():
 
 # ── idmap_userns context manager ────────────────────────────────────────────
 
+
 def test_idmap_userns_context_manager_yields_open_fd():
     uid_entry = truenas_os.create_idmap_mapping(os.geteuid(), os.geteuid(), 1)
     gid_entry = truenas_os.create_idmap_mapping(os.getegid(), os.getegid(), 1)
@@ -220,6 +223,7 @@ def test_idmap_userns_rejects_raw_tuples_at_c_boundary():
 
 # ── GIL released during the dance ───────────────────────────────────────────
 
+
 def test_create_idmap_userns_releases_gil():
     """A background thread should make forward progress while
     create_idmap_userns is executing the syscall sequence."""
@@ -240,7 +244,8 @@ def test_create_idmap_userns_releases_gil():
         # Run create_idmap_userns several times; ticker should keep going.
         for _ in range(20):
             fd = truenas_os.create_idmap_userns(
-                uid_map=[uid_entry], gid_map=[gid_entry],
+                uid_map=[uid_entry],
+                gid_map=[gid_entry],
             )
             os.close(fd)
 
@@ -266,7 +271,7 @@ def test_create_idmap_userns_releases_gil():
 # conftest fixtures, since IDmapped mount support is exercised by VFS but
 # the source filesystem's behaviour matters for the consumer.
 
-_HOST_BASE  = 100000
+_HOST_BASE = 100000
 _HOST_RANGE = 65536
 
 
@@ -295,18 +300,21 @@ def _idmapped_bind(source, host_base=_HOST_BASE, host_range=_HOST_RANGE):
             )
             try:
                 truenas_os.mount_setattr(
-                    path="", dirfd=tree_fd,
+                    path="",
+                    dirfd=tree_fd,
                     attr_set=truenas_os.MOUNT_ATTR_IDMAP,
                     userns_fd=userns_fd,
                     flags=truenas_os.AT_EMPTY_PATH,
                 )
                 truenas_os.mount_setattr(
-                    path="", dirfd=tree_fd,
+                    path="",
+                    dirfd=tree_fd,
                     propagation=truenas_os.MS_SLAVE,
                     flags=truenas_os.AT_EMPTY_PATH,
                 )
                 truenas_os.move_mount(
-                    from_path="", from_dirfd=tree_fd,
+                    from_path="",
+                    from_dirfd=tree_fd,
                     to_path=target,
                     flags=truenas_os.MOVE_MOUNT_F_EMPTY_PATH,
                 )
@@ -408,9 +416,7 @@ def test_idmapped_bind_create_and_chown_writes_back(posix_dataset):
         proc = ctx.Process(target=_create_as_mapped_user, args=(created,))
         proc.start()
         proc.join()
-        assert proc.exitcode == 0, (
-            f"child create failed (exitcode={proc.exitcode})"
-        )
+        assert proc.exitcode == 0, f"child create failed (exitcode={proc.exitcode})"
 
         # Through the idmapped bind: file appears as the outside (host) IDs.
         assert os.stat(created).st_uid == _HOST_BASE

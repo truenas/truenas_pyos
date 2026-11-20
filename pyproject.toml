@@ -24,3 +24,10 @@ classifiers = [
 [project.scripts]
 truenas_getfacl = "_truenas_os_scripts._getfacl:main"
 truenas_setfacl = "_truenas_os_scripts._setfacl:main"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["F403", "F405"]
