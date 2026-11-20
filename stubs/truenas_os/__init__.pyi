@@ -4,7 +4,7 @@ This module provides Python bindings to Linux kernel system calls for
 advanced filesystem and mount operations, plus ACL support.
 """
 
-from typing import Any, Callable, ClassVar, Iterable, Iterator, Literal, NamedTuple, final, type_check_only
+from typing import Any, Callable, ClassVar, Iterable, Iterator, Literal, final, type_check_only
 from enum import IntEnum, IntFlag
 
 # StatxResult type - PyStructSequence from statx(2)

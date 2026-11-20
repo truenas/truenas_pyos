@@ -710,7 +710,7 @@ def test_posixace_user_obj():
     assert ace.tag     == t.POSIXTag.USER_OBJ
     assert ace.perms   == t.POSIXPerm.READ | t.POSIXPerm.WRITE
     assert ace.id      == -1
-    assert ace.default == False
+    assert ace.default is False
 
 
 def test_posixace_named_user():
@@ -721,7 +721,7 @@ def test_posixace_named_user():
 
 def test_posixace_default_flag():
     ace = t.POSIXAce(tag=t.POSIXTag.OTHER, perms=t.POSIXPerm(0), default=True)
-    assert ace.default == True
+    assert ace.default is True
 
 
 def test_posixace_repr():
@@ -1520,11 +1520,11 @@ def test_nfs4_inherited_acl_matches_kernel(nfs4_dataset):
             assert not kern.trivial, "file child inherited ACL must not be trivial"
             assert len(kern) == len(lib_file_acl), \
                 f"file ACE count: kernel={len(kern)}, lib={len(lib_file_acl)}"
-            for k, l in zip(kern.aces, lib_file_acl.aces):
+            for k, lib in zip(kern.aces, lib_file_acl.aces):
                 assert INHERITED     in k.ace_flags, "INHERITED must be set"
                 assert PROP_FLAGS & k.ace_flags == t.NFS4Flag(0), \
                     "no propagation flags on file ACE"
-                assert _structural(k) == _structural(l)
+                assert _structural(k) == _structural(lib)
         finally:
             os.close(fd)
 
@@ -1537,13 +1537,13 @@ def test_nfs4_inherited_acl_matches_kernel(nfs4_dataset):
             assert not kern.trivial, "dir child inherited ACL must not be trivial"
             assert len(kern) == len(lib_dir_acl), \
                 f"dir ACE count: kernel={len(kern)}, lib={len(lib_dir_acl)}"
-            for k, l in zip(kern.aces, lib_dir_acl.aces):
+            for k, lib in zip(kern.aces, lib_dir_acl.aces):
                 assert INHERITED in k.ace_flags, "INHERITED must be set"
                 assert FILE_INH  in k.ace_flags, "FILE_INHERIT must propagate"
                 assert DIR_INH   in k.ace_flags, "DIRECTORY_INHERIT must propagate"
                 assert t.NFS4Flag.INHERIT_ONLY not in k.ace_flags, \
                     "INHERIT_ONLY must be cleared on dir child"
-                assert _structural(k) == _structural(l)
+                assert _structural(k) == _structural(lib)
         finally:
             os.close(fd)
     finally:

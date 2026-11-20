@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 import pytest
-import os
 import struct
 
 import truenas_os

@@ -197,8 +197,8 @@ def test_format_nfs4_text_ace_lines():
     lines = out.splitlines()
     assert len(lines) == 2
     # C extension may reorder ACEs (e.g. DENY before ALLOW); check presence
-    assert any(l.startswith('owner@:')    and l.endswith(':allow') for l in lines)
-    assert any(l.startswith('everyone@:') and l.endswith(':deny')  for l in lines)
+    assert any(line.startswith('owner@:')    and line.endswith(':allow') for line in lines)
+    assert any(line.startswith('everyone@:') and line.endswith(':deny')  for line in lines)
 
 
 # ── _format_posix_text ────────────────────────────────────────────────────────
@@ -206,14 +206,14 @@ def test_format_nfs4_text_ace_lines():
 def test_format_posix_text_access_ace_count():
     out = _format_posix_text('/x', _POSIX_ACL, 0, 0, None,
                              numeric=True, quiet=True)
-    access = [l for l in out.splitlines() if not l.startswith('default:')]
+    access = [line for line in out.splitlines() if not line.startswith('default:')]
     assert len(access) == 3
 
 
 def test_format_posix_text_default_ace_count():
     out = _format_posix_text('/x', _POSIX_ACL, 0, 0, None,
                              numeric=True, quiet=True)
-    defaults = [l for l in out.splitlines() if l.startswith('default:')]
+    defaults = [line for line in out.splitlines() if line.startswith('default:')]
     assert len(defaults) == 2
 
 

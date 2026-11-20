@@ -820,10 +820,6 @@ def test_iter_dir_stack_with_skip(temp_mount_tree):
     for item in iterator:
         if item.isdir and item.name == "dir1":
             found_dir1 = True
-            stack_before_skip = iterator.dir_stack()
-            # dir1 should not be in stack yet (not descended into)
-            dir1_in_stack = any("dir1" in path for path, _ in stack_before_skip)
-
             iterator.skip()
             # After skip, dir1 still shouldn't be in stack since we didn't descend
 
@@ -1139,7 +1135,6 @@ def test_iter_symlink_readdir_detection(temp_mount_tree_with_symlinks):
     so they won't be yielded. This test documents expected behavior.
     """
     # Manually check that symlinks exist in directory
-    import os
     symlinks = [
         "symlink_to_file1.txt",
         "symlink_to_dir1",

@@ -7,7 +7,6 @@ import errno
 import multiprocessing
 import os
 import subprocess
-import tempfile
 import threading
 import time
 

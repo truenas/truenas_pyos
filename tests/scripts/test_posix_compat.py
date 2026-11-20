@@ -15,10 +15,8 @@ text output of `getfacl -n -c` against `truenas_getfacl -n -q`.
 """
 
 import os
-import shutil
 import subprocess
 
-import pytest
 import truenas_os as t
 
 

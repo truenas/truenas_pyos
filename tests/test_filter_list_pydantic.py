@@ -55,8 +55,6 @@ BASIC = [
 
 
 def _models():
-    Field = pydantic.Field
-
     class Inner(pydantic.BaseModel):
         val: int
 

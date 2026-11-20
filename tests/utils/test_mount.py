@@ -6,7 +6,6 @@ import pytest
 import truenas_os
 from truenas_os_pyutils.io import SymlinkInPathError
 from truenas_os_pyutils.mount import (
-    StatmountResultDict,
     iter_mountinfo,
     statmount,
     umount,
@@ -107,7 +106,6 @@ def test_iter_mountinfo_contains_root():
 def test_iter_mountinfo_with_path():
     # Iterating children of / should yield at least the same mounts as full scan
     mounts_all = list(iter_mountinfo())
-    root_mnt_id = statmount(path='/', as_dict=False).mnt_id
     mounts_rooted = list(iter_mountinfo(path='/'))
     # All rooted results must appear in the full list
     all_ids = {m['mount_id'] for m in mounts_all}
