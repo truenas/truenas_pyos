@@ -10,80 +10,79 @@ import tempfile
 
 def test_statx_function_exists():
     """Test that statx function is available."""
-    assert hasattr(truenas_os, 'statx')
+    assert hasattr(truenas_os, "statx")
 
 
 def test_statx_constants_exist():
     """Test that STATX_* mask constants are defined."""
-    assert hasattr(truenas_os, 'STATX_TYPE')
-    assert hasattr(truenas_os, 'STATX_MODE')
-    assert hasattr(truenas_os, 'STATX_NLINK')
-    assert hasattr(truenas_os, 'STATX_UID')
-    assert hasattr(truenas_os, 'STATX_GID')
-    assert hasattr(truenas_os, 'STATX_ATIME')
-    assert hasattr(truenas_os, 'STATX_MTIME')
-    assert hasattr(truenas_os, 'STATX_CTIME')
-    assert hasattr(truenas_os, 'STATX_INO')
-    assert hasattr(truenas_os, 'STATX_SIZE')
-    assert hasattr(truenas_os, 'STATX_BLOCKS')
-    assert hasattr(truenas_os, 'STATX_BASIC_STATS')
-    assert hasattr(truenas_os, 'STATX_BTIME')
-    assert hasattr(truenas_os, 'STATX_MNT_ID')
-    assert hasattr(truenas_os, 'STATX_DIOALIGN')
-    assert hasattr(truenas_os, 'STATX_MNT_ID_UNIQUE')
-    assert hasattr(truenas_os, 'STATX_SUBVOL')
-    assert hasattr(truenas_os, 'STATX_WRITE_ATOMIC')
-    assert hasattr(truenas_os, 'STATX__RESERVED')
-    assert hasattr(truenas_os, 'STATX_ALL')
+    assert hasattr(truenas_os, "STATX_TYPE")
+    assert hasattr(truenas_os, "STATX_MODE")
+    assert hasattr(truenas_os, "STATX_NLINK")
+    assert hasattr(truenas_os, "STATX_UID")
+    assert hasattr(truenas_os, "STATX_GID")
+    assert hasattr(truenas_os, "STATX_ATIME")
+    assert hasattr(truenas_os, "STATX_MTIME")
+    assert hasattr(truenas_os, "STATX_CTIME")
+    assert hasattr(truenas_os, "STATX_INO")
+    assert hasattr(truenas_os, "STATX_SIZE")
+    assert hasattr(truenas_os, "STATX_BLOCKS")
+    assert hasattr(truenas_os, "STATX_BASIC_STATS")
+    assert hasattr(truenas_os, "STATX_BTIME")
+    assert hasattr(truenas_os, "STATX_MNT_ID")
+    assert hasattr(truenas_os, "STATX_DIOALIGN")
+    assert hasattr(truenas_os, "STATX_MNT_ID_UNIQUE")
+    assert hasattr(truenas_os, "STATX_SUBVOL")
+    assert hasattr(truenas_os, "STATX_WRITE_ATOMIC")
+    assert hasattr(truenas_os, "STATX__RESERVED")
+    assert hasattr(truenas_os, "STATX_ALL")
 
 
 def test_at_constants_exist():
     """Test that AT_* flag constants are defined."""
-    assert hasattr(truenas_os, 'AT_FDCWD')
-    assert hasattr(truenas_os, 'AT_SYMLINK_NOFOLLOW')
-    assert hasattr(truenas_os, 'AT_REMOVEDIR')
-    assert hasattr(truenas_os, 'AT_SYMLINK_FOLLOW')
-    assert hasattr(truenas_os, 'AT_NO_AUTOMOUNT')
-    assert hasattr(truenas_os, 'AT_EMPTY_PATH')
-    assert hasattr(truenas_os, 'AT_STATX_SYNC_AS_STAT')
-    assert hasattr(truenas_os, 'AT_STATX_FORCE_SYNC')
-    assert hasattr(truenas_os, 'AT_STATX_DONT_SYNC')
+    assert hasattr(truenas_os, "AT_FDCWD")
+    assert hasattr(truenas_os, "AT_SYMLINK_NOFOLLOW")
+    assert hasattr(truenas_os, "AT_REMOVEDIR")
+    assert hasattr(truenas_os, "AT_SYMLINK_FOLLOW")
+    assert hasattr(truenas_os, "AT_NO_AUTOMOUNT")
+    assert hasattr(truenas_os, "AT_EMPTY_PATH")
+    assert hasattr(truenas_os, "AT_STATX_SYNC_AS_STAT")
+    assert hasattr(truenas_os, "AT_STATX_FORCE_SYNC")
+    assert hasattr(truenas_os, "AT_STATX_DONT_SYNC")
 
 
 def test_statx_attr_constants_exist():
     """Test that STATX_ATTR_* attribute constants are defined."""
-    assert hasattr(truenas_os, 'STATX_ATTR_COMPRESSED')
-    assert hasattr(truenas_os, 'STATX_ATTR_IMMUTABLE')
-    assert hasattr(truenas_os, 'STATX_ATTR_APPEND')
-    assert hasattr(truenas_os, 'STATX_ATTR_NODUMP')
-    assert hasattr(truenas_os, 'STATX_ATTR_ENCRYPTED')
-    assert hasattr(truenas_os, 'STATX_ATTR_AUTOMOUNT')
-    assert hasattr(truenas_os, 'STATX_ATTR_MOUNT_ROOT')
-    assert hasattr(truenas_os, 'STATX_ATTR_VERITY')
-    assert hasattr(truenas_os, 'STATX_ATTR_DAX')
-    assert hasattr(truenas_os, 'STATX_ATTR_WRITE_ATOMIC')
+    assert hasattr(truenas_os, "STATX_ATTR_COMPRESSED")
+    assert hasattr(truenas_os, "STATX_ATTR_IMMUTABLE")
+    assert hasattr(truenas_os, "STATX_ATTR_APPEND")
+    assert hasattr(truenas_os, "STATX_ATTR_NODUMP")
+    assert hasattr(truenas_os, "STATX_ATTR_ENCRYPTED")
+    assert hasattr(truenas_os, "STATX_ATTR_AUTOMOUNT")
+    assert hasattr(truenas_os, "STATX_ATTR_MOUNT_ROOT")
+    assert hasattr(truenas_os, "STATX_ATTR_VERITY")
+    assert hasattr(truenas_os, "STATX_ATTR_DAX")
+    assert hasattr(truenas_os, "STATX_ATTR_WRITE_ATOMIC")
 
 
 def test_mount_attr_constants_exist():
     """Test that MOUNT_ATTR_* constants are defined."""
-    assert hasattr(truenas_os, 'MOUNT_ATTR_RDONLY')
-    assert hasattr(truenas_os, 'MOUNT_ATTR_NOSUID')
-    assert hasattr(truenas_os, 'MOUNT_ATTR_NODEV')
-    assert hasattr(truenas_os, 'MOUNT_ATTR_NOEXEC')
-    assert hasattr(truenas_os, 'MOUNT_ATTR_NOATIME')
-    assert hasattr(truenas_os, 'MOUNT_ATTR_NODIRATIME')
-    assert hasattr(truenas_os, 'MOUNT_ATTR_NOSYMFOLLOW')
+    assert hasattr(truenas_os, "MOUNT_ATTR_RDONLY")
+    assert hasattr(truenas_os, "MOUNT_ATTR_NOSUID")
+    assert hasattr(truenas_os, "MOUNT_ATTR_NODEV")
+    assert hasattr(truenas_os, "MOUNT_ATTR_NOEXEC")
+    assert hasattr(truenas_os, "MOUNT_ATTR_NOATIME")
+    assert hasattr(truenas_os, "MOUNT_ATTR_NODIRATIME")
+    assert hasattr(truenas_os, "MOUNT_ATTR_NOSYMFOLLOW")
 
 
 def test_statx_result_type_exists():
     """Test that StatxResult type exists."""
-    assert hasattr(truenas_os, 'StatxResult')
+    assert hasattr(truenas_os, "StatxResult")
 
 
 def test_statx_basic():
     """Test statx() with basic parameters on current directory."""
-    result = truenas_os.statx('.', dir_fd=truenas_os.AT_FDCWD, flags=0,
-                              mask=truenas_os.STATX_BASIC_STATS)
+    result = truenas_os.statx(".", dir_fd=truenas_os.AT_FDCWD, flags=0, mask=truenas_os.STATX_BASIC_STATS)
     assert isinstance(result, truenas_os.StatxResult)
     assert result.stx_mask is not None
     assert isinstance(result.stx_mask, int)
@@ -93,7 +92,7 @@ def test_statx_basic():
 
 def test_statx_with_btime():
     """Test statx() with birth time requested."""
-    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
+    result = truenas_os.statx(".", mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
     assert isinstance(result, truenas_os.StatxResult)
     # Birth time should be available
     assert result.stx_btime is not None
@@ -104,7 +103,7 @@ def test_statx_with_btime():
 
 def test_statx_timestamps_format():
     """Test that timestamps are in correct format (float and nanoseconds)."""
-    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
+    result = truenas_os.statx(".", mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
 
     # Float timestamps
     assert isinstance(result.stx_atime, float)
@@ -129,7 +128,7 @@ def test_statx_timestamps_format():
 
 def test_statx_device_fields():
     """Test device major/minor and computed dev fields."""
-    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS)
+    result = truenas_os.statx(".", mask=truenas_os.STATX_BASIC_STATS)
 
     # All device fields should be present
     assert isinstance(result.stx_rdev_major, int)
@@ -149,7 +148,7 @@ def test_statx_device_fields():
 def test_statx_device_file():
     """Test statx() on a device file to verify makedev()."""
     try:
-        result = truenas_os.statx('/dev/null', mask=truenas_os.STATX_BASIC_STATS)
+        result = truenas_os.statx("/dev/null", mask=truenas_os.STATX_BASIC_STATS)
 
         # /dev/null is character device 1:3
         assert result.stx_rdev_major == 1
@@ -165,37 +164,46 @@ def test_statx_device_file():
 
 def test_statx_result_fields():
     """Test that StatxResult has all expected fields."""
-    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
+    result = truenas_os.statx(".", mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_BTIME)
 
     # Basic fields
     expected_fields = [
-        'stx_mask', 'stx_blksize', 'stx_attributes', 'stx_nlink',
-        'stx_uid', 'stx_gid', 'stx_mode', 'stx_ino', 'stx_size',
-        'stx_blocks', 'stx_attributes_mask',
+        "stx_mask",
+        "stx_blksize",
+        "stx_attributes",
+        "stx_nlink",
+        "stx_uid",
+        "stx_gid",
+        "stx_mode",
+        "stx_ino",
+        "stx_size",
+        "stx_blocks",
+        "stx_attributes_mask",
     ]
 
     # Timestamp fields (float)
-    expected_fields.extend([
-        'stx_atime', 'stx_btime', 'stx_ctime', 'stx_mtime'
-    ])
+    expected_fields.extend(["stx_atime", "stx_btime", "stx_ctime", "stx_mtime"])
 
     # Timestamp fields (nanoseconds)
-    expected_fields.extend([
-        'stx_atime_ns', 'stx_btime_ns', 'stx_ctime_ns', 'stx_mtime_ns'
-    ])
+    expected_fields.extend(["stx_atime_ns", "stx_btime_ns", "stx_ctime_ns", "stx_mtime_ns"])
 
     # Device fields
-    expected_fields.extend([
-        'stx_rdev_major', 'stx_rdev_minor', 'stx_rdev',
-        'stx_dev_major', 'stx_dev_minor', 'stx_dev'
-    ])
+    expected_fields.extend(
+        ["stx_rdev_major", "stx_rdev_minor", "stx_rdev", "stx_dev_major", "stx_dev_minor", "stx_dev"]
+    )
 
     # Additional fields
-    expected_fields.extend([
-        'stx_mnt_id', 'stx_dio_mem_align', 'stx_dio_offset_align',
-        'stx_subvol', 'stx_atomic_write_unit_min', 'stx_atomic_write_unit_max',
-        'stx_atomic_write_segments_max'
-    ])
+    expected_fields.extend(
+        [
+            "stx_mnt_id",
+            "stx_dio_mem_align",
+            "stx_dio_offset_align",
+            "stx_subvol",
+            "stx_atomic_write_unit_min",
+            "stx_atomic_write_unit_max",
+            "stx_atomic_write_segments_max",
+        ]
+    )
 
     for field in expected_fields:
         assert hasattr(result, field), f"Missing field: {field}"
@@ -231,7 +239,7 @@ def test_statx_symlink_nofollow():
     with tempfile.NamedTemporaryFile(delete=False) as f:
         target = f.name
 
-    link_path = target + '.link'
+    link_path = target + ".link"
 
     try:
         os.symlink(target, link_path)
@@ -241,9 +249,9 @@ def test_statx_symlink_nofollow():
         assert stat.S_ISREG(result_follow.stx_mode)
 
         # Don't follow symlink
-        result_nofollow = truenas_os.statx(link_path,
-                                           flags=truenas_os.AT_SYMLINK_NOFOLLOW,
-                                           mask=truenas_os.STATX_BASIC_STATS)
+        result_nofollow = truenas_os.statx(
+            link_path, flags=truenas_os.AT_SYMLINK_NOFOLLOW, mask=truenas_os.STATX_BASIC_STATS
+        )
         assert stat.S_ISLNK(result_nofollow.stx_mode)
     finally:
         if os.path.exists(link_path):
@@ -254,7 +262,7 @@ def test_statx_symlink_nofollow():
 
 def test_statx_with_mnt_id():
     """Test statx() with STATX_MNT_ID to get mount ID."""
-    result = truenas_os.statx('/', mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_MNT_ID)
+    result = truenas_os.statx("/", mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_MNT_ID)
 
     # Should have mount ID for root
     assert result.stx_mnt_id is not None
@@ -262,10 +270,10 @@ def test_statx_with_mnt_id():
     assert result.stx_mnt_id > 0
 
 
-@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_GEN'), reason='needs TrueNAS kernel headers')
+@pytest.mark.skipif(not hasattr(truenas_os, "STATX_GEN"), reason="needs TrueNAS kernel headers")
 def test_statx_with_gen():
     """Test statx() with STATX_GEN to get the inode generation."""
-    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_GEN)
+    result = truenas_os.statx(".", mask=truenas_os.STATX_BASIC_STATS | truenas_os.STATX_GEN)
 
     assert isinstance(result.stx_gen, int)
     if not result.stx_mask & truenas_os.STATX_GEN:
@@ -274,43 +282,44 @@ def test_statx_with_gen():
 
 
 def _zfsflags(dataset):
-    path = os.path.join(dataset, 'pflags_file')
-    open(path, 'w').close()
+    path = os.path.join(dataset, "pflags_file")
+    open(path, "w").close()
     result = truenas_os.statx(path, mask=truenas_os.STATX_ZFSFLAGS)
     if not result.stx_mask & truenas_os.STATX_ZFSFLAGS:
-        pytest.skip('dataset is not ZFS')
+        pytest.skip("dataset is not ZFS")
     return result.stx_zfsflags
 
 
-@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ZFSFLAGS'), reason='needs TrueNAS kernel headers')
+@pytest.mark.skipif(not hasattr(truenas_os, "STATX_ZFSFLAGS"), reason="needs TrueNAS kernel headers")
 def test_statx_zfsflags_nfs4_trivial(nfs4_dataset):
     """A new file on an NFSv4 dataset reports a trivial ACL (and ZFS sets archive on create)."""
     ZFSFlags = truenas_os.ZFSFlags
     assert ZFSFlags(_zfsflags(nfs4_dataset)) == ZFSFlags.ACL_TRIVIAL | ZFSFlags.ARCHIVE
 
 
-@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ZFSFLAGS'), reason='needs TrueNAS kernel headers')
+@pytest.mark.skipif(not hasattr(truenas_os, "STATX_ZFSFLAGS"), reason="needs TrueNAS kernel headers")
 def test_statx_zfsflags_posix_hides_trivial(posix_dataset):
     """ZFS_ACL_TRIVIAL is only meaningful (and only reported) with NFSv4 ACLs."""
     assert not _zfsflags(posix_dataset) & truenas_os.ZFSFlags.ACL_TRIVIAL
 
 
-@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ZFSFLAGS'), reason='needs TrueNAS kernel headers')
-@pytest.mark.parametrize('folder', [False, True], ids=['file', 'folder'])
-@pytest.mark.parametrize('flag', ['PROTECTED', 'DEFAULTED', 'AUTO_INHERIT'])
+@pytest.mark.skipif(not hasattr(truenas_os, "STATX_ZFSFLAGS"), reason="needs TrueNAS kernel headers")
+@pytest.mark.parametrize("folder", [False, True], ids=["file", "folder"])
+@pytest.mark.parametrize("flag", ["PROTECTED", "DEFAULTED", "AUTO_INHERIT"])
 def test_statx_zfsflags_acl_flags(nfs4_dataset, folder, flag):
     """An ACL-wide flag set through the ACL is reported in stx_zfsflags."""
-    path = os.path.join(nfs4_dataset, 'acl_flags')
+    path = os.path.join(nfs4_dataset, "acl_flags")
     inherit = truenas_os.NFS4Flag(0)
     if folder:
         os.mkdir(path)
         inherit = truenas_os.NFS4Flag.FILE_INHERIT | truenas_os.NFS4Flag.DIRECTORY_INHERIT
     else:
-        open(path, 'w').close()
+        open(path, "w").close()
     read = truenas_os.NFS4Perm.READ_DATA | truenas_os.NFS4Perm.READ_ATTRIBUTES | truenas_os.NFS4Perm.READ_ACL
     aces = [
-        truenas_os.NFS4Ace(truenas_os.NFS4AceType.ALLOW, inherit, read | truenas_os.NFS4Perm.WRITE_ACL,
-                           truenas_os.NFS4Who.OWNER),
+        truenas_os.NFS4Ace(
+            truenas_os.NFS4AceType.ALLOW, inherit, read | truenas_os.NFS4Perm.WRITE_ACL, truenas_os.NFS4Who.OWNER
+        ),
         truenas_os.NFS4Ace(truenas_os.NFS4AceType.ALLOW, inherit, read, truenas_os.NFS4Who.NAMED, who_id=8675309),
     ]
     fd = os.open(path, os.O_RDONLY)
@@ -321,13 +330,13 @@ def test_statx_zfsflags_acl_flags(nfs4_dataset, folder, flag):
     ZFSFlags = truenas_os.ZFSFlags
     acl_flags = ZFSFlags.ACL_PROTECTED | ZFSFlags.ACL_DEFAULTED | ZFSFlags.ACL_AUTO_INHERIT
     result = truenas_os.statx(path, mask=truenas_os.STATX_ZFSFLAGS)
-    assert ZFSFlags(result.stx_zfsflags) & acl_flags == ZFSFlags[f'ACL_{flag}']
+    assert ZFSFlags(result.stx_zfsflags) & acl_flags == ZFSFlags[f"ACL_{flag}"]
 
 
-@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ZFSFLAGS'), reason='needs TrueNAS kernel headers')
+@pytest.mark.skipif(not hasattr(truenas_os, "STATX_ZFSFLAGS"), reason="needs TrueNAS kernel headers")
 def test_statx_zfsflags_non_zfs():
     """Non-ZFS files do not fill stx_zfsflags."""
-    result = truenas_os.statx('/proc/self/status', mask=truenas_os.STATX_ZFSFLAGS)
+    result = truenas_os.statx("/proc/self/status", mask=truenas_os.STATX_ZFSFLAGS)
     assert not result.stx_mask & truenas_os.STATX_ZFSFLAGS
     assert result.stx_zfsflags == 0
 
@@ -336,7 +345,7 @@ def _acltype(path):
     """The ACL type bits of stx_attributes, once the mask says the kernel reports them."""
     both = truenas_os.STATX_ATTR_POSIXACL | truenas_os.STATX_ATTR_NFSV4ACL
     result = truenas_os.statx(path, mask=truenas_os.STATX_BASIC_STATS)
-    assert result.stx_attributes_mask & both == both, 'the kernel reports the ACL type'
+    assert result.stx_attributes_mask & both == both, "the kernel reports the ACL type"
     return result.stx_attributes & both
 
 
@@ -352,65 +361,67 @@ def test_statx_attributes_acltype_posix(posix_dataset):
 
 def test_statx_attributes_acltype_none():
     """A file system that keeps no ACL reports neither bit, with both in the mask."""
-    assert _acltype('/proc/self/status') == 0
+    assert _acltype("/proc/self/status") == 0
 
 
 def _read_only(path):
     """The read-only bit of stx_attributes, once the mask says the kernel reports it."""
     result = truenas_os.statx(path, mask=truenas_os.STATX_BASIC_STATS)
-    assert result.stx_attributes_mask & truenas_os.STATX_ATTR_RDONLY, 'the kernel reports a read-only mount'
+    assert result.stx_attributes_mask & truenas_os.STATX_ATTR_RDONLY, "the kernel reports a read-only mount"
     return bool(result.stx_attributes & truenas_os.STATX_ATTR_RDONLY)
 
 
 def _dataset_of(mountpoint):
     """The dataset mounted at mountpoint."""
     return subprocess.run(
-        ['findmnt', '-n', '-o', 'SOURCE', '--mountpoint', mountpoint],
-        capture_output=True, text=True, check=True,
+        ["findmnt", "-n", "-o", "SOURCE", "--mountpoint", mountpoint],
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
 
 
 def test_statx_attributes_rdonly_dataset(nfs4_dataset, zfs_enabled):
     """A dataset reports the read-only bit while readonly=on, set and cleared with no remount."""
     if not zfs_enabled:
-        pytest.skip('needs a dataset of its own')
+        pytest.skip("needs a dataset of its own")
     ds = _dataset_of(nfs4_dataset)
-    path = os.path.join(nfs4_dataset, 'f')
-    open(path, 'w').close()
+    path = os.path.join(nfs4_dataset, "f")
+    open(path, "w").close()
     assert not _read_only(nfs4_dataset)
     assert not _read_only(path)
-    subprocess.run(['zfs', 'set', 'readonly=on', ds], check=True)
+    subprocess.run(["zfs", "set", "readonly=on", ds], check=True)
     try:
         assert _read_only(nfs4_dataset)
         assert _read_only(path)
     finally:
-        subprocess.run(['zfs', 'set', 'readonly=off', ds], check=True)
+        subprocess.run(["zfs", "set", "readonly=off", ds], check=True)
     assert not _read_only(path)
 
 
 def test_statx_attributes_rdonly_snapshot(nfs4_dataset, zfs_enabled):
     """A file inside a snapshot of a writable dataset reports the read-only bit."""
     if not zfs_enabled:
-        pytest.skip('needs a dataset of its own')
+        pytest.skip("needs a dataset of its own")
     ds = _dataset_of(nfs4_dataset)
-    open(os.path.join(nfs4_dataset, 'f'), 'w').close()
-    subprocess.run(['zfs', 'snapshot', f'{ds}@ro'], check=True)
+    open(os.path.join(nfs4_dataset, "f"), "w").close()
+    subprocess.run(["zfs", "snapshot", f"{ds}@ro"], check=True)
     try:
-        assert _read_only(os.path.join(nfs4_dataset, '.zfs', 'snapshot', 'ro', 'f'))
-        assert not _read_only(os.path.join(nfs4_dataset, 'f'))
+        assert _read_only(os.path.join(nfs4_dataset, ".zfs", "snapshot", "ro", "f"))
+        assert not _read_only(os.path.join(nfs4_dataset, "f"))
     finally:
-        subprocess.run(['zfs', 'destroy', f'{ds}@ro'], check=True)
+        subprocess.run(["zfs", "destroy", f"{ds}@ro"], check=True)
 
 
 def test_statx_attributes_rdonly_none():
     """A writable file system that is not ZFS reports no read-only bit, with it in the mask."""
-    assert not _read_only('/proc/self/status')
+    assert not _read_only("/proc/self/status")
 
 
 def _posix_acls(path):
     """The POSIX ACL bits of stx_attributes, once the mask says the kernel answered STATX_ACL."""
     result = truenas_os.statx(path, mask=truenas_os.STATX_ACL)
-    assert result.stx_mask & truenas_os.STATX_ACL, 'the kernel answers STATX_ACL'
+    assert result.stx_mask & truenas_os.STATX_ACL, "the kernel answers STATX_ACL"
     return result.stx_attributes & (truenas_os.STATX_ATTR_ACL_ACCESS | truenas_os.STATX_ATTR_ACL_DEFAULT)
 
 
@@ -430,12 +441,12 @@ def _posix_aces(named, default=False):
     return aces
 
 
-@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ACL'), reason='needs TrueNAS kernel headers')
+@pytest.mark.skipif(not hasattr(truenas_os, "STATX_ACL"), reason="needs TrueNAS kernel headers")
 def test_statx_acl_posix(posix_dataset):
     """STATX_ACL says which file has an access ACL and which directory a default one."""
-    path = os.path.join(posix_dataset, 'acl_file')
-    folder = os.path.join(posix_dataset, 'acl_dir')
-    open(path, 'w').close()
+    path = os.path.join(posix_dataset, "acl_file")
+    folder = os.path.join(posix_dataset, "acl_dir")
+    open(path, "w").close()
     os.mkdir(folder)
     assert _posix_acls(path) == 0
     assert _posix_acls(folder) == 0
@@ -457,17 +468,17 @@ def test_statx_acl_posix(posix_dataset):
         os.close(fd)
 
 
-@pytest.mark.skipif(not hasattr(truenas_os, 'STATX_ACL'), reason='needs TrueNAS kernel headers')
+@pytest.mark.skipif(not hasattr(truenas_os, "STATX_ACL"), reason="needs TrueNAS kernel headers")
 def test_statx_acl_not_posix(nfs4_dataset):
     """A file system that keeps no POSIX ACL leaves STATX_ACL out of the mask."""
-    for path in (nfs4_dataset, '/proc/self/status'):
+    for path in (nfs4_dataset, "/proc/self/status"):
         result = truenas_os.statx(path, mask=truenas_os.STATX_ACL)
         assert not result.stx_mask & truenas_os.STATX_ACL, path
 
 
 def test_statx_attributes_mask():
     """Test that stx_attributes_mask is set."""
-    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS)
+    result = truenas_os.statx(".", mask=truenas_os.STATX_BASIC_STATS)
 
     assert isinstance(result.stx_attributes, int)
     assert isinstance(result.stx_attributes_mask, int)
@@ -478,7 +489,7 @@ def test_statx_attributes_mask():
 def test_statx_mode_type_check():
     """Test mode and file type detection."""
     # Test on directory
-    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS)
+    result = truenas_os.statx(".", mask=truenas_os.STATX_BASIC_STATS)
     assert stat.S_ISDIR(result.stx_mode)
 
     # Test on regular file
@@ -490,13 +501,13 @@ def test_statx_mode_type_check():
 def test_statx_invalid_path():
     """Test that statx() raises OSError for invalid path."""
     with pytest.raises(OSError):
-        truenas_os.statx('/nonexistent/path/to/file', mask=truenas_os.STATX_BASIC_STATS)
+        truenas_os.statx("/nonexistent/path/to/file", mask=truenas_os.STATX_BASIC_STATS)
 
 
 def test_statx_mask_filtering():
     """Test that statx() respects the mask parameter."""
     # Request only basic stats (no BTIME)
-    result = truenas_os.statx('.', mask=truenas_os.STATX_BASIC_STATS)
+    result = truenas_os.statx(".", mask=truenas_os.STATX_BASIC_STATS)
 
     # Should have basic info
     assert result.stx_mode is not None
@@ -504,13 +515,13 @@ def test_statx_mask_filtering():
 
     # Birth time may or may not be available depending on mask
     # But the fields exist
-    assert hasattr(result, 'stx_btime')
-    assert hasattr(result, 'stx_btime_ns')
+    assert hasattr(result, "stx_btime")
+    assert hasattr(result, "stx_btime_ns")
 
 
 def test_statx_comparison_with_os_stat():
     """Test that statx() results match os.stat() for basic fields."""
-    path = '.'
+    path = "."
 
     st = os.stat(path)
     result = truenas_os.statx(path, mask=truenas_os.STATX_BASIC_STATS)

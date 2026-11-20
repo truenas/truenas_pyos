@@ -15,11 +15,11 @@ __all__ = ["iter_mountinfo", "statmount", "umount"]
 
 # STATMOUNT_SB_SOURCE requires kernel 6.18 or higher; the C extension
 # conditionally includes the field only when the header defines it at build time.
-_SB_SOURCE_SUPPORTED = hasattr(truenas_os.StatmountResult, 'sb_source')
+_SB_SOURCE_SUPPORTED = hasattr(truenas_os.StatmountResult, "sb_source")
 if not _SB_SOURCE_SUPPORTED:
     warnings.warn(
-        'truenas_os was built without STATMOUNT_SB_SOURCE support; '
-        'mount_source will be None for all mounts and ZFS snapshot detection is disabled.',
+        "truenas_os was built without STATMOUNT_SB_SOURCE support; "
+        "mount_source will be None for all mounts and ZFS snapshot detection is disabled.",
         RuntimeWarning,
         stacklevel=1,
     )
@@ -28,30 +28,30 @@ if not _SB_SOURCE_SUPPORTED:
 def __parse_mnt_attr(attr: int) -> list[str]:
     out = []
     if attr & truenas_os.MOUNT_ATTR_NOATIME:
-        out.append('NOATIME')
+        out.append("NOATIME")
 
     if attr & truenas_os.MOUNT_ATTR_RELATIME:
-        out.append('RELATIME')
+        out.append("RELATIME")
 
     if attr & truenas_os.MOUNT_ATTR_NOSUID:
-        out.append('NOSUID')
+        out.append("NOSUID")
 
     if attr & truenas_os.MOUNT_ATTR_NODEV:
-        out.append('NODEV')
+        out.append("NODEV")
 
     if attr & truenas_os.MOUNT_ATTR_NOEXEC:
-        out.append('NOEXEC')
+        out.append("NOEXEC")
 
     if attr & truenas_os.MOUNT_ATTR_RDONLY:
-        out.append('RO')
+        out.append("RO")
     else:
-        out.append('RW')
+        out.append("RW")
 
     if attr & truenas_os.MOUNT_ATTR_IDMAP:
-        out.append('IDMAP')
+        out.append("IDMAP")
 
     if attr & truenas_os.MOUNT_ATTR_NOSYMFOLLOW:
-        out.append('NOSYMFOLLOW')
+        out.append("NOSYMFOLLOW")
 
     return out
 
@@ -76,19 +76,19 @@ class StatmountResultDict(TypedDict):
 
 def __statmount_dict(sm: truenas_os.StatmountResult) -> StatmountResultDict:
     return {
-        'mount_id': sm.mnt_id,
-        'parent_id': sm.mnt_parent_id,
-        'device_id': {
-            'major': sm.sb_dev_major,
-            'minor': sm.sb_dev_minor,
-            'dev_t': os.makedev(sm.sb_dev_major, sm.sb_dev_minor)  # type: ignore[arg-type]
+        "mount_id": sm.mnt_id,
+        "parent_id": sm.mnt_parent_id,
+        "device_id": {
+            "major": sm.sb_dev_major,
+            "minor": sm.sb_dev_minor,
+            "dev_t": os.makedev(sm.sb_dev_major, sm.sb_dev_minor),  # type: ignore[arg-type]
         },
-        'root': sm.mnt_root,
-        'mountpoint': sm.mnt_point,
-        'mount_opts': __parse_mnt_attr(sm.mnt_attr),  # type: ignore[arg-type]
-        'fs_type': sm.fs_type,
-        'mount_source': sm.sb_source if _SB_SOURCE_SUPPORTED else None,
-        'super_opts': sm.mnt_opts.upper().split(',') if sm.mnt_opts else []
+        "root": sm.mnt_root,
+        "mountpoint": sm.mnt_point,
+        "mount_opts": __parse_mnt_attr(sm.mnt_attr),  # type: ignore[arg-type]
+        "fs_type": sm.fs_type,
+        "mount_source": sm.sb_source if _SB_SOURCE_SUPPORTED else None,
+        "super_opts": sm.mnt_opts.upper().split(",") if sm.mnt_opts else [],
     }
 
 
@@ -107,7 +107,7 @@ def _is_zfs_snapshot_mount(sm: truenas_os.StatmountResult) -> bool:
     a false match on non-ZFS filesystems that happen to include ``@`` in their
     source name.
     """
-    return _SB_SOURCE_SUPPORTED and sm.fs_type == 'zfs' and sm.sb_source is not None and '@' in sm.sb_source
+    return _SB_SOURCE_SUPPORTED and sm.fs_type == "zfs" and sm.sb_source is not None and "@" in sm.sb_source
 
 
 @overload
@@ -180,14 +180,14 @@ def iter_mountinfo(
     """
     specifiers = sum(x is not None for x in (target_mnt_id, path, fd))
     if specifiers > 1:
-        raise ValueError('At most one of target_mnt_id, path, and fd may be specified')
+        raise ValueError("At most one of target_mnt_id, path, and fd may be specified")
 
     if path is not None or fd is not None:
         target_mnt_id = statmount(path=path, fd=fd, as_dict=False).mnt_id
 
-    iter_kwargs: dict[str, Any] = {'reverse': reverse, 'statmount_flags': truenas_os.STATMOUNT_ALL}
+    iter_kwargs: dict[str, Any] = {"reverse": reverse, "statmount_flags": truenas_os.STATMOUNT_ALL}
     if target_mnt_id:
-        iter_kwargs['mnt_id'] = target_mnt_id
+        iter_kwargs["mnt_id"] = target_mnt_id
 
     for sm in truenas_os.iter_mount(**iter_kwargs):
         if not include_snapshot_mounts and _is_zfs_snapshot_mount(sm):
@@ -200,27 +200,18 @@ def iter_mountinfo(
 
 @overload
 def statmount(
-    *,
-    path: str | bytes | None = None,
-    fd: int | None = None,
-    as_dict: Literal[True] = True
+    *, path: str | bytes | None = None, fd: int | None = None, as_dict: Literal[True] = True
 ) -> StatmountResultDict: ...
 
 
 @overload
 def statmount(
-    *,
-    path: str | bytes | None = None,
-    fd: int | None = None,
-    as_dict: Literal[False]
+    *, path: str | bytes | None = None, fd: int | None = None, as_dict: Literal[False]
 ) -> truenas_os.StatmountResult: ...
 
 
 def statmount(
-    *,
-    path: str | bytes | None = None,
-    fd: int | None = None,
-    as_dict: bool = True
+    *, path: str | bytes | None = None, fd: int | None = None, as_dict: bool = True
 ) -> truenas_os.StatmountResult | StatmountResultDict:
     """Get mount information for the filesystem containing a path or open file.
 
@@ -247,7 +238,7 @@ def statmount(
           mount ID without re-opening the file.
     """
     if (not path and not fd) or (path and fd):
-        raise ValueError('One of path or fd is required')
+        raise ValueError("One of path or fd is required")
 
     if path:
         try:
@@ -258,14 +249,14 @@ def statmount(
             raise
         try:
             mnt_id = truenas_os.statx(
-                '', dir_fd=opened_fd, flags=truenas_os.AT_EMPTY_PATH, mask=truenas_os.STATX_MNT_ID_UNIQUE
+                "", dir_fd=opened_fd, flags=truenas_os.AT_EMPTY_PATH, mask=truenas_os.STATX_MNT_ID_UNIQUE
             ).stx_mnt_id
         finally:
             os.close(opened_fd)
     else:
         assert fd is not None
         mnt_id = truenas_os.statx(
-            '', dir_fd=fd, flags=truenas_os.AT_EMPTY_PATH, mask=truenas_os.STATX_MNT_ID_UNIQUE
+            "", dir_fd=fd, flags=truenas_os.AT_EMPTY_PATH, mask=truenas_os.STATX_MNT_ID_UNIQUE
         ).stx_mnt_id
 
     sm = truenas_os.statmount(mnt_id, mask=truenas_os.STATMOUNT_ALL)
@@ -282,7 +273,7 @@ def umount(
     detach: bool = False,
     expire: bool = False,
     follow_symlinks: bool = False,
-    recursive: bool = False
+    recursive: bool = False,
 ) -> None:
     """Unmount the filesystem at the given path.
 
@@ -326,14 +317,14 @@ def umount(
         # Get the mount ID of the target path and verify it's a mountpoint
         stat_result = truenas_os.statx(path, mask=truenas_os.STATX_MNT_ID_UNIQUE | truenas_os.STATX_BASIC_STATS)
         if not (stat_result.stx_attributes & truenas_os.STATX_ATTR_MOUNT_ROOT):
-            raise ValueError(f'{path!r} is not a mountpoint')
+            raise ValueError(f"{path!r} is not a mountpoint")
 
         mnt_id = stat_result.stx_mnt_id
 
         # Unmount all child mounts first, including any triggered snapshot mounts
         for mnt in iter_mountinfo(target_mnt_id=mnt_id, reverse=True, include_snapshot_mounts=True):
-            assert mnt['mountpoint'] is not None
-            truenas_os.umount2(target=mnt['mountpoint'], flags=flags)
+            assert mnt["mountpoint"] is not None
+            truenas_os.umount2(target=mnt["mountpoint"], flags=flags)
 
     # Unmount the target path itself
     truenas_os.umount2(target=path, flags=flags)

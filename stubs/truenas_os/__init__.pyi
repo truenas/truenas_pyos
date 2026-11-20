@@ -4,7 +4,7 @@ This module provides Python bindings to Linux kernel system calls for
 advanced filesystem and mount operations, plus ACL support.
 """
 
-from typing import Any, Callable, ClassVar, Iterable, Iterator, Literal, NamedTuple, final, type_check_only
+from typing import Any, Callable, ClassVar, Iterable, Iterator, Literal, final, type_check_only
 from enum import IntEnum, IntFlag
 
 # StatxResult type - PyStructSequence from statx(2)
@@ -15,6 +15,7 @@ class StatxResult(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
     A struct-sequence containing file metadata.
     Fields not requested or unavailable may be 0 or unset.
     """
+
     n_fields: ClassVar[int]
     n_sequence_fields: ClassVar[int]
     n_unnamed_fields: ClassVar[int]
@@ -106,6 +107,7 @@ class StatmountResult(tuple[Any, ...]):  # PyStructSequence, not a true NamedTup
     supports the corresponding STATMOUNT_* constant.  They are absent from
     this build.
     """
+
     n_fields: ClassVar[int]
     n_sequence_fields: ClassVar[int]
     n_unnamed_fields: ClassVar[int]
@@ -150,11 +152,11 @@ class StatmountResult(tuple[Any, ...]):  # PyStructSequence, not a true NamedTup
     @property
     def fs_subtype(self) -> str | None: ...  # Present on kernels with STATMOUNT_FS_SUBTYPE
     @property
-    def sb_source(self) -> str | None: ...   # Present on kernels with STATMOUNT_SB_SOURCE
+    def sb_source(self) -> str | None: ...  # Present on kernels with STATMOUNT_SB_SOURCE
     @property
-    def opt_array(self) -> list[str] | None: ...     # Present on kernels with STATMOUNT_OPT_ARRAY
+    def opt_array(self) -> list[str] | None: ...  # Present on kernels with STATMOUNT_OPT_ARRAY
     @property
-    def opt_sec_array(self) -> list[str] | None: ... # Present on kernels with STATMOUNT_OPT_SEC_ARRAY
+    def opt_sec_array(self) -> list[str] | None: ...  # Present on kernels with STATMOUNT_OPT_SEC_ARRAY
     @property
     def supported_mask(self) -> int | None: ...  # Present on kernels with STATMOUNT_SUPPORTED_MASK
     @property
@@ -176,6 +178,7 @@ class IdmapMappingEntry(tuple[Any, ...]):  # PyStructSequence, not a true NamedT
     ranges. Tuple-style access (entry[0], entry[1], entry[2]) is also
     supported.
     """
+
     n_fields: ClassVar[int]
     n_sequence_fields: ClassVar[int]
     n_unnamed_fields: ClassVar[int]
@@ -197,6 +200,7 @@ class CredEntry(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
     Construct via :func:`create_cred_entry`, which validates field ranges.
     Tuple-style access (entry[0]..entry[3]) is also supported.
     """
+
     n_fields: ClassVar[int]
     n_sequence_fields: ClassVar[int]
     n_unnamed_fields: ClassVar[int]
@@ -217,6 +221,7 @@ class AccessFailure(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
     """A single (credential, path-component) pair that failed an execute-access
     probe, as returned by :func:`check_path_access`.
     """
+
     n_fields: ClassVar[int]
     n_sequence_fields: ClassVar[int]
     n_unnamed_fields: ClassVar[int]
@@ -668,9 +673,7 @@ def create_idmap_userns(
     ...
 
 # Per-credential path-access probe
-def create_cred_entry(
-    id_name: str, uid: int, gid: int, groups: Iterable[int], /
-) -> CredEntry:
+def create_cred_entry(id_name: str, uid: int, gid: int, groups: Iterable[int], /) -> CredEntry:
     """Construct a validated CredEntry for use with :func:`check_path_access`.
 
     `id_name` is a free-form label echoed back in AccessFailure records so the
@@ -936,7 +939,7 @@ FH_AT_HANDLE_CONNECTABLE: int
 FH_AT_HANDLE_MNT_ID_UNIQUE: int
 
 # OPEN_TREE constants (for open_tree)
-OPEN_TREE_CLONE: int    # 0x1 — Create a detached clone of the mount tree
+OPEN_TREE_CLONE: int  # 0x1 — Create a detached clone of the mount tree
 OPEN_TREE_CLOEXEC: int  # 0x80000 — Set close-on-exec on the returned fd
 
 # FSOPEN constants (for fsopen)
@@ -962,26 +965,26 @@ MNT_EXPIRE: int  # Mark mount point as expired
 UMOUNT_NOFOLLOW: int  # Don't dereference target if symbolic link
 
 # MS_* mount(2) flags
-MS_RDONLY: int       # 0x00000001 — Mount read-only
-MS_NOSUID: int       # 0x00000002 — Ignore suid and sgid bits
-MS_NODEV: int        # 0x00000004 — Disallow access to device special files
-MS_NOEXEC: int       # 0x00000008 — Disallow program execution
+MS_RDONLY: int  # 0x00000001 — Mount read-only
+MS_NOSUID: int  # 0x00000002 — Ignore suid and sgid bits
+MS_NODEV: int  # 0x00000004 — Disallow access to device special files
+MS_NOEXEC: int  # 0x00000008 — Disallow program execution
 MS_SYNCHRONOUS: int  # 0x00000010 — Writes are synced at once
-MS_REMOUNT: int      # 0x00000020 — Alter flags of a mounted filesystem
-MS_DIRSYNC: int      # 0x00000080 — Directory modifications are synchronous
+MS_REMOUNT: int  # 0x00000020 — Alter flags of a mounted filesystem
+MS_DIRSYNC: int  # 0x00000080 — Directory modifications are synchronous
 MS_NOSYMFOLLOW: int  # 0x00000100 — Do not follow symlinks
-MS_NOATIME: int      # 0x00000400 — Do not update access times
-MS_NODIRATIME: int   # 0x00000800 — Do not update directory access times
-MS_BIND: int         # 0x00001000 — Bind mount
-MS_MOVE: int         # 0x00002000 — Move a subtree
-MS_REC: int          # 0x00004000 — Recursive bind mount
-MS_PRIVATE: int      # 0x00040000 — Change to private
-MS_SLAVE: int        # 0x00080000 — Change to slave
-MS_SHARED: int       # 0x00100000 — Change to shared
-MS_RELATIME: int     # 0x00200000 — Update atime relative to mtime/ctime
+MS_NOATIME: int  # 0x00000400 — Do not update access times
+MS_NODIRATIME: int  # 0x00000800 — Do not update directory access times
+MS_BIND: int  # 0x00001000 — Bind mount
+MS_MOVE: int  # 0x00002000 — Move a subtree
+MS_REC: int  # 0x00004000 — Recursive bind mount
+MS_PRIVATE: int  # 0x00040000 — Change to private
+MS_SLAVE: int  # 0x00080000 — Change to slave
+MS_SHARED: int  # 0x00100000 — Change to shared
+MS_RELATIME: int  # 0x00200000 — Update atime relative to mtime/ctime
 MS_STRICTATIME: int  # 0x01000000 — Always perform atime updates
-MS_LAZYTIME: int     # 0x02000000 — Update times lazily on disk
-MS_UNBINDABLE: int   # 0x00020000 — Change to unbindable
+MS_LAZYTIME: int  # 0x02000000 — Update times lazily on disk
+MS_UNBINDABLE: int  # 0x00020000 — Change to unbindable
 
 # fhandle type
 class fhandle:
@@ -1011,14 +1014,22 @@ class IterInstance(tuple[Any, ...]):  # PyStructSequence, not a true NamedTuple
     The iterator manages the file descriptor lifecycle — it is closed automatically
     at the start of the next iteration or when the iterator's context manager exits.
     """
+
     n_fields: ClassVar[int]
     n_sequence_fields: ClassVar[int]
     n_unnamed_fields: ClassVar[int]
-    __match_args__: ClassVar[tuple[
-        Literal['parent'], Literal['name'], Literal['fd'],
-        Literal['statxinfo'], Literal['isdir'], Literal['islnk'], Literal['isreg'],
-        Literal['ismount'],
-    ]]
+    __match_args__: ClassVar[
+        tuple[
+            Literal["parent"],
+            Literal["name"],
+            Literal["fd"],
+            Literal["statxinfo"],
+            Literal["isdir"],
+            Literal["islnk"],
+            Literal["isreg"],
+            Literal["ismount"],
+        ]
+    ]
     def __replace__(self, /, **changes: Any) -> IterInstance: ...
     @property
     def parent(self) -> str: ...  # Parent directory path
@@ -1043,12 +1054,17 @@ class FilesystemIterState(tuple[Any, ...]):  # PyStructSequence, not a true Name
 
     Tracks iteration progress and configuration.
     """
+
     n_fields: ClassVar[int]
     n_sequence_fields: ClassVar[int]
     n_unnamed_fields: ClassVar[int]
-    __match_args__: ClassVar[tuple[
-        Literal['cnt'], Literal['cnt_bytes'], Literal['current_directory'],
-    ]]
+    __match_args__: ClassVar[
+        tuple[
+            Literal["cnt"],
+            Literal["cnt_bytes"],
+            Literal["current_directory"],
+        ]
+    ]
     def __replace__(self, /, **changes: Any) -> FilesystemIterState: ...
     @property
     def cnt(self) -> int: ...  # Count of items yielded
@@ -1149,6 +1165,7 @@ class IteratorRestoreError(Exception):
     path : str
         The directory path where the expected subdirectory was not found
     """
+
     depth: int
     path: str
 
@@ -1239,9 +1256,10 @@ class NFS4AceType(IntEnum):
 
 class NFS4Who(IntEnum):
     """Maps to the (iflag, who) pair in the XDR encoding."""
-    NAMED = 0     # iflag=0, who=uid/gid
-    OWNER = 1     # iflag=1, ACE4_SPECIAL_OWNER
-    GROUP = 2     # iflag=1, ACE4_SPECIAL_GROUP
+
+    NAMED = 0  # iflag=0, who=uid/gid
+    OWNER = 1  # iflag=1, ACE4_SPECIAL_OWNER
+    GROUP = 2  # iflag=1, ACE4_SPECIAL_GROUP
     EVERYONE = 3  # iflag=1, ACE4_SPECIAL_EVERYONE
 
 class NFS4Perm(IntFlag):
@@ -1473,6 +1491,6 @@ def flistxattr(fd: int) -> list[str]:
     """
     ...
 
-XATTR_CREATE: int    # 1 — fail if attribute exists
-XATTR_REPLACE: int   # 2 — fail if attribute does not exist
+XATTR_CREATE: int  # 1 — fail if attribute exists
+XATTR_REPLACE: int  # 2 — fail if attribute does not exist
 XATTR_SIZE_MAX: int  # 2 * 1024 * 1024 — TrueNAS xattr value cap

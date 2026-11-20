@@ -12,6 +12,7 @@ Covers:
   - compile_filters(model=...) alias resolution
   - compile_options(model=...) alias resolution
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -38,11 +39,11 @@ def fl(data, filters, *, model=None, **co_kwargs):
 
 
 BASIC = [
-    {"id": 1, "name": "alice", "score": 100, "active": True,  "tags": ["a", "b"]},
-    {"id": 2, "name": "bob",   "score": 85,  "active": True,  "tags": ["b", "c"]},
-    {"id": 3, "name": "carol", "score": 90,  "active": False, "tags": ["a", "c"]},
-    {"id": 4, "name": "dave",  "score": 70,  "active": False, "tags": ["d"]},
-    {"id": 5, "name": "eve",   "score": 95,  "active": True,  "tags": ["a", "b", "c"]},
+    {"id": 1, "name": "alice", "score": 100, "active": True, "tags": ["a", "b"]},
+    {"id": 2, "name": "bob", "score": 85, "active": True, "tags": ["b", "c"]},
+    {"id": 3, "name": "carol", "score": 90, "active": False, "tags": ["a", "c"]},
+    {"id": 4, "name": "dave", "score": 70, "active": False, "tags": ["d"]},
+    {"id": 5, "name": "eve", "score": 95, "active": True, "tags": ["a", "b", "c"]},
 ]
 
 
@@ -55,8 +56,6 @@ BASIC = [
 
 
 def _models():
-    Field = pydantic.Field
-
     class Inner(pydantic.BaseModel):
         val: int
 
@@ -249,6 +248,7 @@ def test_pydantic_heterogeneous_list_cache_does_not_misfire():
 # path from field alias -> attribute name at compile time (nested models
 # followed), so the compiled filter applies directly to model instances.
 
+
 def _aliased_models():
     Field = pydantic.Field
 
@@ -295,9 +295,7 @@ def test_compile_model_wildcard_alias():
 
 def test_compile_model_or_alias():
     Item, data = _aliased_models()
-    out = _run_model(
-        [["OR", [[["years", "=", 20]], [["userName", "=", "alice"]]]]], Item, data
-    )
+    out = _run_model([["OR", [[["years", "=", 20]], [["userName", "=", "alice"]]]]], Item, data)
     assert sorted(out) == ["alice", "bob"]
 
 
@@ -356,6 +354,7 @@ def test_compile_model_none_is_noop():
 # from field alias -> attribute name at compile time, so they apply directly to
 # model instances. compile_filters([], model=...) is needed alongside so that
 # tnfilter accepts the model instances.
+
 
 def _opts_run(model, data, **opts_kwargs):
     cf = compile_filters([], model=model)

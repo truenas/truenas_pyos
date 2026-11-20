@@ -13,16 +13,27 @@ import sys
 import truenas_os as t
 
 from ._getfacl import (
-    _nfs4_perm_str, _nfs4_flag_str, _nfs4_who_str, _NFS4_TYPE_STR,
-    _posix_perm_str, _posix_qualifier, _POSIX_TAG_PREFIX,
-    _NFS4_PERM_CHARS, _NFS4_FLAG_CHARS,
-    _name_of_uid, _name_of_gid,
+    _nfs4_perm_str,
+    _nfs4_flag_str,
+    _nfs4_who_str,
+    _NFS4_TYPE_STR,
+    _posix_perm_str,
+    _posix_qualifier,
+    _POSIX_TAG_PREFIX,
+    _NFS4_PERM_CHARS,
+    _NFS4_FLAG_CHARS,
+    _name_of_uid,
+    _name_of_gid,
 )
 from ._setfacl import (
-    _parse_nfs4_ace, _parse_posix_ace,
-    _NFS4InheritedAcls, _get_mount_info, _make_trivial_posix,
+    _parse_nfs4_ace,
+    _parse_posix_ace,
+    _NFS4InheritedAcls,
+    _get_mount_info,
+    _make_trivial_posix,
     _NFS4_PERM_SETS,
-    _resolve_uid, _resolve_gid,
+    _resolve_uid,
+    _resolve_gid,
 )
 
 
@@ -34,9 +45,9 @@ _LAYOUT_FIXED_ROWS = 5
 # Color pair indices
 _CP_TITLE, _CP_SELECTED, _CP_ERROR, _CP_PREVIEW, _CP_WARN = 1, 2, 3, 4, 5
 
-_MODE_NORMAL = 'NORMAL'
-_MODE_INPUT = 'INPUT'
-_MODE_ACE_FORM = 'ACE_FORM'
+_MODE_NORMAL = "NORMAL"
+_MODE_INPUT = "INPUT"
+_MODE_ACE_FORM = "ACE_FORM"
 
 # Key code aliases
 _KEY_ESC = curses.ascii.ESC
@@ -69,19 +80,19 @@ _FORM_INHERIT_NAME_W = 12
 # NFS4 who-type radio grid (5 options, 2 columns)
 _FORM_WHO_COLS = 2
 _FORM_WHO_STRIDE = 14
-_FORM_WHO_LABELS = ('owner@', 'group@', 'everyone@', 'user', 'group')
+_FORM_WHO_LABELS = ("owner@", "group@", "everyone@", "user", "group")
 
 # POSIX structured editor — base-entry rows and perm bits
 _POSIX_BASE_ROWS = (
-    (t.POSIXTag.USER_OBJ, 'User (owner)'),
-    (t.POSIXTag.GROUP_OBJ, 'Group (owner)'),
-    (t.POSIXTag.MASK, 'Mask'),
-    (t.POSIXTag.OTHER, 'Other'),
+    (t.POSIXTag.USER_OBJ, "User (owner)"),
+    (t.POSIXTag.GROUP_OBJ, "Group (owner)"),
+    (t.POSIXTag.MASK, "Mask"),
+    (t.POSIXTag.OTHER, "Other"),
 )
 _POSIX_PERM_BITS = (
-    (t.POSIXPerm.READ, 'r'),
-    (t.POSIXPerm.WRITE, 'w'),
-    (t.POSIXPerm.EXECUTE, 'x'),
+    (t.POSIXPerm.READ, "r"),
+    (t.POSIXPerm.WRITE, "w"),
+    (t.POSIXPerm.EXECUTE, "x"),
 )
 
 # POSIX editor checkbox layout
@@ -97,6 +108,7 @@ _POSIX_NAMED_CHK_STRIDE = 7
 
 class _FormRegion(enum.IntEnum):
     """Focusable regions of the NFS4 ACE structured form."""
+
     WHO = 0
     TYPE = 1
     SETS = 2
@@ -106,6 +118,7 @@ class _FormRegion(enum.IntEnum):
 
 class _NFS4WhoChoice(enum.IntEnum):
     """Radio options for the NFS4 WHO field."""
+
     OWNER = 0
     GROUP = 1
     EVERYONE = 2
@@ -115,6 +128,7 @@ class _NFS4WhoChoice(enum.IntEnum):
 
 class _PosixNamedRegion(enum.IntEnum):
     """Focusable regions of the POSIX named-entry add/edit form."""
+
     TYPE = 0
     ID = 1
     ACCESS = 2
@@ -123,24 +137,24 @@ class _PosixNamedRegion(enum.IntEnum):
 
 # Permission sets shown in the form
 _FORM_PERM_SETS = [
-    ('full_set', _NFS4_PERM_SETS['full_set']),
-    ('modify_set', _NFS4_PERM_SETS['modify_set']),
-    ('read_set', _NFS4_PERM_SETS['read_set']),
-    ('write_set', _NFS4_PERM_SETS['write_set']),
+    ("full_set", _NFS4_PERM_SETS["full_set"]),
+    ("modify_set", _NFS4_PERM_SETS["modify_set"]),
+    ("read_set", _NFS4_PERM_SETS["read_set"]),
+    ("write_set", _NFS4_PERM_SETS["write_set"]),
 ]
 
 # Inherit flags shown in the form (directories: all propagation flags + inherited)
 _FORM_INHERIT_FLAGS = [
-    ('file_inherit', t.NFS4Flag.FILE_INHERIT),
-    ('dir_inherit', t.NFS4Flag.DIRECTORY_INHERIT),
-    ('no_propagate', t.NFS4Flag.NO_PROPAGATE_INHERIT),
-    ('inherit_only', t.NFS4Flag.INHERIT_ONLY),
-    ('inherited', t.NFS4Flag.INHERITED),
+    ("file_inherit", t.NFS4Flag.FILE_INHERIT),
+    ("dir_inherit", t.NFS4Flag.DIRECTORY_INHERIT),
+    ("no_propagate", t.NFS4Flag.NO_PROPAGATE_INHERIT),
+    ("inherit_only", t.NFS4Flag.INHERIT_ONLY),
+    ("inherited", t.NFS4Flag.INHERITED),
 ]
 
 # Inherit flags shown for files (no propagation flags — they have no effect on files)
 _FORM_FILE_INHERIT_FLAGS = [
-    ('inherited', t.NFS4Flag.INHERITED),
+    ("inherited", t.NFS4Flag.INHERITED),
 ]
 
 # Individual permission bits in canonical order
@@ -151,8 +165,9 @@ _FORM_PERM_LABELS = [c for _, c in _NFS4_PERM_CHARS]
 @dataclasses.dataclass
 class _InputState:
     """Transient state for one text-input session (legacy)."""
-    prompt: str = ''
-    buf: str = ''
+
+    prompt: str = ""
+    buf: str = ""
     caret: int = 0
     edit_idx: int | None = None
 
@@ -160,8 +175,9 @@ class _InputState:
 @dataclasses.dataclass
 class _FormState:
     """Transient state for one NFS4 ACE form session."""
+
     who_type: _NFS4WhoChoice = _NFS4WhoChoice.OWNER
-    who_id: str = ''
+    who_id: str = ""
     who_id_caret: int = 0
     who_id_scroll: int = 0
     who_numeric: bool = False
@@ -177,8 +193,9 @@ class _FormState:
 @dataclasses.dataclass
 class _PosixNamedState:
     """Transient state for the POSIX named-entry add/edit sub-form."""
+
     is_group: bool = False
-    id_str: str = ''
+    id_str: str = ""
     id_caret: int = 0
     id_numeric: bool = False
     access_perms: t.POSIXPerm = dataclasses.field(default_factory=lambda: t.POSIXPerm(0))
@@ -197,12 +214,13 @@ class _EditContext:
     is_nfs4: bool
     aces: list[t.NFS4Ace] | list[t.POSIXAce]
     acl_flags: t.NFS4ACLFlag | None
-    fs_name: str = ''
-    warn: str = ''
+    fs_name: str = ""
+    warn: str = ""
     rc: int = 0
 
 
 # ── module-level helpers ──────────────────────────────────────────────────────
+
 
 def _panel_widths(cols):
     """Return (left_w, right_w) with 1-char separator between them."""
@@ -222,7 +240,7 @@ def _ace_str_nfs4(ace):
     perms = _nfs4_perm_str(ace.access_mask)
     flags = _nfs4_flag_str(ace.ace_flags)
     atype = _NFS4_TYPE_STR.get(ace.ace_type, str(int(ace.ace_type)))
-    return f'{who}:{perms}:{flags}:{atype}'
+    return f"{who}:{perms}:{flags}:{atype}"
 
 
 def _ace_str_posix(ace):
@@ -230,8 +248,8 @@ def _ace_str_posix(ace):
     tag = _POSIX_TAG_PREFIX[ace.tag]
     qual = _posix_qualifier(ace, numeric=False)
     perms = _posix_perm_str(ace.perms)
-    prefix = 'default:' if ace.default else ''
-    return f'{prefix}{tag}:{qual}:{perms}'
+    prefix = "default:" if ace.default else ""
+    return f"{prefix}{tag}:{qual}:{perms}"
 
 
 def _grid_nav(cursor, ch, cols, count):
@@ -262,16 +280,16 @@ def _grid_nav(cursor, ch, cols, count):
 
 # ── editor class ──────────────────────────────────────────────────────────────
 
-class AclEditor:
 
+class AclEditor:
     def __init__(self, stdscr, ctx):
         self._scr = stdscr
         self._ctx = ctx
         self._cursor = 0
         self._scroll = 0
         self._mode = _MODE_NORMAL
-        self._status = ''
-        self._error = ''
+        self._status = ""
+        self._error = ""
         self._inp = _InputState()
         self._frm = _FormState()
         self._saved = True
@@ -332,36 +350,36 @@ class AclEditor:
         content = _content_rows(lines)
         n = len(self._ctx.aces)
 
-        self._error = ''
-        self._status = ''
+        self._error = ""
+        self._status = ""
 
-        if ch in (curses.KEY_UP, ord('k')):
+        if ch in (curses.KEY_UP, ord("k")):
             if self._cursor > 0:
                 self._cursor -= 1
                 if self._cursor < self._scroll:
                     self._scroll = self._cursor
 
-        elif ch in (curses.KEY_DOWN, ord('j')):
+        elif ch in (curses.KEY_DOWN, ord("j")):
             if self._cursor < n - 1:
                 self._cursor += 1
                 if self._cursor >= self._scroll + content:
                     self._scroll = self._cursor - content + 1
 
-        elif ch == ord('a'):
+        elif ch == ord("a"):
             self._do_add()
 
-        elif ch == ord('d'):
+        elif ch == ord("d"):
             self._do_delete()
 
-        elif ch in (ord('e'), *_ENTER_KEYS):
+        elif ch in (ord("e"), *_ENTER_KEYS):
             self._do_edit()
 
-        elif ch in (ord('s'), ord('w')):
+        elif ch in (ord("s"), ord("w")):
             result = self._do_save()
             if result is not None:
                 return result
 
-        elif ch in (ord('q'), _KEY_ESC):
+        elif ch in (ord("q"), _KEY_ESC):
             return 0
 
         elif ch == _KEY_CTRL_C:
@@ -394,15 +412,15 @@ class AclEditor:
         elif ch in _BACKSPACE_KEYS:
             if self._inp.caret > 0:
                 b = self._inp.buf
-                self._inp.buf = b[:self._inp.caret - 1] + b[self._inp.caret:]
+                self._inp.buf = b[: self._inp.caret - 1] + b[self._inp.caret :]
                 self._inp.caret -= 1
         elif ch == curses.KEY_DC:
             if self._inp.caret < len(self._inp.buf):
                 b = self._inp.buf
-                self._inp.buf = b[:self._inp.caret] + b[self._inp.caret + 1:]
+                self._inp.buf = b[: self._inp.caret] + b[self._inp.caret + 1 :]
         elif _PRINTABLE_FIRST <= ch <= _PRINTABLE_LAST:
             b = self._inp.buf
-            self._inp.buf = b[:self._inp.caret] + chr(ch) + b[self._inp.caret:]
+            self._inp.buf = b[: self._inp.caret] + chr(ch) + b[self._inp.caret :]
             self._inp.caret += 1
 
         self._draw()
@@ -443,7 +461,7 @@ class AclEditor:
             self._draw()
             return None
 
-        if ch == ord('\t'):
+        if ch == ord("\t"):
             if self._frm.region == _FormRegion.WHO and _who_needs_id and not self._frm.who_in_id:
                 self._frm.who_in_id = True
             else:
@@ -493,21 +511,20 @@ class AclEditor:
             elif ch in _BACKSPACE_KEYS:
                 if self._frm.who_id_caret > 0:
                     s = self._frm.who_id
-                    self._frm.who_id = s[:self._frm.who_id_caret - 1] + s[self._frm.who_id_caret:]
+                    self._frm.who_id = s[: self._frm.who_id_caret - 1] + s[self._frm.who_id_caret :]
                     self._frm.who_id_caret -= 1
             elif ch == curses.KEY_DC:
                 if self._frm.who_id_caret < len(self._frm.who_id):
                     s = self._frm.who_id
-                    self._frm.who_id = s[:self._frm.who_id_caret] + s[self._frm.who_id_caret + 1:]
+                    self._frm.who_id = s[: self._frm.who_id_caret] + s[self._frm.who_id_caret + 1 :]
             elif ch == _KEY_CTRL_T:
                 self._who_toggle_numeric()
             elif _PRINTABLE_FIRST <= ch <= _PRINTABLE_LAST:
                 s = self._frm.who_id
-                self._frm.who_id = s[:self._frm.who_id_caret] + chr(ch) + s[self._frm.who_id_caret:]
+                self._frm.who_id = s[: self._frm.who_id_caret] + chr(ch) + s[self._frm.who_id_caret :]
                 self._frm.who_id_caret += 1
         else:
-            new_cur, went_prev, went_next = _grid_nav(
-                self._frm.cursor, ch, _FORM_WHO_COLS, len(_NFS4WhoChoice))
+            new_cur, went_prev, went_next = _grid_nav(self._frm.cursor, ch, _FORM_WHO_COLS, len(_NFS4WhoChoice))
             if went_prev:
                 self._frm.region = _FormRegion.INHERIT
                 self._frm.cursor = 0
@@ -524,21 +541,21 @@ class AclEditor:
     def _validate_who_id(self):
         s = self._frm.who_id.strip()
         if not s:
-            self._error = 'Identifier cannot be empty'
+            self._error = "Identifier cannot be empty"
             return False
         if self._frm.who_numeric:
             try:
                 int(s)
                 return True
             except ValueError:
-                self._error = 'Numeric ID must be an integer'
+                self._error = "Numeric ID must be an integer"
                 return False
-        kind = 'user' if self._frm.who_type == _NFS4WhoChoice.USER else 'group'
+        kind = "user" if self._frm.who_type == _NFS4WhoChoice.USER else "group"
         try:
-            (pwd.getpwnam if kind == 'user' else grp.getgrnam)(s)
+            (pwd.getpwnam if kind == "user" else grp.getgrnam)(s)
             return True
         except KeyError:
-            self._error = f'Unknown {kind}: {s!r}'
+            self._error = f"Unknown {kind}: {s!r}"
             return False
 
     def _who_toggle_numeric(self):
@@ -567,7 +584,7 @@ class AclEditor:
                     self._frm.who_id = new_s
                     self._frm.who_id_caret = len(new_s)
                 except (ValueError, KeyError):
-                    self._error = f'Cannot resolve id: {s!r}'
+                    self._error = f"Cannot resolve id: {s!r}"
                     return
             self._frm.who_numeric = False
 
@@ -578,7 +595,7 @@ class AclEditor:
         elif ch == curses.KEY_RIGHT:
             self._frm.cursor = 1
             self._frm.allow = False
-        elif ch == ord(' '):
+        elif ch == ord(" "):
             self._frm.allow = not self._frm.allow
             self._frm.cursor = 0 if self._frm.allow else 1
         elif ch == curses.KEY_UP:
@@ -589,7 +606,7 @@ class AclEditor:
             self._frm.cursor = 0
 
     def _form_key_sets(self, ch):
-        if ch == ord(' '):
+        if ch == ord(" "):
             _, set_bits = _FORM_PERM_SETS[self._frm.cursor]
             if (int(self._frm.mask) & int(set_bits)) == int(set_bits):
                 self._frm.mask = t.NFS4Perm(int(self._frm.mask) & ~int(set_bits))
@@ -597,8 +614,7 @@ class AclEditor:
                 self._frm.mask = t.NFS4Perm(int(self._frm.mask) | int(set_bits))
             return
 
-        new_cur, went_prev, went_next = _grid_nav(
-            self._frm.cursor, ch, _FORM_SETS_COLS, len(_FORM_PERM_SETS))
+        new_cur, went_prev, went_next = _grid_nav(self._frm.cursor, ch, _FORM_SETS_COLS, len(_FORM_PERM_SETS))
         if went_prev:
             self._frm.region = _FormRegion.TYPE
             self._frm.cursor = 0
@@ -609,7 +625,7 @@ class AclEditor:
             self._frm.cursor = new_cur
 
     def _form_key_bits(self, ch):
-        if ch == ord(' '):
+        if ch == ord(" "):
             bit = _FORM_PERM_BITS[self._frm.cursor]
             if self._frm.mask & bit:
                 self._frm.mask = t.NFS4Perm(int(self._frm.mask) & ~int(bit))
@@ -617,8 +633,7 @@ class AclEditor:
                 self._frm.mask = t.NFS4Perm(int(self._frm.mask) | int(bit))
             return
 
-        new_cur, went_prev, went_next = _grid_nav(
-            self._frm.cursor, ch, _FORM_BITS_COLS, len(_FORM_PERM_BITS))
+        new_cur, went_prev, went_next = _grid_nav(self._frm.cursor, ch, _FORM_BITS_COLS, len(_FORM_PERM_BITS))
         if went_prev:
             self._frm.region = _FormRegion.SETS
             self._frm.cursor = _FORM_SETS_COLS
@@ -633,7 +648,7 @@ class AclEditor:
 
     def _form_key_inherit(self, ch):
         inh_flags_list = self._inh_flags_list()
-        if ch == ord(' '):
+        if ch == ord(" "):
             _, flag = inh_flags_list[self._frm.cursor]
             if self._frm.inh_flags & flag:
                 self._frm.inh_flags = t.NFS4Flag(int(self._frm.inh_flags) & ~int(flag))
@@ -641,8 +656,7 @@ class AclEditor:
                 self._frm.inh_flags = t.NFS4Flag(int(self._frm.inh_flags) | int(flag))
             return
 
-        new_cur, went_prev, went_next = _grid_nav(
-            self._frm.cursor, ch, _FORM_INHERIT_COLS, len(inh_flags_list))
+        new_cur, went_prev, went_next = _grid_nav(self._frm.cursor, ch, _FORM_INHERIT_COLS, len(inh_flags_list))
         if went_prev:
             self._frm.region = _FormRegion.BITS
             self._frm.cursor = _FORM_BITS_COLS
@@ -660,10 +674,10 @@ class AclEditor:
         n_named = len(entries)
         c = self._posix_cursor
 
-        self._error = ''
-        self._status = ''
+        self._error = ""
+        self._status = ""
 
-        if ch in (curses.KEY_UP, ord('k')):
+        if ch in (curses.KEY_UP, ord("k")):
             if c > 0 and c < 12:
                 row, col = c // 3, c % 3
                 if row > 0:
@@ -682,7 +696,7 @@ class AclEditor:
                 else:
                     self._posix_cursor = c - 1
 
-        elif ch in (curses.KEY_DOWN, ord('j')):
+        elif ch in (curses.KEY_DOWN, ord("j")):
             if c < 12:
                 row, col = c // 3, c % 3
                 if row < 3:
@@ -719,30 +733,30 @@ class AclEditor:
                 if (c - 12) % 3 < 2:
                     self._posix_cursor += 1
 
-        elif ch == ord(' '):
+        elif ch == ord(" "):
             self._posix_toggle()
 
-        elif ch == ord('a'):
+        elif ch == ord("a"):
             self._posix_named_start(None)
 
-        elif ch == ord('d'):
+        elif ch == ord("d"):
             if c >= named_base and n_named > 0:
                 k = c - named_base
                 if k < n_named:
                     self._posix_delete_named(k)
 
-        elif ch in (ord('e'), *_ENTER_KEYS):
+        elif ch in (ord("e"), *_ENTER_KEYS):
             if c >= named_base and n_named > 0:
                 k = c - named_base
                 if k < n_named:
                     self._posix_named_start(k)
 
-        elif ch in (ord('s'), ord('w')):
+        elif ch in (ord("s"), ord("w")):
             result = self._do_save()
             if result is not None:
                 return result
 
-        elif ch in (ord('q'), _KEY_ESC, _KEY_CTRL_C):
+        elif ch in (ord("q"), _KEY_ESC, _KEY_CTRL_C):
             return 0
 
         self._draw()
@@ -770,7 +784,7 @@ class AclEditor:
                 ace_idx = i
                 break
 
-        prefix = 'default:' if is_default else ''
+        prefix = "default:" if is_default else ""
         tag_str = _POSIX_TAG_PREFIX[tag]
 
         if ace_idx is None:
@@ -783,7 +797,7 @@ class AclEditor:
                 new_perm = t.POSIXPerm(int(old_perm) | int(bit))
 
         perm_str = _posix_perm_str(new_perm)
-        text = f'{prefix}{tag_str}::{perm_str}'
+        text = f"{prefix}{tag_str}::{perm_str}"
         try:
             new_ace = _parse_posix_ace(text)
         except ValueError as e:
@@ -807,7 +821,7 @@ class AclEditor:
         for ace in self._ctx.aces:
             if ace.tag not in (t.POSIXTag.USER, t.POSIXTag.GROUP):
                 continue
-            is_group = (ace.tag == t.POSIXTag.GROUP)
+            is_group = ace.tag == t.POSIXTag.GROUP
             key = (ace.id, is_group)
             if key not in seen:
                 seen[key] = [None, None]
@@ -823,10 +837,7 @@ class AclEditor:
             return
         entry_id, is_group, _, _ = entries[k]
         tag = t.POSIXTag.GROUP if is_group else t.POSIXTag.USER
-        self._ctx.aces = [
-            ace for ace in self._ctx.aces
-            if not (ace.tag == tag and ace.id == entry_id)
-        ]
+        self._ctx.aces = [ace for ace in self._ctx.aces if not (ace.tag == tag and ace.id == entry_id)]
         named_base = 24 if self._ctx.is_dir else 12
         n_named = len(self._posix_named_entries())
         if n_named == 0:
@@ -834,13 +845,13 @@ class AclEditor:
         elif self._posix_cursor >= named_base + n_named:
             self._posix_cursor = named_base + n_named - 1
         self._saved = False
-        self._status = 'Named entry deleted'
+        self._status = "Named entry deleted"
 
     # ── POSIX named-entry form ────────────────────────────────────────────────
 
     def _posix_named_start(self, entry_k):
         self._mode = _MODE_ACE_FORM
-        self._error = ''
+        self._error = ""
 
         if entry_k is None:
             self._posix_named = _PosixNamedState()
@@ -850,8 +861,7 @@ class AclEditor:
                 self._posix_named = _PosixNamedState()
             else:
                 entry_id, is_group, access_perm, default_perm = entries[entry_k]
-                name = (_name_of_gid(entry_id, False) if is_group
-                        else _name_of_uid(entry_id, False))
+                name = _name_of_gid(entry_id, False) if is_group else _name_of_uid(entry_id, False)
                 self._posix_named = _PosixNamedState(
                     is_group=is_group,
                     id_str=name,
@@ -871,36 +881,33 @@ class AclEditor:
             return
 
         id_str = ns.id_str.strip()
-        tag_str = 'group' if ns.is_group else 'user'
+        tag_str = "group" if ns.is_group else "user"
 
         if ns.edit_id is not None:
             tag = t.POSIXTag.GROUP if ns.is_group else t.POSIXTag.USER
-            self._ctx.aces = [
-                ace for ace in self._ctx.aces
-                if not (ace.tag == tag and ace.id == ns.edit_id)
-            ]
+            self._ctx.aces = [ace for ace in self._ctx.aces if not (ace.tag == tag and ace.id == ns.edit_id)]
 
         access_perm_str = _posix_perm_str(ns.access_perms)
-        text = f'{tag_str}:{id_str}:{access_perm_str}'
+        text = f"{tag_str}:{id_str}:{access_perm_str}"
         try:
             ace = _parse_posix_ace(text)
             self._ctx.aces.append(ace)
         except ValueError as e:
-            self._error = f'Parse error: {e}'
+            self._error = f"Parse error: {e}"
             return
 
         if ns.has_default and self._ctx.is_dir:
             default_perm_str = _posix_perm_str(ns.default_perms)
-            text = f'default:{tag_str}:{id_str}:{default_perm_str}'
+            text = f"default:{tag_str}:{id_str}:{default_perm_str}"
             try:
                 ace = _parse_posix_ace(text)
                 self._ctx.aces.append(ace)
             except ValueError as e:
-                self._error = f'Parse error: {e}'
+                self._error = f"Parse error: {e}"
                 return
 
         self._saved = False
-        self._status = 'Entry updated' if ns.edit_id is not None else 'Entry added'
+        self._status = "Entry updated" if ns.edit_id is not None else "Entry added"
         self._posix_named_cancel()
 
     def _posix_named_cancel(self):
@@ -911,21 +918,21 @@ class AclEditor:
         ns = self._posix_named
         s = ns.id_str.strip()
         if not s:
-            self._error = 'Identifier cannot be empty'
+            self._error = "Identifier cannot be empty"
             return False
         if ns.id_numeric:
             try:
                 int(s)
                 return True
             except ValueError:
-                self._error = 'Numeric ID must be an integer'
+                self._error = "Numeric ID must be an integer"
                 return False
-        kind = 'group' if ns.is_group else 'user'
+        kind = "group" if ns.is_group else "user"
         try:
             (grp.getgrnam if ns.is_group else pwd.getpwnam)(s)
             return True
         except KeyError:
-            self._error = f'Unknown {kind}: {s!r}'
+            self._error = f"Unknown {kind}: {s!r}"
             return False
 
     def _posix_toggle_numeric(self):
@@ -934,7 +941,7 @@ class AclEditor:
         if not ns.id_numeric:
             if s:
                 try:
-                    new_s = (str(_resolve_gid(s)) if ns.is_group else str(_resolve_uid(s)))
+                    new_s = str(_resolve_gid(s)) if ns.is_group else str(_resolve_uid(s))
                     ns.id_str = new_s
                     ns.id_caret = len(new_s)
                 except ValueError as e:
@@ -945,11 +952,11 @@ class AclEditor:
             if s:
                 try:
                     n = int(s)
-                    new_s = (_name_of_gid(n, False) if ns.is_group else _name_of_uid(n, False))
+                    new_s = _name_of_gid(n, False) if ns.is_group else _name_of_uid(n, False)
                     ns.id_str = new_s
                     ns.id_caret = len(new_s)
                 except (ValueError, KeyError):
-                    self._error = f'Cannot resolve id: {s!r}'
+                    self._error = f"Cannot resolve id: {s!r}"
                     return
             ns.id_numeric = False
 
@@ -972,7 +979,7 @@ class AclEditor:
             self._draw()
             return None
 
-        if ch == ord('\t'):
+        if ch == ord("\t"):
             ns.region = _PosixNamedRegion((int(ns.region) + 1) % n_regions)
             ns.cursor = 0
             self._draw()
@@ -992,7 +999,7 @@ class AclEditor:
             elif ch == curses.KEY_RIGHT:
                 ns.cursor = 1
                 ns.is_group = True
-            elif ch == ord(' '):
+            elif ch == ord(" "):
                 ns.is_group = not ns.is_group
                 ns.cursor = 1 if ns.is_group else 0
 
@@ -1010,17 +1017,17 @@ class AclEditor:
             elif ch in _BACKSPACE_KEYS:
                 if ns.id_caret > 0:
                     s = ns.id_str
-                    ns.id_str = s[:ns.id_caret - 1] + s[ns.id_caret:]
+                    ns.id_str = s[: ns.id_caret - 1] + s[ns.id_caret :]
                     ns.id_caret -= 1
             elif ch == curses.KEY_DC:
                 if ns.id_caret < len(ns.id_str):
                     s = ns.id_str
-                    ns.id_str = s[:ns.id_caret] + s[ns.id_caret + 1:]
+                    ns.id_str = s[: ns.id_caret] + s[ns.id_caret + 1 :]
             elif ch == _KEY_CTRL_T:
                 self._posix_toggle_numeric()
             elif _PRINTABLE_FIRST <= ch <= _PRINTABLE_LAST:
                 s = ns.id_str
-                ns.id_str = s[:ns.id_caret] + chr(ch) + s[ns.id_caret:]
+                ns.id_str = s[: ns.id_caret] + chr(ch) + s[ns.id_caret :]
                 ns.id_caret += 1
 
         elif r == _PosixNamedRegion.ACCESS:
@@ -1030,7 +1037,7 @@ class AclEditor:
             elif ch == curses.KEY_RIGHT:
                 if ns.cursor < 2:
                     ns.cursor += 1
-            elif ch == ord(' '):
+            elif ch == ord(" "):
                 bit, _ = _POSIX_PERM_BITS[ns.cursor]
                 if ns.access_perms & bit:
                     ns.access_perms = t.POSIXPerm(int(ns.access_perms) & ~int(bit))
@@ -1044,7 +1051,7 @@ class AclEditor:
             elif ch == curses.KEY_RIGHT:
                 if ns.cursor < 3:
                     ns.cursor += 1
-            elif ch == ord(' '):
+            elif ch == ord(" "):
                 if ns.cursor < 3:
                     bit, _ = _POSIX_PERM_BITS[ns.cursor]
                     if ns.default_perms & bit:
@@ -1065,7 +1072,7 @@ class AclEditor:
     def _do_delete(self):
         n = len(self._ctx.aces)
         if n == 0:
-            self._error = 'No entries to delete'
+            self._error = "No entries to delete"
             return
         idx = self._cursor
         del self._ctx.aces[idx]
@@ -1077,12 +1084,12 @@ class AclEditor:
             self._cursor = min(idx, n - 1)
             if self._cursor < self._scroll:
                 self._scroll = self._cursor
-        self._status = f'Entry {idx} deleted'
+        self._status = f"Entry {idx} deleted"
         self._saved = False
 
     def _do_edit(self):
         if not self._ctx.aces:
-            self._error = 'No entries to edit'
+            self._error = "No entries to edit"
             return
         self._form_start(self._ctx.aces[self._cursor], self._cursor)
 
@@ -1092,10 +1099,10 @@ class AclEditor:
             t.validate_acl(self._ctx.fd, acl)
             t.fsetacl(self._ctx.fd, acl)
         except (ValueError, OSError) as e:
-            self._error = f'Save failed: {e}'
+            self._error = f"Save failed: {e}"
             return None
         self._saved = True
-        self._status = 'Saved.'
+        self._status = "Saved."
         if self._ctx.is_dir:
             return self._prompt_recursive(acl)
         return None
@@ -1104,18 +1111,18 @@ class AclEditor:
 
     def _prompt_recursive(self, acl):
         lines, cols = self._scr.getmaxyx()
-        msg = 'Apply recursively? [y/N] '
+        msg = "Apply recursively? [y/N] "
         try:
-            attr = (curses.color_pair(_CP_TITLE) if curses.has_colors() else curses.A_REVERSE)
-            self._scr.addnstr(lines - 1, 0, (msg + ' ' * cols)[:cols - 1], cols - 1, attr)
+            attr = curses.color_pair(_CP_TITLE) if curses.has_colors() else curses.A_REVERSE
+            self._scr.addnstr(lines - 1, 0, (msg + " " * cols)[: cols - 1], cols - 1, attr)
         except curses.error:
             pass
         self._scr.refresh()
         curses.curs_set(0)
         ch = self._scr.getch()
-        if ch in (ord('y'), ord('Y')):
+        if ch in (ord("y"), ord("Y")):
             return self._apply_recursive(acl)
-        self._status = 'Not applied recursively.'
+        self._status = "Not applied recursively."
         self._draw()
         return None
 
@@ -1128,26 +1135,24 @@ class AclEditor:
         try:
             mountpoint, fs_name, rel_path = _get_mount_info(self._ctx.path)
         except OSError as e:
-            self._error = f'Recursive failed: {e}'
+            self._error = f"Recursive failed: {e}"
             self._draw()
             return None
 
-        nfs4_inh = (_NFS4InheritedAcls.from_root(acl) if self._ctx.is_nfs4 else None)
+        nfs4_inh = _NFS4InheritedAcls.from_root(acl) if self._ctx.is_nfs4 else None
 
         count = [0]
         errors = [0]
 
         def _progress_cb(dir_stack, state, _private):
             count[0] = state.cnt
-            self._draw_progress_panel(right_col, right_w, content_start,
-                                      state.current_directory, state.cnt)
+            self._draw_progress_panel(right_col, right_w, content_start, state.current_directory, state.cnt)
             self._scr.refresh()
 
         try:
             with t.iter_filesystem_contents(
-                    mountpoint, fs_name, relative_path=rel_path,
-                    reporting_callback=_progress_cb,
-                    reporting_increment=50) as it:
+                mountpoint, fs_name, relative_path=rel_path, reporting_callback=_progress_cb, reporting_increment=50
+            ) as it:
                 for item in it:
                     if item.islnk:
                         continue
@@ -1160,13 +1165,12 @@ class AclEditor:
                     except (OSError, ValueError):
                         errors[0] += 1
         except OSError as e:
-            self._error = f'Recursive error: {e}'
+            self._error = f"Recursive error: {e}"
 
         self._draw_done_panel(right_col, right_w, content_start, count[0], errors[0])
         self._scr.refresh()
         self._scr.getch()
-        self._status = (f'Applied to {count[0]} item(s)'
-                        + (f', {errors[0]} error(s).' if errors[0] else '.'))
+        self._status = f"Applied to {count[0]} item(s)" + (f", {errors[0]} error(s)." if errors[0] else ".")
         self._draw()
         return None
 
@@ -1175,13 +1179,13 @@ class AclEditor:
         content = _content_rows(lines)
         for r in range(row, row + content):
             try:
-                self._scr.addnstr(r, col, ' ' * width, width)
+                self._scr.addnstr(r, col, " " * width, width)
             except curses.error:
                 pass
         try:
-            self._scr.addnstr(row, col, 'Applying recursively...', width)
-            self._scr.addnstr(row + 1, col, f'Items: {cnt}', width)
-            self._scr.addnstr(row + 2, col, f'Dir: {current_dir}'[:width], width)
+            self._scr.addnstr(row, col, "Applying recursively...", width)
+            self._scr.addnstr(row + 1, col, f"Items: {cnt}", width)
+            self._scr.addnstr(row + 2, col, f"Dir: {current_dir}"[:width], width)
         except curses.error:
             pass
 
@@ -1190,16 +1194,16 @@ class AclEditor:
         content = _content_rows(lines)
         for r in range(row, row + content):
             try:
-                self._scr.addnstr(r, col, ' ' * width, width)
+                self._scr.addnstr(r, col, " " * width, width)
             except curses.error:
                 pass
         try:
-            self._scr.addnstr(row, col, 'Done!', width)
-            self._scr.addnstr(row + 1, col, f'{cnt} item(s) processed.', width)
+            self._scr.addnstr(row, col, "Done!", width)
+            self._scr.addnstr(row + 1, col, f"{cnt} item(s) processed.", width)
             if errors:
-                attr = (curses.color_pair(_CP_ERROR) if curses.has_colors() else 0)
-                self._scr.addnstr(row + 2, col, f'{errors} error(s) occurred.', width, attr)
-            self._scr.addnstr(row + 3, col, 'Press any key to continue.', width)
+                attr = curses.color_pair(_CP_ERROR) if curses.has_colors() else 0
+                self._scr.addnstr(row + 2, col, f"{errors} error(s) occurred.", width, attr)
+            self._scr.addnstr(row + 3, col, "Press any key to continue.", width)
         except curses.error:
             pass
 
@@ -1208,19 +1212,19 @@ class AclEditor:
     def _input_start(self, prompt, prefill, edit_idx):
         self._mode = _MODE_INPUT
         self._inp = _InputState(prompt=prompt, buf=prefill, caret=len(prefill), edit_idx=edit_idx)
-        self._error = ''
+        self._error = ""
 
     def _input_finish(self):
         text = self._inp.buf.strip()
         try:
             ace = _parse_posix_ace(text)
         except ValueError as e:
-            self._error = f'Parse error: {e}'
+            self._error = f"Parse error: {e}"
             return
 
         if self._inp.edit_idx is not None:
             self._ctx.aces[self._inp.edit_idx] = ace
-            self._status = f'Entry {self._inp.edit_idx} updated'
+            self._status = f"Entry {self._inp.edit_idx} updated"
         else:
             self._ctx.aces.append(ace)
             self._cursor = len(self._ctx.aces) - 1
@@ -1228,7 +1232,7 @@ class AclEditor:
             content = _content_rows(lines)
             if self._cursor >= self._scroll + content:
                 self._scroll = self._cursor - content + 1
-            self._status = 'Entry added'
+            self._status = "Entry added"
 
         self._saved = False
         self._input_cancel()
@@ -1241,17 +1245,17 @@ class AclEditor:
 
     def _form_start(self, ace, edit_idx):
         self._mode = _MODE_ACE_FORM
-        self._error = ''
+        self._error = ""
 
         if ace is None:
             self._frm = _FormState(
                 who_type=_NFS4WhoChoice.OWNER,
-                who_id='',
+                who_id="",
                 who_id_caret=0,
                 who_numeric=False,
                 who_in_id=False,
                 allow=True,
-                mask=t.NFS4Perm(int(_NFS4_PERM_SETS['modify_set'])),
+                mask=t.NFS4Perm(int(_NFS4_PERM_SETS["modify_set"])),
                 inh_flags=t.NFS4Flag(0),
                 region=_FormRegion.WHO,
                 cursor=0,
@@ -1260,13 +1264,13 @@ class AclEditor:
         else:
             who_str = _nfs4_who_str(ace, numeric=False)
             match who_str:
-                case 'owner@':
-                    who_type, who_id = _NFS4WhoChoice.OWNER, ''
-                case 'group@':
-                    who_type, who_id = _NFS4WhoChoice.GROUP, ''
-                case 'everyone@':
-                    who_type, who_id = _NFS4WhoChoice.EVERYONE, ''
-                case s if s.startswith('user:'):
+                case "owner@":
+                    who_type, who_id = _NFS4WhoChoice.OWNER, ""
+                case "group@":
+                    who_type, who_id = _NFS4WhoChoice.GROUP, ""
+                case "everyone@":
+                    who_type, who_id = _NFS4WhoChoice.EVERYONE, ""
+                case s if s.startswith("user:"):
                     who_type, who_id = _NFS4WhoChoice.USER, s[5:]
                 case s:
                     who_type, who_id = _NFS4WhoChoice.GROUP_NAMED, s[6:]
@@ -1292,44 +1296,50 @@ class AclEditor:
 
         match self._frm.who_type:
             case _NFS4WhoChoice.OWNER:
-                who = 'owner@'
+                who = "owner@"
             case _NFS4WhoChoice.GROUP:
-                who = 'group@'
+                who = "group@"
             case _NFS4WhoChoice.EVERYONE:
-                who = 'everyone@'
+                who = "everyone@"
             case _NFS4WhoChoice.USER:
-                who = f'user:{self._frm.who_id.strip()}'
+                who = f"user:{self._frm.who_id.strip()}"
             case _NFS4WhoChoice.GROUP_NAMED:
-                who = f'group:{self._frm.who_id.strip()}'
+                who = f"group:{self._frm.who_id.strip()}"
             case _:
-                who = 'owner@'
+                who = "owner@"
 
         if not who:
-            self._error = 'Who field is empty'
+            self._error = "Who field is empty"
             return
 
         perm_str = _nfs4_perm_str(self._frm.mask)
         flag_val = self._frm.inh_flags
-        flag_str = ''.join(
-            c if flag_val & bit else '-'
+        flag_str = "".join(
+            c if flag_val & bit else "-"
             for bit, c in _NFS4_FLAG_CHARS
-            if bit in (t.NFS4Flag.FILE_INHERIT, t.NFS4Flag.DIRECTORY_INHERIT,
-                       t.NFS4Flag.NO_PROPAGATE_INHERIT, t.NFS4Flag.INHERIT_ONLY,
-                       t.NFS4Flag.SUCCESSFUL_ACCESS, t.NFS4Flag.FAILED_ACCESS,
-                       t.NFS4Flag.INHERITED)
+            if bit
+            in (
+                t.NFS4Flag.FILE_INHERIT,
+                t.NFS4Flag.DIRECTORY_INHERIT,
+                t.NFS4Flag.NO_PROPAGATE_INHERIT,
+                t.NFS4Flag.INHERIT_ONLY,
+                t.NFS4Flag.SUCCESSFUL_ACCESS,
+                t.NFS4Flag.FAILED_ACCESS,
+                t.NFS4Flag.INHERITED,
+            )
         )
-        type_str = 'allow' if self._frm.allow else 'deny'
-        text = f'{who}:{perm_str}:{flag_str}:{type_str}'
+        type_str = "allow" if self._frm.allow else "deny"
+        text = f"{who}:{perm_str}:{flag_str}:{type_str}"
 
         try:
             ace = _parse_nfs4_ace(text)
         except ValueError as e:
-            self._error = f'Parse error: {e}'
+            self._error = f"Parse error: {e}"
             return
 
         if self._frm.edit_idx is not None:
             self._ctx.aces[self._frm.edit_idx] = ace
-            self._status = f'Entry {self._frm.edit_idx} updated'
+            self._status = f"Entry {self._frm.edit_idx} updated"
         else:
             self._ctx.aces.append(ace)
             self._cursor = len(self._ctx.aces) - 1
@@ -1337,7 +1347,7 @@ class AclEditor:
             content = _content_rows(lines)
             if self._cursor >= self._scroll + content:
                 self._scroll = self._cursor - content + 1
-            self._status = 'Entry added'
+            self._status = "Entry added"
 
         self._saved = False
         self._form_cancel()
@@ -1360,22 +1370,22 @@ class AclEditor:
 
     def _preview_lines(self):
         if not self._ctx.is_dir:
-            return ['Not a directory', '(no inheritance preview)']
+            return ["Not a directory", "(no inheritance preview)"]
         try:
             acl = self._build_acl()
         except Exception as e:
-            return [f'[Build error: {e}]']
+            return [f"[Build error: {e}]"]
 
         lines = []
-        for label, is_dir in (('Child dirs:', True), ('Child files:', False)):
+        for label, is_dir in (("Child dirs:", True), ("Child files:", False)):
             lines.append(label)
             try:
                 inh = acl.generate_inherited_acl(is_dir=is_dir)
                 for ace in inh.aces:
-                    lines.append('  ' + _ace_str_nfs4(ace))
+                    lines.append("  " + _ace_str_nfs4(ace))
             except Exception as e:
-                lines.append(f'  [Preview error: {e}]')
-            lines.append('')
+                lines.append(f"  [Preview error: {e}]")
+            lines.append("")
         return lines
 
     # ── NFS4 ACE form drawing ─────────────────────────────────────────────────
@@ -1392,14 +1402,14 @@ class AclEditor:
 
         def put_at(row, col, text, attr=0):
             try:
-                self._scr.addnstr(3 + row, right_col + col, text[:right_w - col], right_w - col, attr)
+                self._scr.addnstr(3 + row, right_col + col, text[: right_w - col], right_w - col, attr)
             except curses.error:
                 pass
 
         row = 0
 
-        who_focused = (self._frm.region == _FormRegion.WHO)
-        put(row, ' Who type:', prev_attr)
+        who_focused = self._frm.region == _FormRegion.WHO
+        put(row, " Who type:", prev_attr)
         row += 1
 
         num_who_rows = (len(_NFS4WhoChoice) + _FORM_WHO_COLS - 1) // _FORM_WHO_COLS
@@ -1408,12 +1418,12 @@ class AclEditor:
             grid_col = wi % _FORM_WHO_COLS
             disp_row = row + grid_row
             col_off = 2 + grid_col * _FORM_WHO_STRIDE
-            is_selected = (self._frm.who_type == _NFS4WhoChoice(wi))
-            radio_mark = '(*)' if is_selected else '( )'
+            is_selected = self._frm.who_type == _NFS4WhoChoice(wi)
+            radio_mark = "(*)" if is_selected else "( )"
             label = _FORM_WHO_LABELS[wi]
             is_focused = who_focused and self._frm.cursor == wi and not self._frm.who_in_id
             attr = sel_attr if is_focused else 0
-            put_at(disp_row, col_off, f'{radio_mark} {label}', attr)
+            put_at(disp_row, col_off, f"{radio_mark} {label}", attr)
 
         row += num_who_rows
 
@@ -1428,84 +1438,84 @@ class AclEditor:
             elif caret >= scroll + box_w:
                 scroll = caret - box_w + 1
             self._frm.who_id_scroll = scroll
-            id_disp = self._frm.who_id[scroll:scroll + box_w]
+            id_disp = self._frm.who_id[scroll : scroll + box_w]
             id_box = id_disp.ljust(box_w)
-            mode_str = '(id)' if self._frm.who_numeric else '(name)'
-            put(row, f' Identifier: [{id_box}] {mode_str}')
+            mode_str = "(id)" if self._frm.who_numeric else "(name)"
+            put(row, f" Identifier: [{id_box}] {mode_str}")
             if id_focused:
                 vis_caret = caret - scroll
-                char = id_box[vis_caret] if vis_caret < len(id_box) else ' '
+                char = id_box[vis_caret] if vis_caret < len(id_box) else " "
                 put_at(row, 14 + vis_caret, char, sel_attr)
             row += 1
 
         row += 1
 
-        type_focused = (self._frm.region == _FormRegion.TYPE)
-        allow_mark = '(*)' if self._frm.allow else '( )'
-        deny_mark = '( )' if self._frm.allow else '(*)'
+        type_focused = self._frm.region == _FormRegion.TYPE
+        allow_mark = "(*)" if self._frm.allow else "( )"
+        deny_mark = "( )" if self._frm.allow else "(*)"
         allow_attr = sel_attr if (type_focused and self._frm.cursor == 0) else 0
         deny_attr = sel_attr if (type_focused and self._frm.cursor == 1) else 0
-        put(row, ' Type:  ')
+        put(row, " Type:  ")
         put_at(row, _FORM_ALLOW_COL, allow_mark, allow_attr)
-        put_at(row, _FORM_ALLOW_TEXT_COL, ' allow  ')
+        put_at(row, _FORM_ALLOW_TEXT_COL, " allow  ")
         put_at(row, _FORM_DENY_COL, deny_mark, deny_attr)
-        put_at(row, _FORM_DENY_TEXT_COL, ' deny')
+        put_at(row, _FORM_DENY_TEXT_COL, " deny")
 
         row += 1
-        put(row, '')
+        put(row, "")
         row += 1
 
-        put(row, ' Permissions:', prev_attr)
+        put(row, " Permissions:", prev_attr)
         row += 1
 
-        sets_focused = (self._frm.region == _FormRegion.SETS)
+        sets_focused = self._frm.region == _FormRegion.SETS
         for si, (sname, sbits) in enumerate(_FORM_PERM_SETS):
             col_in_row = si % _FORM_SETS_COLS
             display_row = row + (si // _FORM_SETS_COLS)
             checked = (int(self._frm.mask) & int(sbits)) == int(sbits)
-            box = '[x]' if checked else '[ ]'
+            box = "[x]" if checked else "[ ]"
             focused = sets_focused and self._frm.cursor == si
             attr = sel_attr if focused else 0
-            label = f'{box} {sname:<{_FORM_SETS_NAME_W}}'
+            label = f"{box} {sname:<{_FORM_SETS_NAME_W}}"
             col_offset = _FORM_SETS_INDENT + col_in_row * _FORM_SETS_STRIDE
             put_at(display_row, col_offset, label, attr)
 
         row += len(_FORM_PERM_SETS) // _FORM_SETS_COLS
-        put(row, '')
+        put(row, "")
         row += 1
 
-        bits_focused = (self._frm.region == _FormRegion.BITS)
+        bits_focused = self._frm.region == _FormRegion.BITS
         bit_rows = (len(_FORM_PERM_BITS) + _FORM_BITS_COLS - 1) // _FORM_BITS_COLS
         for bit_row in range(bit_rows):
-            label_str = ' '
+            label_str = " "
             for bi in range(_FORM_BITS_COLS):
                 idx = bit_row * _FORM_BITS_COLS + bi
-                label_str += f' {_FORM_PERM_LABELS[idx]}  '
+                label_str += f" {_FORM_PERM_LABELS[idx]}  "
             put(row, label_str[:right_w])
             row += 1
             for bi in range(_FORM_BITS_COLS):
                 idx = bit_row * _FORM_BITS_COLS + bi
                 bit = _FORM_PERM_BITS[idx]
                 checked = bool(self._frm.mask & bit)
-                box = '[x]' if checked else '[ ]'
+                box = "[x]" if checked else "[ ]"
                 focused = bits_focused and self._frm.cursor == idx
                 attr = sel_attr if focused else 0
                 put_at(row, bi * _FORM_BITS_STRIDE, box, attr)
             row += 1
 
-        put(row, '')
+        put(row, "")
         row += 1
 
-        put(row, ' Inherit:', prev_attr)
+        put(row, " Inherit:", prev_attr)
         row += 1
 
-        inh_focused = (self._frm.region == _FormRegion.INHERIT)
+        inh_focused = self._frm.region == _FormRegion.INHERIT
         for fi, (fname, flag) in enumerate(self._inh_flags_list()):
             checked = bool(self._frm.inh_flags & flag)
-            box = '[x]' if checked else '[ ]'
+            box = "[x]" if checked else "[ ]"
             focused = inh_focused and self._frm.cursor == fi
             attr = sel_attr if focused else 0
-            label = f'{box} {fname}'
+            label = f"{box} {fname}"
             put_at(row + fi, _FORM_INHERIT_INDENT, label, attr)
 
     # ── POSIX structured editor drawing ──────────────────────────────────────
@@ -1529,28 +1539,26 @@ class AclEditor:
             if row >= content or col >= right_w:
                 return
             try:
-                self._scr.addnstr(3 + row, right_col + col, text[:right_w - col], right_w - col, attr)
+                self._scr.addnstr(3 + row, right_col + col, text[: right_w - col], right_w - col, attr)
             except curses.error:
                 pass
 
         row = 0
 
-        put(row, ' Access ACL       r  w  x', prev_attr)
+        put(row, " Access ACL       r  w  x", prev_attr)
         row += 1
 
         for ri, (tag, label) in enumerate(_POSIX_BASE_ROWS):
             base_c = ri * 3
-            cursor_on_row = (self._posix_cursor >= base_c
-                             and self._posix_cursor < base_c + 3
-                             and self._posix_cursor < 12)
-            indicator = '>' if cursor_on_row else ' '
-            label_str = f'{label}:'
-            put(row, f'{indicator} {label_str:<16}')
+            cursor_on_row = self._posix_cursor >= base_c and self._posix_cursor < base_c + 3 and self._posix_cursor < 12
+            indicator = ">" if cursor_on_row else " "
+            label_str = f"{label}:"
+            put(row, f"{indicator} {label_str:<16}")
             ace = self._posix_find_ace(tag, False)
             perms = ace.perms if ace else t.POSIXPerm(0)
             for ci, (bit, _) in enumerate(_POSIX_PERM_BITS):
                 checked = bool(perms & bit)
-                box = '[x]' if checked else '[ ]'
+                box = "[x]" if checked else "[ ]"
                 on_cell = cursor_on_row and (self._posix_cursor - base_c) == ci
                 attr = sel_attr if on_cell else 0
                 put_at(row, _POSIX_CHK_COL + ci * _POSIX_CHK_STRIDE, box, attr)
@@ -1559,21 +1567,20 @@ class AclEditor:
         row += 1
 
         if self._ctx.is_dir:
-            put(row, ' Default ACL      r  w  x', prev_attr)
+            put(row, " Default ACL      r  w  x", prev_attr)
             row += 1
 
             for ri, (tag, label) in enumerate(_POSIX_BASE_ROWS):
                 base_c = 12 + ri * 3
-                cursor_on_row = (self._posix_cursor >= base_c
-                                 and self._posix_cursor < base_c + 3)
-                indicator = '>' if cursor_on_row else ' '
-                label_str = f'{label}:'
-                put(row, f'{indicator} {label_str:<16}')
+                cursor_on_row = self._posix_cursor >= base_c and self._posix_cursor < base_c + 3
+                indicator = ">" if cursor_on_row else " "
+                label_str = f"{label}:"
+                put(row, f"{indicator} {label_str:<16}")
                 ace = self._posix_find_ace(tag, True)
                 perms = ace.perms if ace else t.POSIXPerm(0)
                 for ci, (bit, _) in enumerate(_POSIX_PERM_BITS):
                     checked = bool(perms & bit)
-                    box = '[x]' if checked else '[ ]'
+                    box = "[x]" if checked else "[ ]"
                     on_cell = cursor_on_row and (self._posix_cursor - base_c) == ci
                     attr = sel_attr if on_cell else 0
                     put_at(row, _POSIX_CHK_COL + ci * _POSIX_CHK_STRIDE, box, attr)
@@ -1581,27 +1588,26 @@ class AclEditor:
 
             row += 1
 
-        put(row, ' Named entries:', prev_attr)
+        put(row, " Named entries:", prev_attr)
         row += 1
 
         if not entries:
-            put(row, '  (none)')
+            put(row, "  (none)")
             row += 1
         else:
             for k, (entry_id, is_group, access_perm, default_perm) in enumerate(entries):
-                cursor_on = (self._posix_cursor == named_base + k)
-                indicator = '>' if cursor_on else ' '
-                name = (_name_of_gid(entry_id, False) if is_group
-                        else _name_of_uid(entry_id, False))
-                tag_str = 'grp' if is_group else 'user'
-                a_str = _posix_perm_str(access_perm) if access_perm is not None else '---'
-                d_str = _posix_perm_str(default_perm) if default_perm is not None else '---'
-                line = f'{indicator} {name}({tag_str}):  {a_str} / {d_str}'
+                cursor_on = self._posix_cursor == named_base + k
+                indicator = ">" if cursor_on else " "
+                name = _name_of_gid(entry_id, False) if is_group else _name_of_uid(entry_id, False)
+                tag_str = "grp" if is_group else "user"
+                a_str = _posix_perm_str(access_perm) if access_perm is not None else "---"
+                d_str = _posix_perm_str(default_perm) if default_perm is not None else "---"
+                line = f"{indicator} {name}({tag_str}):  {a_str} / {d_str}"
                 attr = sel_attr if cursor_on else 0
                 put(row, line, attr)
                 row += 1
 
-        put(row, ' [a]dd  [d]el  [e]dit')
+        put(row, " [a]dd  [d]el  [e]dit")
 
     # ── POSIX named-entry form drawing ────────────────────────────────────────
 
@@ -1622,76 +1628,76 @@ class AclEditor:
             if row >= content or col >= right_w:
                 return
             try:
-                self._scr.addnstr(3 + row, right_col + col, text[:right_w - col], right_w - col, attr)
+                self._scr.addnstr(3 + row, right_col + col, text[: right_w - col], right_w - col, attr)
             except curses.error:
                 pass
 
         row = 0
 
-        title = 'Edit named entry:' if ns.edit_id is not None else 'Add named entry:'
-        put(row, f' {title}', prev_attr)
+        title = "Edit named entry:" if ns.edit_id is not None else "Add named entry:"
+        put(row, f" {title}", prev_attr)
         row += 1
-        put(row, '')
+        put(row, "")
         row += 1
 
-        type_focused = (ns.region == _PosixNamedRegion.TYPE)
-        user_mark = '(*)' if not ns.is_group else '( )'
-        group_mark = '(*)' if ns.is_group else '( )'
+        type_focused = ns.region == _PosixNamedRegion.TYPE
+        user_mark = "(*)" if not ns.is_group else "( )"
+        group_mark = "(*)" if ns.is_group else "( )"
         user_attr = sel_attr if (type_focused and ns.cursor == 0) else 0
         group_attr = sel_attr if (type_focused and ns.cursor == 1) else 0
-        put(row, ' Type:  ')
+        put(row, " Type:  ")
         put_at(row, 8, user_mark, user_attr)
-        put_at(row, 12, ' user  ')
+        put_at(row, 12, " user  ")
         put_at(row, 19, group_mark, group_attr)
-        put_at(row, 23, ' group')
+        put_at(row, 23, " group")
         row += 1
 
-        id_focused = (ns.region == _PosixNamedRegion.ID)
+        id_focused = ns.region == _PosixNamedRegion.ID
         box_w = max(8, right_w - 25)
         id_disp = ns.id_str[:box_w]
         id_box = id_disp.ljust(box_w)
-        mode_str = '(id)' if ns.id_numeric else '(name)'
-        put(row, f' Identifier: [{id_box}] {mode_str}')
+        mode_str = "(id)" if ns.id_numeric else "(name)"
+        put(row, f" Identifier: [{id_box}] {mode_str}")
         if id_focused:
             caret = min(ns.id_caret, box_w - 1)
-            char = id_box[caret] if caret < len(id_box) else ' '
+            char = id_box[caret] if caret < len(id_box) else " "
             put_at(row, 14 + caret, char, sel_attr)
         row += 1
 
-        put(row, '')
+        put(row, "")
         row += 1
 
-        access_focused = (ns.region == _PosixNamedRegion.ACCESS)
-        put(row, ' Access:  ')
+        access_focused = ns.region == _PosixNamedRegion.ACCESS
+        put(row, " Access:  ")
         for ci, (bit, label) in enumerate(_POSIX_PERM_BITS):
             checked = bool(ns.access_perms & bit)
-            box = '[x]' if checked else '[ ]'
+            box = "[x]" if checked else "[ ]"
             on_cell = access_focused and ns.cursor == ci
             cell_attr = sel_attr if on_cell else 0
             col = _POSIX_NAMED_CHK_COL + ci * _POSIX_NAMED_CHK_STRIDE
             put_at(row, col, box, cell_attr)
-            put_at(row, col + 3, f' {label}  ')
+            put_at(row, col + 3, f" {label}  ")
         row += 1
 
         if self._ctx.is_dir:
-            default_focused = (ns.region == _PosixNamedRegion.DEFAULT)
-            put(row, ' Default: ')
+            default_focused = ns.region == _PosixNamedRegion.DEFAULT
+            put(row, " Default: ")
             for ci, (bit, label) in enumerate(_POSIX_PERM_BITS):
                 checked = bool(ns.default_perms & bit)
-                box = '[x]' if checked else '[ ]'
+                box = "[x]" if checked else "[ ]"
                 on_cell = default_focused and ns.cursor == ci
                 cell_attr = sel_attr if on_cell else 0
                 col = _POSIX_NAMED_CHK_COL + ci * _POSIX_NAMED_CHK_STRIDE
                 put_at(row, col, box, cell_attr)
-                put_at(row, col + 3, f' {label}  ')
+                put_at(row, col + 3, f" {label}  ")
             row += 1
 
-            hd_box = '[x]' if ns.has_default else '[ ]'
-            hd_focused = (ns.region == _PosixNamedRegion.DEFAULT and ns.cursor == 3)
+            hd_box = "[x]" if ns.has_default else "[ ]"
+            hd_focused = ns.region == _PosixNamedRegion.DEFAULT and ns.cursor == 3
             hd_attr = sel_attr if hd_focused else 0
-            put(row, '          ')
+            put(row, "          ")
             put_at(row, _POSIX_NAMED_CHK_COL, hd_box, hd_attr)
-            put_at(row, _POSIX_NAMED_CHK_COL + 4, ' create default ACE')
+            put_at(row, _POSIX_NAMED_CHK_COL + 4, " create default ACE")
 
     # ── drawing ───────────────────────────────────────────────────────────────
 
@@ -1700,7 +1706,7 @@ class AclEditor:
 
         if lines < _MIN_LINES or cols < _MIN_COLS:
             self._scr.clear()
-            msg = f'Terminal too small (min {_MIN_COLS}x{_MIN_LINES})'
+            msg = f"Terminal too small (min {_MIN_COLS}x{_MIN_LINES})"
             try:
                 self._scr.addnstr(0, 0, msg, cols)
             except curses.error:
@@ -1714,14 +1720,14 @@ class AclEditor:
         content = _content_rows(lines)
         has_color = curses.has_colors()
 
-        modified = '' if self._saved else ' [modified]'
-        left_part = f' ACL Editor: {self._ctx.path}{modified}'
-        right_part = (f' {self._ctx.fs_name} ' if self._ctx.fs_name else '')
+        modified = "" if self._saved else " [modified]"
+        left_part = f" ACL Editor: {self._ctx.path}{modified}"
+        right_part = f" {self._ctx.fs_name} " if self._ctx.fs_name else ""
         available = cols - 1
         if len(left_part) + len(right_part) <= available:
-            title_pad = left_part + ' ' * (available - len(left_part) - len(right_part)) + right_part
+            title_pad = left_part + " " * (available - len(left_part) - len(right_part)) + right_part
         else:
-            title_pad = (left_part + ' ' * available)[:available]
+            title_pad = (left_part + " " * available)[:available]
         try:
             attr = curses.color_pair(_CP_TITLE) if has_color else curses.A_REVERSE
             self._scr.addnstr(0, 0, title_pad, cols - 1, attr)
@@ -1729,23 +1735,23 @@ class AclEditor:
             pass
 
         if self._mode == _MODE_ACE_FORM and self._ctx.is_nfs4:
-            right_header = ' Edit NFS4 ACE'
+            right_header = " Edit NFS4 ACE"
         elif self._mode == _MODE_ACE_FORM:
-            right_header = ' Edit POSIX Entry'
+            right_header = " Edit POSIX Entry"
         elif not self._ctx.is_nfs4:
-            right_header = ' POSIX ACL'
+            right_header = " POSIX ACL"
         else:
-            right_header = ' Inheritance Preview'
+            right_header = " Inheritance Preview"
 
         try:
-            self._scr.addnstr(1, 0, ' ACL Entries', left_w)
-            self._scr.addnstr(1, left_w, '\u2502', 1)
+            self._scr.addnstr(1, 0, " ACL Entries", left_w)
+            self._scr.addnstr(1, left_w, "\u2502", 1)
             self._scr.addnstr(1, right_col, right_header, right_w)
         except curses.error:
             pass
 
         try:
-            self._scr.addnstr(2, 0, '\u2500' * (cols - 1), cols - 1)
+            self._scr.addnstr(2, 0, "\u2500" * (cols - 1), cols - 1)
         except curses.error:
             pass
 
@@ -1756,10 +1762,10 @@ class AclEditor:
             is_sel = (ace_idx == self._cursor) and self._ctx.is_nfs4
 
             if ace_idx < n:
-                prefix = '> ' if is_sel else '  '
+                prefix = "> " if is_sel else "  "
                 text = prefix + self._ace_str(ace_idx)
                 if is_sel:
-                    attr = (curses.color_pair(_CP_SELECTED) if has_color else curses.A_STANDOUT)
+                    attr = curses.color_pair(_CP_SELECTED) if has_color else curses.A_STANDOUT
                     try:
                         self._scr.addnstr(scr_row, 0, text, left_w, attr)
                     except curses.error:
@@ -1771,7 +1777,7 @@ class AclEditor:
                         pass
 
             try:
-                self._scr.addnstr(scr_row, left_w, '\u2502', 1)
+                self._scr.addnstr(scr_row, left_w, "\u2502", 1)
             except curses.error:
                 pass
 
@@ -1795,16 +1801,16 @@ class AclEditor:
 
         help_row = lines - 2
         if self._mode == _MODE_ACE_FORM and self._ctx.is_nfs4:
-            help_text = ' Tab:next  Arrows:nav  Space:toggle  Enter:apply  Esc:cancel  Ctrl-T:id/name'
+            help_text = " Tab:next  Arrows:nav  Space:toggle  Enter:apply  Esc:cancel  Ctrl-T:id/name"
         elif self._mode == _MODE_ACE_FORM:
-            help_text = ' Tab:region  Space:toggle  Ctrl-T:id/name  Enter:apply  Esc:cancel'
+            help_text = " Tab:region  Space:toggle  Ctrl-T:id/name  Enter:apply  Esc:cancel"
         elif self._mode == _MODE_NORMAL and not self._ctx.is_nfs4:
-            help_text = ' Arrows:nav  Space:toggle  [a]dd [d]el [e]dit  [s]ave [q]uit'
+            help_text = " Arrows:nav  Space:toggle  [a]dd [d]el [e]dit  [s]ave [q]uit"
         elif self._mode == _MODE_NORMAL:
-            help_text = ' [a]dd [d]el [e]dit [s]ave [q]uit'
+            help_text = " [a]dd [d]el [e]dit [s]ave [q]uit"
         else:
-            help_text = ' Enter:confirm  Esc:cancel  \u2190\u2192:move  BS:delete'
-        help_pad = (help_text + ' ' * cols)[:cols - 1]
+            help_text = " Enter:confirm  Esc:cancel  \u2190\u2192:move  BS:delete"
+        help_pad = (help_text + " " * cols)[: cols - 1]
         try:
             attr = curses.color_pair(_CP_TITLE) if has_color else curses.A_REVERSE
             self._scr.addnstr(help_row, 0, help_pad, cols - 1, attr)
@@ -1857,7 +1863,7 @@ class AclEditor:
         lines, cols = self._scr.getmaxyx()
         if lines < _MIN_LINES or cols < _MIN_COLS:
             self._scr.clear()
-            msg = f'Terminal too small (min {_MIN_COLS}x{_MIN_LINES})'
+            msg = f"Terminal too small (min {_MIN_COLS}x{_MIN_LINES})"
             try:
                 self._scr.addnstr(0, 0, msg, cols)
             except curses.error:
@@ -1876,19 +1882,18 @@ class AclEditor:
 
 # ── public entry point ────────────────────────────────────────────────────────
 
+
 def interactive_edit(path):
     """Open *path*, launch the curses ACL editor, return exit code."""
     if not sys.stdout.isatty():
-        print('truenas_setfacl: -e requires an interactive terminal', file=sys.stderr)
+        print("truenas_setfacl: -e requires an interactive terminal", file=sys.stderr)
         return 1
 
     try:
         ts = os.get_terminal_size()
         if ts.columns < _MIN_COLS or ts.lines < _MIN_LINES:
             print(
-                f'truenas_setfacl: terminal too small '
-                f'(need {_MIN_COLS}x{_MIN_LINES}, '
-                f'got {ts.columns}x{ts.lines})',
+                f"truenas_setfacl: terminal too small (need {_MIN_COLS}x{_MIN_LINES}, got {ts.columns}x{ts.lines})",
                 file=sys.stderr,
             )
             return 1
@@ -1898,7 +1903,7 @@ def interactive_edit(path):
     try:
         fd = t.openat2(path, flags=os.O_RDONLY, resolve=t.RESOLVE_NO_SYMLINKS)
     except OSError as e:
-        print(f'truenas_setfacl: {path}: {e}', file=sys.stderr)
+        print(f"truenas_setfacl: {path}: {e}", file=sys.stderr)
         return 1
 
     try:
@@ -1912,22 +1917,20 @@ def interactive_edit(path):
             acl_flags = acl.acl_flags
         else:
             if not acl.aces:
-                acl = t.POSIXACL.from_aces(
-                    list(_make_trivial_posix(st.st_mode).aces) + list(acl.default_aces)
-                )
+                acl = t.POSIXACL.from_aces(list(_make_trivial_posix(st.st_mode).aces) + list(acl.default_aces))
             aces = list(acl.aces) + list(acl.default_aces)
             acl_flags = None
 
         try:
             _, fs_name, _ = _get_mount_info(path)
         except OSError:
-            fs_name = ''
+            fs_name = ""
 
         abs_path = os.path.realpath(path)
-        if abs_path == '/mnt' or abs_path.startswith('/mnt/'):
-            warn = ''
+        if abs_path == "/mnt" or abs_path.startswith("/mnt/"):
+            warn = ""
         else:
-            warn = 'Warning: permissions changes outside of /mnt are not supported'
+            warn = "Warning: permissions changes outside of /mnt are not supported"
 
         ctx = _EditContext(
             path=path,
@@ -1944,7 +1947,7 @@ def interactive_edit(path):
         return rc if rc is not None else 0
 
     except OSError as e:
-        print(f'truenas_setfacl: {path}: {e}', file=sys.stderr)
+        print(f"truenas_setfacl: {path}: {e}", file=sys.stderr)
         return 1
     finally:
         os.close(fd)

@@ -25,16 +25,15 @@ FILTER_OP_ENDSWITH: str
 FILTER_OP_NOT_ENDSWITH: str
 FILTER_OP_CI_PREFIX: str
 
-
 @final
 class CompiledFilters:
     """Pre-compiled filter tree produced by compile_filters()."""
     def __repr__(self) -> str: ...
 
-
 @final
 class CompiledOptions:
     """Pre-compiled options produced by compile_options()."""
+
     get: bool
     count: bool
     select: list[str | list[Any]]
@@ -43,7 +42,6 @@ class CompiledOptions:
     limit: int
     model: type[Any] | None
     def __repr__(self) -> str: ...
-
 
 def match(
     item: Any,
@@ -60,7 +58,6 @@ def match(
     """
     ...
 
-
 def tnfilter(
     data: Iterable[Any],
     *,
@@ -73,7 +70,6 @@ def tnfilter(
     compile_options() respectively.
     """
     ...
-
 
 def compile_filters(
     filters: list[Any],
@@ -89,7 +85,6 @@ def compile_filters(
     time.
     """
     ...
-
 
 def compile_options(
     *,
