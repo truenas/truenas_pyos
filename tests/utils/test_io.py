@@ -358,3 +358,75 @@ def test_atomic_write_noclobber_default_is_false(atomic_dir):
         f.write('replaced')
     with open(target) as f:
         assert f.read() == 'replaced'
+
+
+# ── atomic_write: symlinked directories and temporary directory cleanup ───────
+
+def test_atomic_write_symlinked_parent_creates_nothing(tmp_path):
+    """A symlink in the target's directory path fails with ELOOP before the
+    temporary directory is created, so nothing appears where it points."""
+    elsewhere = tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    (tmp_path / 'etc').symlink_to(elsewhere)
+
+    with pytest.raises(OSError) as exc_info:
+        with atomic_write(str(tmp_path / 'etc' / 'hostname')) as f:
+            f.write('should not be written')
+
+    assert exc_info.value.errno == errno.ELOOP
+    assert list(elsewhere.iterdir()) == []
+
+
+def test_atomic_write_symlinked_tmppath_creates_nothing(tmp_path):
+    target_dir = tmp_path / 'target'
+    target_dir.mkdir()
+    elsewhere = tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    (tmp_path / 'tmp_link').symlink_to(elsewhere)
+
+    with pytest.raises(OSError) as exc_info:
+        with atomic_write(str(target_dir / 'file.txt'), tmppath=str(tmp_path / 'tmp_link')) as f:
+            f.write('should not be written')
+
+    assert exc_info.value.errno == errno.ELOOP
+    assert list(elsewhere.iterdir()) == []
+    assert list(target_dir.iterdir()) == []
+
+
+@pytest.mark.parametrize('existing', [False, True], ids=['new', 'replace'])
+def test_atomic_write_leaves_no_temporary_directory(tmp_path, existing):
+    target = tmp_path / 'file.txt'
+    if existing:
+        target.write_text('original')
+
+    with atomic_write(str(target)) as f:
+        f.write('written')
+
+    assert target.read_text() == 'written'
+    assert [p.name for p in tmp_path.iterdir()] == ['file.txt']
+
+
+def test_atomic_write_leaves_no_temporary_directory_on_exception(tmp_path):
+    target = tmp_path / 'file.txt'
+    target.write_text('original')
+
+    with pytest.raises(ValueError):
+        with atomic_write(str(target)) as f:
+            f.write('partial')
+            raise ValueError('abort')
+
+    assert target.read_text() == 'original'
+    assert [p.name for p in tmp_path.iterdir()] == ['file.txt']
+
+
+def test_atomic_write_leaves_no_temporary_directory_in_tmppath(tmp_path):
+    target_dir = tmp_path / 'target'
+    target_dir.mkdir()
+    tmp_dir = tmp_path / 'tmp'
+    tmp_dir.mkdir()
+
+    with atomic_write(str(target_dir / 'file.txt'), tmppath=str(tmp_dir)) as f:
+        f.write('written')
+
+    assert (target_dir / 'file.txt').read_text() == 'written'
+    assert list(tmp_dir.iterdir()) == []
