@@ -13,31 +13,31 @@ import truenas_os as t
 # ── permission / flag tables (mirror _getfacl.py) ────────────────────────────
 
 _NFS4_PERM_CHARS = (
-    (t.NFS4Perm.READ_DATA,         'r'),
-    (t.NFS4Perm.WRITE_DATA,        'w'),
-    (t.NFS4Perm.APPEND_DATA,       'p'),
-    (t.NFS4Perm.READ_NAMED_ATTRS,  'R'),
-    (t.NFS4Perm.WRITE_NAMED_ATTRS, 'W'),
-    (t.NFS4Perm.EXECUTE,           'x'),
-    (t.NFS4Perm.DELETE_CHILD,      'D'),
-    (t.NFS4Perm.DELETE,            'd'),
-    (t.NFS4Perm.READ_ATTRIBUTES,   'a'),
-    (t.NFS4Perm.WRITE_ATTRIBUTES,  'A'),
-    (t.NFS4Perm.READ_ACL,          'c'),
-    (t.NFS4Perm.WRITE_ACL,         'C'),
-    (t.NFS4Perm.WRITE_OWNER,       'o'),
-    (t.NFS4Perm.SYNCHRONIZE,       's'),
+    (t.NFS4Perm.READ_DATA, "r"),
+    (t.NFS4Perm.WRITE_DATA, "w"),
+    (t.NFS4Perm.APPEND_DATA, "p"),
+    (t.NFS4Perm.READ_NAMED_ATTRS, "R"),
+    (t.NFS4Perm.WRITE_NAMED_ATTRS, "W"),
+    (t.NFS4Perm.EXECUTE, "x"),
+    (t.NFS4Perm.DELETE_CHILD, "D"),
+    (t.NFS4Perm.DELETE, "d"),
+    (t.NFS4Perm.READ_ATTRIBUTES, "a"),
+    (t.NFS4Perm.WRITE_ATTRIBUTES, "A"),
+    (t.NFS4Perm.READ_ACL, "c"),
+    (t.NFS4Perm.WRITE_ACL, "C"),
+    (t.NFS4Perm.WRITE_OWNER, "o"),
+    (t.NFS4Perm.SYNCHRONIZE, "s"),
 )
 
 _NFS4_FLAG_CHARS = (
-    (t.NFS4Flag.FILE_INHERIT,         'f'),
-    (t.NFS4Flag.DIRECTORY_INHERIT,    'd'),
-    (t.NFS4Flag.NO_PROPAGATE_INHERIT, 'n'),
-    (t.NFS4Flag.INHERIT_ONLY,         'i'),
-    (t.NFS4Flag.SUCCESSFUL_ACCESS,    'S'),
-    (t.NFS4Flag.FAILED_ACCESS,        'F'),
-    (t.NFS4Flag.IDENTIFIER_GROUP,     'g'),
-    (t.NFS4Flag.INHERITED,            'I'),
+    (t.NFS4Flag.FILE_INHERIT, "f"),
+    (t.NFS4Flag.DIRECTORY_INHERIT, "d"),
+    (t.NFS4Flag.NO_PROPAGATE_INHERIT, "n"),
+    (t.NFS4Flag.INHERIT_ONLY, "i"),
+    (t.NFS4Flag.SUCCESSFUL_ACCESS, "S"),
+    (t.NFS4Flag.FAILED_ACCESS, "F"),
+    (t.NFS4Flag.IDENTIFIER_GROUP, "g"),
+    (t.NFS4Flag.INHERITED, "I"),
 )
 
 _NFS4_PERM_FROM_CHAR = {c: bit for bit, c in _NFS4_PERM_CHARS}
@@ -54,30 +54,32 @@ def _nfs4_perm_union(*perms):
 _NFS4_FULL_SET = _nfs4_perm_union(*[bit for bit, _ in _NFS4_PERM_CHARS])
 
 _NFS4_PERM_SETS = {
-    'full_set':   _NFS4_FULL_SET,
-    'modify_set': _NFS4_FULL_SET & ~(t.NFS4Perm.WRITE_ACL | t.NFS4Perm.WRITE_OWNER),
-    'read_set':   _nfs4_perm_union(t.NFS4Perm.READ_DATA, t.NFS4Perm.READ_NAMED_ATTRS,
-                                   t.NFS4Perm.READ_ATTRIBUTES, t.NFS4Perm.READ_ACL),
-    'write_set':  _nfs4_perm_union(t.NFS4Perm.WRITE_DATA, t.NFS4Perm.APPEND_DATA,
-                                   t.NFS4Perm.WRITE_NAMED_ATTRS, t.NFS4Perm.WRITE_ATTRIBUTES),
+    "full_set": _NFS4_FULL_SET,
+    "modify_set": _NFS4_FULL_SET & ~(t.NFS4Perm.WRITE_ACL | t.NFS4Perm.WRITE_OWNER),
+    "read_set": _nfs4_perm_union(
+        t.NFS4Perm.READ_DATA, t.NFS4Perm.READ_NAMED_ATTRS, t.NFS4Perm.READ_ATTRIBUTES, t.NFS4Perm.READ_ACL
+    ),
+    "write_set": _nfs4_perm_union(
+        t.NFS4Perm.WRITE_DATA, t.NFS4Perm.APPEND_DATA, t.NFS4Perm.WRITE_NAMED_ATTRS, t.NFS4Perm.WRITE_ATTRIBUTES
+    ),
 }
 
 _NFS4_TYPE_FROM_STR = {
-    'allow': t.NFS4AceType.ALLOW,
-    'deny': t.NFS4AceType.DENY,
+    "allow": t.NFS4AceType.ALLOW,
+    "deny": t.NFS4AceType.DENY,
 }
 
 _NFS4_ACL_FLAG_FROM_STR = {
-    'none':         t.NFS4ACLFlag(0),
-    'auto-inherit': t.NFS4ACLFlag.AUTO_INHERIT,
-    'protected':    t.NFS4ACLFlag.PROTECTED,
-    'defaulted':    t.NFS4ACLFlag.DEFAULTED,
+    "none": t.NFS4ACLFlag(0),
+    "auto-inherit": t.NFS4ACLFlag.AUTO_INHERIT,
+    "protected": t.NFS4ACLFlag.PROTECTED,
+    "defaulted": t.NFS4ACLFlag.DEFAULTED,
 }
 
 _POSIX_PERM_CHARS = (
-    (t.POSIXPerm.READ,    'r'),
-    (t.POSIXPerm.WRITE,   'w'),
-    (t.POSIXPerm.EXECUTE, 'x'),
+    (t.POSIXPerm.READ, "r"),
+    (t.POSIXPerm.WRITE, "w"),
+    (t.POSIXPerm.EXECUTE, "x"),
 )
 
 _POSIX_PERM_FROM_CHAR = {c: bit for bit, c in _POSIX_PERM_CHARS}
@@ -85,12 +87,13 @@ _POSIX_PERM_FROM_CHAR = {c: bit for bit, c in _POSIX_PERM_CHARS}
 
 # ── NFS4 recursive inheritance state ─────────────────────────────────────────
 
+
 @dataclasses.dataclass(slots=True)
 class _NFS4InheritedAcls:
     d1_file: t.NFS4ACL
-    d1_dir:  t.NFS4ACL
+    d1_dir: t.NFS4ACL
     d2_file: t.NFS4ACL
-    d2_dir:  t.NFS4ACL
+    d2_dir: t.NFS4ACL
 
     @classmethod
     def from_root(cls, root_acl):
@@ -110,13 +113,22 @@ class _NFS4InheritedAcls:
 
 # ── mode-to-ACL helpers ───────────────────────────────────────────────────────
 
-_MODE_R_NFS4 = (t.NFS4Perm.READ_DATA | t.NFS4Perm.READ_NAMED_ATTRS |
-                t.NFS4Perm.READ_ATTRIBUTES | t.NFS4Perm.READ_ACL |
-                t.NFS4Perm.SYNCHRONIZE)
-_MODE_W_NFS4 = (t.NFS4Perm.WRITE_DATA | t.NFS4Perm.APPEND_DATA |
-                t.NFS4Perm.WRITE_NAMED_ATTRS | t.NFS4Perm.WRITE_ATTRIBUTES |
-                t.NFS4Perm.WRITE_ACL | t.NFS4Perm.WRITE_OWNER |
-                t.NFS4Perm.DELETE_CHILD)
+_MODE_R_NFS4 = (
+    t.NFS4Perm.READ_DATA
+    | t.NFS4Perm.READ_NAMED_ATTRS
+    | t.NFS4Perm.READ_ATTRIBUTES
+    | t.NFS4Perm.READ_ACL
+    | t.NFS4Perm.SYNCHRONIZE
+)
+_MODE_W_NFS4 = (
+    t.NFS4Perm.WRITE_DATA
+    | t.NFS4Perm.APPEND_DATA
+    | t.NFS4Perm.WRITE_NAMED_ATTRS
+    | t.NFS4Perm.WRITE_ATTRIBUTES
+    | t.NFS4Perm.WRITE_ACL
+    | t.NFS4Perm.WRITE_OWNER
+    | t.NFS4Perm.DELETE_CHILD
+)
 _MODE_X_NFS4 = t.NFS4Perm.EXECUTE
 
 
@@ -144,29 +156,26 @@ def _mode_to_posix_perm(bits):
 
 def _make_trivial_nfs4(stat_mode):
     aces = [
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  _mode_to_nfs4_perm((stat_mode >> 6) & 7), t.NFS4Who.OWNER),
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.IDENTIFIER_GROUP,
-                  _mode_to_nfs4_perm((stat_mode >> 3) & 7), t.NFS4Who.GROUP),
-        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                  _mode_to_nfs4_perm(stat_mode & 7), t.NFS4Who.EVERYONE),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), _mode_to_nfs4_perm((stat_mode >> 6) & 7), t.NFS4Who.OWNER),
+        t.NFS4Ace(
+            t.NFS4AceType.ALLOW, t.NFS4Flag.IDENTIFIER_GROUP, _mode_to_nfs4_perm((stat_mode >> 3) & 7), t.NFS4Who.GROUP
+        ),
+        t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), _mode_to_nfs4_perm(stat_mode & 7), t.NFS4Who.EVERYONE),
     ]
     return t.NFS4ACL.from_aces(aces)
 
 
 def _make_trivial_posix(stat_mode):
     aces = [
-        t.POSIXAce(t.POSIXTag.USER_OBJ,
-                   _mode_to_posix_perm((stat_mode >> 6) & 7)),
-        t.POSIXAce(t.POSIXTag.GROUP_OBJ,
-                   _mode_to_posix_perm((stat_mode >> 3) & 7)),
-        t.POSIXAce(t.POSIXTag.OTHER,
-                   _mode_to_posix_perm(stat_mode & 7)),
+        t.POSIXAce(t.POSIXTag.USER_OBJ, _mode_to_posix_perm((stat_mode >> 6) & 7)),
+        t.POSIXAce(t.POSIXTag.GROUP_OBJ, _mode_to_posix_perm((stat_mode >> 3) & 7)),
+        t.POSIXAce(t.POSIXTag.OTHER, _mode_to_posix_perm(stat_mode & 7)),
     ]
     return t.POSIXACL.from_aces(aces)
 
 
 # ── name resolution ───────────────────────────────────────────────────────────
+
 
 def _resolve_uid(s):
     try:
@@ -176,7 +185,7 @@ def _resolve_uid(s):
     try:
         return pwd.getpwnam(s).pw_uid
     except KeyError:
-        raise ValueError(f'unknown user: {s!r}') from None
+        raise ValueError(f"unknown user: {s!r}") from None
 
 
 def _resolve_gid(s):
@@ -187,16 +196,17 @@ def _resolve_gid(s):
     try:
         return grp.getgrnam(s).gr_gid
     except KeyError:
-        raise ValueError(f'unknown group: {s!r}') from None
+        raise ValueError(f"unknown group: {s!r}") from None
 
 
 # ── entry text splitting ──────────────────────────────────────────────────────
 
+
 def _split_entries(text):
     result = []
-    for line in text.replace(',', '\n').splitlines():
+    for line in text.replace(",", "\n").splitlines():
         line = line.strip()
-        if not line or line.startswith('#'):
+        if not line or line.startswith("#"):
             continue
         result.append(line)
     return result
@@ -204,15 +214,16 @@ def _split_entries(text):
 
 # ── NFS4 ACE parsing ──────────────────────────────────────────────────────────
 
+
 def _parse_nfs4_perms(s):
     if s in _NFS4_PERM_SETS:
         return _NFS4_PERM_SETS[s]
     mask = t.NFS4Perm(0)
     for ch in s:
-        if ch == '-':
+        if ch == "-":
             continue
         if ch not in _NFS4_PERM_FROM_CHAR:
-            raise ValueError(f'invalid NFS4 perm char: {ch!r}')
+            raise ValueError(f"invalid NFS4 perm char: {ch!r}")
         mask |= _NFS4_PERM_FROM_CHAR[ch]
     return mask
 
@@ -220,54 +231,54 @@ def _parse_nfs4_perms(s):
 def _parse_nfs4_flags(s):
     flags = t.NFS4Flag(0)
     for ch in s:
-        if ch == '-':
+        if ch == "-":
             continue
         if ch not in _NFS4_FLAG_FROM_CHAR:
-            raise ValueError(f'invalid NFS4 flag char: {ch!r}')
+            raise ValueError(f"invalid NFS4 flag char: {ch!r}")
         flags |= _NFS4_FLAG_FROM_CHAR[ch]
     return flags
 
 
 def _parse_acl_flag(s):
     if s not in _NFS4_ACL_FLAG_FROM_STR:
-        valid = ', '.join(_NFS4_ACL_FLAG_FROM_STR)
-        raise ValueError(f'invalid ACL flag: {s!r}; expected one of: {valid}')
+        valid = ", ".join(_NFS4_ACL_FLAG_FROM_STR)
+        raise ValueError(f"invalid ACL flag: {s!r}; expected one of: {valid}")
     return _NFS4_ACL_FLAG_FROM_STR[s]
 
 
 def _parse_nfs4_ace(s):
-    if s.startswith(('owner@:', 'group@:', 'everyone@:')):
-        at = s.index(':')
+    if s.startswith(("owner@:", "group@:", "everyone@:")):
+        at = s.index(":")
         who_str = s[:at]
-        rest = s[at + 1:]
-    elif s.startswith(('user:', 'group:')):
-        parts = s.split(':', 4)
+        rest = s[at + 1 :]
+    elif s.startswith(("user:", "group:")):
+        parts = s.split(":", 4)
         if len(parts) < 5:
-            raise ValueError(f'invalid NFS4 ACE: {s!r}')
-        who_str = f'{parts[0]}:{parts[1]}'
-        rest = ':'.join(parts[2:])
+            raise ValueError(f"invalid NFS4 ACE: {s!r}")
+        who_str = f"{parts[0]}:{parts[1]}"
+        rest = ":".join(parts[2:])
     else:
-        raise ValueError(f'invalid NFS4 ACE: {s!r}')
+        raise ValueError(f"invalid NFS4 ACE: {s!r}")
 
-    rparts = rest.split(':')
+    rparts = rest.split(":")
     if len(rparts) != 3:
-        raise ValueError(f'invalid NFS4 ACE: {s!r}')
+        raise ValueError(f"invalid NFS4 ACE: {s!r}")
     perms_str, flags_str, type_str = rparts
 
     perms = _parse_nfs4_perms(perms_str)
     flags = _parse_nfs4_flags(flags_str)
 
     if type_str not in _NFS4_TYPE_FROM_STR:
-        raise ValueError(f'invalid NFS4 ACE type: {type_str!r}')
+        raise ValueError(f"invalid NFS4 ACE type: {type_str!r}")
     ace_type = _NFS4_TYPE_FROM_STR[type_str]
 
-    if who_str == 'owner@':
+    if who_str == "owner@":
         return t.NFS4Ace(ace_type, flags, perms, t.NFS4Who.OWNER)
-    if who_str == 'group@':
+    if who_str == "group@":
         return t.NFS4Ace(ace_type, flags, perms, t.NFS4Who.GROUP)
-    if who_str == 'everyone@':
+    if who_str == "everyone@":
         return t.NFS4Ace(ace_type, flags, perms, t.NFS4Who.EVERYONE)
-    if who_str.startswith('user:'):
+    if who_str.startswith("user:"):
         uid = _resolve_uid(who_str[5:])
         return t.NFS4Ace(ace_type, flags, perms, t.NFS4Who.NAMED, uid)
     gid = _resolve_gid(who_str[6:])
@@ -276,83 +287,83 @@ def _parse_nfs4_ace(s):
 
 
 def _parse_nfs4_who_spec(s):
-    if s.startswith('owner@'):
+    if s.startswith("owner@"):
         return (t.NFS4Who.OWNER, -1, False)
-    if s.startswith('group@'):
+    if s.startswith("group@"):
         return (t.NFS4Who.GROUP, -1, False)
-    if s.startswith('everyone@'):
+    if s.startswith("everyone@"):
         return (t.NFS4Who.EVERYONE, -1, False)
-    if s.startswith('user:'):
-        qual = s[5:].split(':')[0]
+    if s.startswith("user:"):
+        qual = s[5:].split(":")[0]
         return (t.NFS4Who.NAMED, _resolve_uid(qual), False)
-    if s.startswith('group:'):
-        qual = s[6:].split(':')[0]
+    if s.startswith("group:"):
+        qual = s[6:].split(":")[0]
         return (t.NFS4Who.NAMED, _resolve_gid(qual), True)
-    raise ValueError(f'invalid NFS4 who spec: {s!r}')
+    raise ValueError(f"invalid NFS4 who spec: {s!r}")
 
 
 # ── POSIX ACE parsing ─────────────────────────────────────────────────────────
 
+
 def _parse_posix_perms(s):
     perms = t.POSIXPerm(0)
     for ch in s:
-        if ch == '-':
+        if ch == "-":
             continue
         if ch not in _POSIX_PERM_FROM_CHAR:
-            raise ValueError(f'invalid POSIX perm char: {ch!r}')
+            raise ValueError(f"invalid POSIX perm char: {ch!r}")
         perms |= _POSIX_PERM_FROM_CHAR[ch]
     return perms
 
 
 def _parse_posix_ace(s):
-    default = s.startswith('default:')
+    default = s.startswith("default:")
     if default:
         s = s[8:]
-    parts = s.split(':')
+    parts = s.split(":")
     if len(parts) != 3:
-        raise ValueError(f'invalid POSIX ACE: {s!r}')
+        raise ValueError(f"invalid POSIX ACE: {s!r}")
     tag_str, qual_str, perms_str = parts
     perms = _parse_posix_perms(perms_str)
-    if tag_str == 'user':
+    if tag_str == "user":
         if not qual_str:
             return t.POSIXAce(t.POSIXTag.USER_OBJ, perms, default=default)
-        return t.POSIXAce(t.POSIXTag.USER, perms,
-                          _resolve_uid(qual_str), default=default)
-    if tag_str == 'group':
+        return t.POSIXAce(t.POSIXTag.USER, perms, _resolve_uid(qual_str), default=default)
+    if tag_str == "group":
         if not qual_str:
             return t.POSIXAce(t.POSIXTag.GROUP_OBJ, perms, default=default)
-        return t.POSIXAce(t.POSIXTag.GROUP, perms,
-                          _resolve_gid(qual_str), default=default)
-    if tag_str == 'mask':
+        return t.POSIXAce(t.POSIXTag.GROUP, perms, _resolve_gid(qual_str), default=default)
+    if tag_str == "mask":
         return t.POSIXAce(t.POSIXTag.MASK, perms, default=default)
-    if tag_str == 'other':
+    if tag_str == "other":
         return t.POSIXAce(t.POSIXTag.OTHER, perms, default=default)
-    raise ValueError(f'invalid POSIX tag: {tag_str!r}')
+    raise ValueError(f"invalid POSIX tag: {tag_str!r}")
 
 
 def _parse_posix_remove_spec(s):
-    default = s.startswith('default:')
+    default = s.startswith("default:")
     if default:
         s = s[8:]
-    parts = s.split(':', 2)
+    parts = s.split(":", 2)
     tag_str = parts[0]
-    qual_str = parts[1].split(':')[0] if len(parts) > 1 else ''
-    if tag_str == 'user':
+    qual_str = parts[1].split(":")[0] if len(parts) > 1 else ""
+    if tag_str == "user":
         if not qual_str:
             return (t.POSIXTag.USER_OBJ, -1, default)
         return (t.POSIXTag.USER, _resolve_uid(qual_str), default)
-    if tag_str == 'group':
+    if tag_str == "group":
         if not qual_str:
             return (t.POSIXTag.GROUP_OBJ, -1, default)
         return (t.POSIXTag.GROUP, _resolve_gid(qual_str), default)
-    if tag_str == 'mask':
+    if tag_str == "mask":
         return (t.POSIXTag.MASK, -1, default)
-    if tag_str == 'other':
+    if tag_str == "other":
         return (t.POSIXTag.OTHER, -1, default)
-    raise ValueError(f'invalid POSIX remove spec: {s!r}')
+    raise ValueError(f"invalid POSIX remove spec: {s!r}")
 
 
 # ── ACL modification helpers ──────────────────────────────────────────────────
+
 
 def _apply_nfs4_modify(acl, new_aces):
     aces = list(acl.aces)
@@ -366,8 +377,9 @@ def _apply_nfs4_modify(acl, new_aces):
             if ace.who_type == t.NFS4Who.NAMED:
                 if ace.who_id != new_ace.who_id:
                     continue
-                if (bool(ace.ace_flags & t.NFS4Flag.IDENTIFIER_GROUP) !=
-                        bool(new_ace.ace_flags & t.NFS4Flag.IDENTIFIER_GROUP)):
+                if bool(ace.ace_flags & t.NFS4Flag.IDENTIFIER_GROUP) != bool(
+                    new_ace.ace_flags & t.NFS4Flag.IDENTIFIER_GROUP
+                ):
                     continue
             found = i
             break
@@ -402,8 +414,7 @@ def _apply_nfs4_remove(acl, remove_specs):
             if who_type == t.NFS4Who.NAMED:
                 if ace.who_id != who_id:
                     continue
-                if (bool(ace.ace_flags & t.NFS4Flag.IDENTIFIER_GROUP) !=
-                        is_group):
+                if bool(ace.ace_flags & t.NFS4Flag.IDENTIFIER_GROUP) != is_group:
                     continue
             remove = True
             break
@@ -414,8 +425,7 @@ def _apply_nfs4_remove(acl, remove_specs):
 
 def _recalc_posix_mask(all_aces):
     def _process_section(aces_in, is_default):
-        has_ext = any(a.tag in (t.POSIXTag.USER, t.POSIXTag.GROUP)
-                      for a in aces_in)
+        has_ext = any(a.tag in (t.POSIXTag.USER, t.POSIXTag.GROUP) for a in aces_in)
         has_mask = any(a.tag == t.POSIXTag.MASK for a in aces_in)
         # Nothing to do for a plain 3-entry (trivial) section.
         if not has_ext and not has_mask:
@@ -432,18 +442,14 @@ def _recalc_posix_mask(all_aces):
         mask_updated = False
         for a in aces_in:
             if a.tag == t.POSIXTag.MASK:
-                result.append(t.POSIXAce(t.POSIXTag.MASK, mask_perm,
-                                         default=is_default))
+                result.append(t.POSIXAce(t.POSIXTag.MASK, mask_perm, default=is_default))
                 mask_updated = True
             else:
                 result.append(a)
         if not mask_updated:
             # Named entries present but no existing mask: insert one.
-            idx = next((i for i, a in enumerate(result)
-                        if a.tag == t.POSIXTag.GROUP_OBJ),
-                       len(result))
-            result.insert(idx + 1, t.POSIXAce(t.POSIXTag.MASK, mask_perm,
-                                              default=is_default))
+            idx = next((i for i, a in enumerate(result) if a.tag == t.POSIXTag.GROUP_OBJ), len(result))
+            result.insert(idx + 1, t.POSIXAce(t.POSIXTag.MASK, mask_perm, default=is_default))
         return result
 
     access_aces = [a for a in all_aces if not a.default]
@@ -459,9 +465,9 @@ def _ensure_posix_mask(all_aces):
     The initial mask value mirrors what standard setfacl produces with -n:
     it uses GROUP_OBJ's permissions rather than the full union.
     """
+
     def _process_section(aces_in, is_default):
-        has_ext = any(a.tag in (t.POSIXTag.USER, t.POSIXTag.GROUP)
-                      for a in aces_in)
+        has_ext = any(a.tag in (t.POSIXTag.USER, t.POSIXTag.GROUP) for a in aces_in)
         has_mask = any(a.tag == t.POSIXTag.MASK for a in aces_in)
         if not has_ext or has_mask:
             return aces_in
@@ -470,10 +476,8 @@ def _ensure_posix_mask(all_aces):
             t.POSIXPerm(0),
         )
         result = list(aces_in)
-        idx = next((i for i, a in enumerate(result)
-                    if a.tag == t.POSIXTag.GROUP_OBJ), len(result))
-        result.insert(idx + 1, t.POSIXAce(t.POSIXTag.MASK, group_perm,
-                                          default=is_default))
+        idx = next((i for i, a in enumerate(result) if a.tag == t.POSIXTag.GROUP_OBJ), len(result))
+        result.insert(idx + 1, t.POSIXAce(t.POSIXTag.MASK, group_perm, default=is_default))
         return result
 
     access_aces = [a for a in all_aces if not a.default]
@@ -486,8 +490,7 @@ def _apply_posix_modify(acl, new_aces, recalc_mask):
     for new_ace in new_aces:
         found = -1
         for i, ace in enumerate(all_aces):
-            if (ace.tag == new_ace.tag and ace.id == new_ace.id and
-                    ace.default == new_ace.default):
+            if ace.tag == new_ace.tag and ace.id == new_ace.id and ace.default == new_ace.default:
                 found = i
                 break
         if found >= 0:
@@ -501,35 +504,49 @@ def _apply_posix_modify(acl, new_aces, recalc_mask):
 
 def _apply_posix_remove(acl, remove_specs):
     all_aces = list(acl.aces) + list(acl.default_aces)
-    result = [a for a in all_aces
-              if not any(a.tag == tag and a.id == uid and a.default == dflt
-                         for tag, uid, dflt in remove_specs)]
+    result = [
+        a
+        for a in all_aces
+        if not any(a.tag == tag and a.id == uid and a.default == dflt for tag, uid, dflt in remove_specs)
+    ]
     return t.POSIXACL.from_aces(result)
 
 
 # ── per-fd operation ──────────────────────────────────────────────────────────
+
 
 def _remove_posix_default(acl):
     """Return a copy of acl with all default ACEs removed."""
     return t.POSIXACL.from_aces(list(acl.aces))
 
 
-def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
-                   acl_file_entries, no_mask, default_only, insert_entries=(),
-                   acl_flags=None):
+def _do_setfacl_fd(
+    fd,
+    strip,
+    remove_default,
+    remove_entries,
+    modify_entries,
+    acl_file_entries,
+    no_mask,
+    default_only,
+    insert_entries=(),
+    acl_flags=None,
+):
     """Apply operations to fd.  Returns the resulting ACL."""
     acl = t.fgetacl(fd)
     is_posix = isinstance(acl, t.POSIXACL)
 
     if insert_entries and is_posix:
-        raise ValueError('-a (insert) is not supported on POSIX filesystems')
+        raise ValueError("-a (insert) is not supported on POSIX filesystems")
 
-    changed = (strip
-               or (remove_default and is_posix)
-               or bool(remove_entries)
-               or bool(modify_entries)
-               or acl_file_entries is not None
-               or bool(insert_entries))
+    changed = (
+        strip
+        or (remove_default and is_posix)
+        or bool(remove_entries)
+        or bool(modify_entries)
+        or acl_file_entries is not None
+        or bool(insert_entries)
+    )
 
     # A trivial POSIX ACL has no xattr — permissions live in the mode bits
     # only and acl.aces is empty.  Incremental operations (modify/remove)
@@ -538,16 +555,11 @@ def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
     # Use `not acl.aces` rather than `acl.trivial`: a directory that has only
     # a default ACL (trivial=False) also has empty access aces and needs the
     # same synthesis so the resulting ACL contains a valid USER_OBJ entry.
-    if (not strip and acl_file_entries is None
-            and is_posix and not acl.aces
-            and (remove_entries or modify_entries)):
+    if not strip and acl_file_entries is None and is_posix and not acl.aces and (remove_entries or modify_entries):
         # Synthesise the 3-entry access section from mode bits.  Preserve any
         # existing default ACEs (a dir may have only a default ACL stored, so
         # acl.trivial is False even though acl.aces is empty).
-        acl = t.POSIXACL.from_aces(
-            list(_make_trivial_posix(os.fstat(fd).st_mode).aces) +
-            list(acl.default_aces)
-        )
+        acl = t.POSIXACL.from_aces(list(_make_trivial_posix(os.fstat(fd).st_mode).aces) + list(acl.default_aces))
 
     if strip:
         if not is_posix:
@@ -559,16 +571,19 @@ def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
             # present the group bits in st_mode reflect the MASK value, not
             # the GROUP_OBJ perm (e.g. after 'setfacl -m user:uid:rwx' the
             # mode group bits become rwx but GROUP_OBJ may still be r--).
-            base = {a.tag: a.perms for a in acl.aces
-                    if a.tag in (t.POSIXTag.USER_OBJ,
-                                 t.POSIXTag.GROUP_OBJ,
-                                 t.POSIXTag.OTHER)}
+            base = {
+                a.tag: a.perms
+                for a in acl.aces
+                if a.tag in (t.POSIXTag.USER_OBJ, t.POSIXTag.GROUP_OBJ, t.POSIXTag.OTHER)
+            }
             if len(base) == 3:
-                acl = t.POSIXACL.from_aces([
-                    t.POSIXAce(t.POSIXTag.USER_OBJ,  base[t.POSIXTag.USER_OBJ]),
-                    t.POSIXAce(t.POSIXTag.GROUP_OBJ, base[t.POSIXTag.GROUP_OBJ]),
-                    t.POSIXAce(t.POSIXTag.OTHER,      base[t.POSIXTag.OTHER]),
-                ])
+                acl = t.POSIXACL.from_aces(
+                    [
+                        t.POSIXAce(t.POSIXTag.USER_OBJ, base[t.POSIXTag.USER_OBJ]),
+                        t.POSIXAce(t.POSIXTag.GROUP_OBJ, base[t.POSIXTag.GROUP_OBJ]),
+                        t.POSIXAce(t.POSIXTag.OTHER, base[t.POSIXTag.OTHER]),
+                    ]
+                )
             else:
                 acl = _make_trivial_posix(os.fstat(fd).st_mode)
 
@@ -577,10 +592,7 @@ def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
             # Access xattr absent (trivial or absorbed into mode bits by the
             # filesystem); reconstruct from mode so the result passes
             # validation when we write it back.
-            acl = t.POSIXACL.from_aces(
-                list(_make_trivial_posix(os.fstat(fd).st_mode).aces) +
-                list(acl.default_aces)
-            )
+            acl = t.POSIXACL.from_aces(list(_make_trivial_posix(os.fstat(fd).st_mode).aces) + list(acl.default_aces))
         acl = _remove_posix_default(acl)
 
     # When --default is active, -m/-x target the default ACL.
@@ -594,14 +606,10 @@ def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
             if modify_entries and not acl.default_aces:
                 base = _make_trivial_posix(os.fstat(fd).st_mode)
                 acl = t.POSIXACL.from_aces(
-                    list(acl.aces) +
-                    [t.POSIXAce(a.tag, a.perms, default=True)
-                     for a in base.aces]
+                    list(acl.aces) + [t.POSIXAce(a.tag, a.perms, default=True) for a in base.aces]
                 )
-            remove_entries = [e if e.startswith('default:') else 'default:' + e
-                              for e in remove_entries]
-            modify_entries = [e if e.startswith('default:') else 'default:' + e
-                              for e in modify_entries]
+            remove_entries = [e if e.startswith("default:") else "default:" + e for e in remove_entries]
+            modify_entries = [e if e.startswith("default:") else "default:" + e for e in modify_entries]
         else:
             remove_entries = []
             modify_entries = []
@@ -617,8 +625,7 @@ def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
             # (including -x) in a single post-loop pass unless -n is set:
             # https://cgit.git.savannah.nongnu.org/cgit/acl.git/tree/tools/do_set.c
             if not no_mask:
-                all_aces = _recalc_posix_mask(
-                    list(acl.aces) + list(acl.default_aces))
+                all_aces = _recalc_posix_mask(list(acl.aces) + list(acl.default_aces))
                 acl = t.POSIXACL.from_aces(all_aces)
 
     if modify_entries:
@@ -638,8 +645,7 @@ def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
                 # MASK when named entries exist.  do_set.c seeds an absent
                 # mask via clone_entry(acl, ACL_GROUP_OBJ, &acl, ACL_MASK):
                 # https://cgit.git.savannah.nongnu.org/cgit/acl.git/tree/tools/do_set.c
-                all_aces = _ensure_posix_mask(
-                    list(acl.aces) + list(acl.default_aces))
+                all_aces = _ensure_posix_mask(list(acl.aces) + list(acl.default_aces))
                 acl = t.POSIXACL.from_aces(all_aces)
 
     if insert_entries:
@@ -661,7 +667,7 @@ def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
 
     if acl_flags is not None:
         if is_posix:
-            raise ValueError('--acl-flags is not supported for POSIX ACL type')
+            raise ValueError("--acl-flags is not supported for POSIX ACL type")
         acl = t.NFS4ACL.from_aces(list(acl.aces), acl_flags)
         changed = True
 
@@ -671,6 +677,7 @@ def _do_setfacl_fd(fd, strip, remove_default, remove_entries, modify_entries,
 
 
 # ── restore ───────────────────────────────────────────────────────────────────
+
 
 def _parse_restore_file(text):
     """Parse getfacl output into a list of (path, [entry_lines]) pairs."""
@@ -685,12 +692,12 @@ def _parse_restore_file(text):
                 blocks.append((current_path, current_entries))
                 current_path = None
                 current_entries = []
-        elif line.startswith('# file: '):
+        elif line.startswith("# file: "):
             if current_path is not None:
                 blocks.append((current_path, current_entries))
             current_path = line[8:]
             current_entries = []
-        elif line.startswith('#'):
+        elif line.startswith("#"):
             pass  # skip owner/group/fhandle comment lines
         else:
             if current_path is not None:
@@ -704,9 +711,10 @@ def _parse_restore_file(text):
 
 # ── mount info (for fsiter) ───────────────────────────────────────────────────
 
+
 def _fs_source_from_proc_mounts(mountpoint):
     """Read /proc/mounts to find the filesystem source for a mountpoint."""
-    with open('/proc/mounts') as f:
+    with open("/proc/mounts") as f:
         for line in f:
             parts = line.split()
             if len(parts) >= 2 and parts[1] == mountpoint:
@@ -716,9 +724,8 @@ def _fs_source_from_proc_mounts(mountpoint):
 
 def _get_mount_info(path):
     stx = t.statx(path, mask=t.STATX_MNT_ID_UNIQUE)
-    if hasattr(t, 'STATMOUNT_SB_SOURCE'):
-        sm = t.statmount(stx.stx_mnt_id,
-                         mask=t.STATMOUNT_MNT_POINT | t.STATMOUNT_SB_SOURCE)
+    if hasattr(t, "STATMOUNT_SB_SOURCE"):
+        sm = t.statmount(stx.stx_mnt_id, mask=t.STATMOUNT_MNT_POINT | t.STATMOUNT_SB_SOURCE)
         mountpoint = sm.mnt_point
         fs_name = sm.sb_source
     else:
@@ -727,11 +734,12 @@ def _get_mount_info(path):
         fs_name = _fs_source_from_proc_mounts(mountpoint)
     abs_path = os.path.realpath(path)
     rel = os.path.relpath(abs_path, mountpoint)
-    rel_path = None if rel == '.' else rel
+    rel_path = None if rel == "." else rel
     return mountpoint, fs_name, rel_path
 
 
 # ── fhandle open ─────────────────────────────────────────────────────────────
+
 
 def _mountpoint_from_legacy_id(mount_id):
     """Return the mount point for a legacy mount ID from /proc/self/mountinfo.
@@ -739,12 +747,12 @@ def _mountpoint_from_legacy_id(mount_id):
     Fallback for kernels < 6.5 where AT_HANDLE_MNT_ID_UNIQUE is unavailable.
     Parsing /proc/self/mountinfo maps the legacy 32-bit mount ID → mount point.
     """
-    with open('/proc/self/mountinfo') as f:
+    with open("/proc/self/mountinfo") as f:
         for line in f:
             fields = line.split()
             if fields and int(fields[0]) == mount_id:
                 return fields[4]
-    raise OSError(f'mount ID {mount_id} not found in /proc/self/mountinfo')
+    raise OSError(f"mount ID {mount_id} not found in /proc/self/mountinfo")
 
 
 def _open_by_fhandle(fhandle_str):
@@ -759,13 +767,11 @@ def _open_by_fhandle(fhandle_str):
     Falls back to /proc/self/mountinfo parsing for legacy mount IDs.
     """
     try:
-        colon = fhandle_str.index(':')
+        colon = fhandle_str.index(":")
         mount_id = int(fhandle_str[:colon])
-        handle_bytes = bytes.fromhex(fhandle_str[colon + 1:])
+        handle_bytes = bytes.fromhex(fhandle_str[colon + 1 :])
     except (ValueError, IndexError):
-        raise ValueError(
-            f'invalid fhandle format (expected mount_id:hex): {fhandle_str!r}'
-        )
+        raise ValueError(f"invalid fhandle format (expected mount_id:hex): {fhandle_str!r}")
 
     # Try statmount first: works when mount_id is the unique mount ID
     # (from AT_HANDLE_MNT_ID_UNIQUE, available since kernel 6.5).
@@ -778,10 +784,8 @@ def _open_by_fhandle(fhandle_str):
     except OSError:
         mountpoint = _mountpoint_from_legacy_id(mount_id)
 
-    fh = t.fhandle(handle_bytes=handle_bytes, mount_id=mount_id,
-                   unique_mount_id=unique_mount_id)
-    mount_fd = t.openat2(mountpoint, flags=os.O_RDONLY,
-                         resolve=t.RESOLVE_NO_SYMLINKS)
+    fh = t.fhandle(handle_bytes=handle_bytes, mount_id=mount_id, unique_mount_id=unique_mount_id)
+    mount_fd = t.openat2(mountpoint, flags=os.O_RDONLY, resolve=t.RESOLVE_NO_SYMLINKS)
     try:
         return fh.open(mount_fd, os.O_RDONLY)
     finally:
@@ -790,87 +794,135 @@ def _open_by_fhandle(fhandle_str):
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
+
 def main():
     ap = argparse.ArgumentParser(
-        prog='truenas_setfacl',
-        description='Set ACL entries on files.',
+        prog="truenas_setfacl",
+        description="Set ACL entries on files.",
     )
-    ap.add_argument('-R', '--recursive', action='store_true',
-                    help='Process directories recursively; '
-                         'does not follow symlinks or cross device boundaries; '
-                         'NFS4: depth-1 entries receive an ACL inherited from '
-                         'the root, depth-2+ entries receive an ACL inherited '
-                         'from depth 1')
-    ap.add_argument('-b', '--strip', action='store_true',
-                    help='Strip ACL to minimal mode-derived entries')
-    ap.add_argument('-k', '--remove-default', action='store_true',
-                    help='Remove the default ACL (POSIX only; no-op on NFS4)')
-    ap.add_argument('-d', '--default', dest='default_only', action='store_true',
-                    help='Apply -m and -x to the default ACL (POSIX only; '
-                         'no-op on NFS4)')
-    ap.add_argument('-m', dest='modify', action='append', default=[],
-                    metavar='entries',
-                    help='Add/replace ACL entries (comma-separated); '
-                         'applied after -b, -k, and -x')
-    ap.add_argument('-x', dest='remove', action='append', default=[],
-                    metavar='entries',
-                    help='Remove ACL entries by who/tag (comma-separated); '
-                         'applied after -b and -k')
-    ap.add_argument('-f', dest='acl_file', default=None, metavar='file',
-                    help='Replace entire ACL from file (- for stdin); '
-                         'applied last')
-    ap.add_argument('-a', dest='insert', action='append', nargs=2,
-                    default=[], metavar=('position', 'entries'),
-                    help='Insert NFSv4 ACL entries at position (0-based); '
-                         'use "end" as position to append to the tail; '
-                         'error on POSIX; may be repeated; applied after -m')
-    ap.add_argument('-n', '--no-mask', action='store_true',
-                    help='Do not recalculate POSIX mask after -m')
-    ap.add_argument('--restore', metavar='file',
-                    help='Restore ACLs from a getfacl backup file '
-                         '(- for stdin); paths are taken from the backup')
-    ap.add_argument('--fhandle', dest='fhandles', action='append', default=[],
-                    metavar='mount_id:hex',
-                    help='Target file by fhandle (format returned by '
-                         'truenas_getfacl); may be repeated')
-    ap.add_argument('-e', '--edit', action='store_true',
-                    help='Launch an interactive curses ACL editor. Requires '
-                         'exactly one path argument and an interactive '
-                         'terminal. Incompatible with -R, --restore, '
-                         '--fhandle, and all other modification options.')
-    ap.add_argument('-p', '--acl-flags', dest='acl_flags', default=None,
-                    metavar='flag',
-                    help='Set NFS4 ACL-level flag '
-                         '(none, auto-inherit, protected, defaulted); '
-                         'error if ACL type is POSIX')
-    ap.add_argument('path', nargs='*')
+    ap.add_argument(
+        "-R",
+        "--recursive",
+        action="store_true",
+        help="Process directories recursively; "
+        "does not follow symlinks or cross device boundaries; "
+        "NFS4: depth-1 entries receive an ACL inherited from "
+        "the root, depth-2+ entries receive an ACL inherited "
+        "from depth 1",
+    )
+    ap.add_argument("-b", "--strip", action="store_true", help="Strip ACL to minimal mode-derived entries")
+    ap.add_argument(
+        "-k", "--remove-default", action="store_true", help="Remove the default ACL (POSIX only; no-op on NFS4)"
+    )
+    ap.add_argument(
+        "-d",
+        "--default",
+        dest="default_only",
+        action="store_true",
+        help="Apply -m and -x to the default ACL (POSIX only; no-op on NFS4)",
+    )
+    ap.add_argument(
+        "-m",
+        dest="modify",
+        action="append",
+        default=[],
+        metavar="entries",
+        help="Add/replace ACL entries (comma-separated); applied after -b, -k, and -x",
+    )
+    ap.add_argument(
+        "-x",
+        dest="remove",
+        action="append",
+        default=[],
+        metavar="entries",
+        help="Remove ACL entries by who/tag (comma-separated); applied after -b and -k",
+    )
+    ap.add_argument(
+        "-f",
+        dest="acl_file",
+        default=None,
+        metavar="file",
+        help="Replace entire ACL from file (- for stdin); applied last",
+    )
+    ap.add_argument(
+        "-a",
+        dest="insert",
+        action="append",
+        nargs=2,
+        default=[],
+        metavar=("position", "entries"),
+        help="Insert NFSv4 ACL entries at position (0-based); "
+        'use "end" as position to append to the tail; '
+        "error on POSIX; may be repeated; applied after -m",
+    )
+    ap.add_argument("-n", "--no-mask", action="store_true", help="Do not recalculate POSIX mask after -m")
+    ap.add_argument(
+        "--restore",
+        metavar="file",
+        help="Restore ACLs from a getfacl backup file (- for stdin); paths are taken from the backup",
+    )
+    ap.add_argument(
+        "--fhandle",
+        dest="fhandles",
+        action="append",
+        default=[],
+        metavar="mount_id:hex",
+        help="Target file by fhandle (format returned by truenas_getfacl); may be repeated",
+    )
+    ap.add_argument(
+        "-e",
+        "--edit",
+        action="store_true",
+        help="Launch an interactive curses ACL editor. Requires "
+        "exactly one path argument and an interactive "
+        "terminal. Incompatible with -R, --restore, "
+        "--fhandle, and all other modification options.",
+    )
+    ap.add_argument(
+        "-p",
+        "--acl-flags",
+        dest="acl_flags",
+        default=None,
+        metavar="flag",
+        help="Set NFS4 ACL-level flag (none, auto-inherit, protected, defaulted); error if ACL type is POSIX",
+    )
+    ap.add_argument("path", nargs="*")
     args = ap.parse_args()
 
     if args.edit:
         if len(args.path) != 1:
-            ap.error('-e/--edit requires exactly one path argument')
+            ap.error("-e/--edit requires exactly one path argument")
         if args.restore:
-            ap.error('-e/--edit is incompatible with --restore')
+            ap.error("-e/--edit is incompatible with --restore")
         if args.fhandles:
-            ap.error('-e/--edit is incompatible with --fhandle')
+            ap.error("-e/--edit is incompatible with --fhandle")
         if args.recursive:
-            ap.error('-e/--edit is incompatible with -R '
-                     '(recursion is handled inside the editor)')
-        if any([args.strip, args.remove_default, args.modify, args.remove,
-                args.insert, args.acl_file, args.default_only, args.no_mask]):
-            ap.error('-e/--edit cannot be combined with other modification '
-                     'options')
+            ap.error("-e/--edit is incompatible with -R (recursion is handled inside the editor)")
+        if any(
+            [
+                args.strip,
+                args.remove_default,
+                args.modify,
+                args.remove,
+                args.insert,
+                args.acl_file,
+                args.default_only,
+                args.no_mask,
+            ]
+        ):
+            ap.error("-e/--edit cannot be combined with other modification options")
         from ._interactive import interactive_edit
+
         sys.exit(interactive_edit(args.path[0]))
 
     if not args.restore and not args.path and not args.fhandles:
-        ap.error('path arguments are required when not using --restore')
+        ap.error("path arguments are required when not using --restore")
 
     rc = 0
 
     if args.restore:
         src = args.restore
-        if src == '-':
+        if src == "-":
             text = sys.stdin.read()
         else:
             with open(src) as f:
@@ -878,34 +930,36 @@ def main():
         for path, entries in _parse_restore_file(text):
             fd = None
             try:
-                fd = t.openat2(path, flags=os.O_RDONLY,
-                               resolve=t.RESOLVE_NO_SYMLINKS)
-                _do_setfacl_fd(fd, strip=False, remove_default=False,
-                               remove_entries=[], modify_entries=[],
-                               acl_file_entries=entries, no_mask=False,
-                               default_only=False)
+                fd = t.openat2(path, flags=os.O_RDONLY, resolve=t.RESOLVE_NO_SYMLINKS)
+                _do_setfacl_fd(
+                    fd,
+                    strip=False,
+                    remove_default=False,
+                    remove_entries=[],
+                    modify_entries=[],
+                    acl_file_entries=entries,
+                    no_mask=False,
+                    default_only=False,
+                )
             except (OSError, ValueError) as e:
-                print(f'truenas_setfacl: {path}: {e}', file=sys.stderr)
+                print(f"truenas_setfacl: {path}: {e}", file=sys.stderr)
                 rc = 1
             finally:
                 if fd is not None:
                     os.close(fd)
         sys.exit(rc)
 
-    remove_entries = _split_entries(','.join(args.remove))
-    modify_entries = _split_entries(','.join(args.modify))
+    remove_entries = _split_entries(",".join(args.remove))
+    modify_entries = _split_entries(",".join(args.modify))
     insert_entries = []
     for pos_str, entries_str in args.insert:
-        if pos_str.lower() in ('end', 'tail', '$'):
+        if pos_str.lower() in ("end", "tail", "$"):
             pos = None  # append to tail; resolved to len(aces) at apply time
         else:
             try:
                 pos = int(pos_str)
             except ValueError:
-                ap.error(
-                    f'-a: invalid position {pos_str!r}; '
-                    f'expected a non-negative integer or "end"'
-                )
+                ap.error(f'-a: invalid position {pos_str!r}; expected a non-negative integer or "end"')
         insert_entries.append((pos, _split_entries(entries_str)))
 
     acl_flags = None
@@ -917,7 +971,7 @@ def main():
 
     acl_file_entries = None
     if args.acl_file:
-        if args.acl_file == '-':
+        if args.acl_file == "-":
             text = sys.stdin.read()
         else:
             with open(args.acl_file) as f:
@@ -928,28 +982,33 @@ def main():
         fd = None
         root_acl = None
         try:
-            fd = t.openat2(path, flags=os.O_RDONLY,
-                           resolve=t.RESOLVE_NO_SYMLINKS)
-            root_acl = _do_setfacl_fd(fd, args.strip, args.remove_default,
-                                      remove_entries, modify_entries,
-                                      acl_file_entries, args.no_mask,
-                                      args.default_only, insert_entries,
-                                      acl_flags=acl_flags)
+            fd = t.openat2(path, flags=os.O_RDONLY, resolve=t.RESOLVE_NO_SYMLINKS)
+            root_acl = _do_setfacl_fd(
+                fd,
+                args.strip,
+                args.remove_default,
+                remove_entries,
+                modify_entries,
+                acl_file_entries,
+                args.no_mask,
+                args.default_only,
+                insert_entries,
+                acl_flags=acl_flags,
+            )
         except (OSError, ValueError) as e:
-            print(f'truenas_setfacl: {path}: {e}', file=sys.stderr)
+            print(f"truenas_setfacl: {path}: {e}", file=sys.stderr)
             rc = 1
         finally:
             if fd is not None:
                 os.close(fd)
 
-        if not args.recursive or not os.path.isdir(path) \
-                or root_acl is None:
+        if not args.recursive or not os.path.isdir(path) or root_acl is None:
             continue
 
         try:
             mountpoint, fs_name, rel_path = _get_mount_info(path)
         except OSError as e:
-            print(f'truenas_setfacl: {path}: {e}', file=sys.stderr)
+            print(f"truenas_setfacl: {path}: {e}", file=sys.stderr)
             rc = 1
             continue
 
@@ -957,8 +1016,7 @@ def main():
         if isinstance(root_acl, t.NFS4ACL):
             nfs4_inh = _NFS4InheritedAcls.from_root(root_acl)
 
-        with t.iter_filesystem_contents(mountpoint, fs_name,
-                                        relative_path=rel_path) as it:
+        with t.iter_filesystem_contents(mountpoint, fs_name, relative_path=rel_path) as it:
             for item in it:
                 full_path = os.path.join(item.parent, item.name)
                 if item.islnk:
@@ -969,13 +1027,19 @@ def main():
                         acl = nfs4_inh.pick(len(it.dir_stack()), item.isdir)
                         t.fsetacl(item.fd, acl)
                     else:
-                        _do_setfacl_fd(item.fd, args.strip, args.remove_default,
-                                       remove_entries, modify_entries,
-                                       acl_file_entries, args.no_mask,
-                                       args.default_only, insert_entries)
+                        _do_setfacl_fd(
+                            item.fd,
+                            args.strip,
+                            args.remove_default,
+                            remove_entries,
+                            modify_entries,
+                            acl_file_entries,
+                            args.no_mask,
+                            args.default_only,
+                            insert_entries,
+                        )
                 except (OSError, ValueError) as e:
-                    print(f'truenas_setfacl: {full_path}: {e}',
-                          file=sys.stderr)
+                    print(f"truenas_setfacl: {full_path}: {e}", file=sys.stderr)
                     rc = 1
                 finally:
                     os.close(item.fd)
@@ -983,30 +1047,36 @@ def main():
     for fhandle_str in args.fhandles:
         fd = None
         root_acl = None
-        resolved = f'fhandle:{fhandle_str}'
+        resolved = f"fhandle:{fhandle_str}"
         try:
             fd = _open_by_fhandle(fhandle_str)
-            resolved = os.readlink(f'/proc/self/fd/{fd}')
-            root_acl = _do_setfacl_fd(fd, args.strip, args.remove_default,
-                                      remove_entries, modify_entries,
-                                      acl_file_entries, args.no_mask,
-                                      args.default_only, insert_entries,
-                                      acl_flags=acl_flags)
+            resolved = os.readlink(f"/proc/self/fd/{fd}")
+            root_acl = _do_setfacl_fd(
+                fd,
+                args.strip,
+                args.remove_default,
+                remove_entries,
+                modify_entries,
+                acl_file_entries,
+                args.no_mask,
+                args.default_only,
+                insert_entries,
+                acl_flags=acl_flags,
+            )
         except (OSError, ValueError) as e:
-            print(f'truenas_setfacl: {resolved}: {e}', file=sys.stderr)
+            print(f"truenas_setfacl: {resolved}: {e}", file=sys.stderr)
             rc = 1
         finally:
             if fd is not None:
                 os.close(fd)
 
-        if not args.recursive or not os.path.isdir(resolved) \
-                or root_acl is None:
+        if not args.recursive or not os.path.isdir(resolved) or root_acl is None:
             continue
 
         try:
             mountpoint, fs_name, rel_path = _get_mount_info(resolved)
         except OSError as e:
-            print(f'truenas_setfacl: {resolved}: {e}', file=sys.stderr)
+            print(f"truenas_setfacl: {resolved}: {e}", file=sys.stderr)
             rc = 1
             continue
 
@@ -1014,8 +1084,7 @@ def main():
         if isinstance(root_acl, t.NFS4ACL):
             nfs4_inh = _NFS4InheritedAcls.from_root(root_acl)
 
-        with t.iter_filesystem_contents(mountpoint, fs_name,
-                                        relative_path=rel_path) as it:
+        with t.iter_filesystem_contents(mountpoint, fs_name, relative_path=rel_path) as it:
             for item in it:
                 full_path = os.path.join(item.parent, item.name)
                 if item.islnk:
@@ -1026,13 +1095,19 @@ def main():
                         acl = nfs4_inh.pick(len(it.dir_stack()), item.isdir)
                         t.fsetacl(item.fd, acl)
                     else:
-                        _do_setfacl_fd(item.fd, args.strip, args.remove_default,
-                                       remove_entries, modify_entries,
-                                       acl_file_entries, args.no_mask,
-                                       args.default_only, insert_entries)
+                        _do_setfacl_fd(
+                            item.fd,
+                            args.strip,
+                            args.remove_default,
+                            remove_entries,
+                            modify_entries,
+                            acl_file_entries,
+                            args.no_mask,
+                            args.default_only,
+                            insert_entries,
+                        )
                 except (OSError, ValueError) as e:
-                    print(f'truenas_setfacl: {full_path}: {e}',
-                          file=sys.stderr)
+                    print(f"truenas_setfacl: {full_path}: {e}", file=sys.stderr)
                     rc = 1
                 finally:
                     os.close(item.fd)
@@ -1040,5 +1115,5 @@ def main():
     sys.exit(rc)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

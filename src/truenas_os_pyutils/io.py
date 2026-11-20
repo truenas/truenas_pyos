@@ -13,8 +13,9 @@ import truenas_os
 
 class SymlinkInPathError(OSError):
     """Raised by safe_open() and safe_open_raw() when a symlink is detected in the path."""
+
     def __init__(self, path: str) -> None:
-        super().__init__(errno.ELOOP, 'Symlink detected in path', path)
+        super().__init__(errno.ELOOP, "Symlink detected in path", path)
 
 
 def _safe_openat2(path: str, flags: int, dir_fd: int, mode: int = 0o666, resolve: int = 0) -> int:
@@ -41,12 +42,12 @@ def _safe_openat2(path: str, flags: int, dir_fd: int, mode: int = 0o666, resolve
     try:
         st_mode = os.fstat(path_fd).st_mode
         if not (stat.S_ISREG(st_mode) or stat.S_ISDIR(st_mode)):
-            raise OSError(errno.EINVAL, 'Not a regular file or directory', path)
+            raise OSError(errno.EINVAL, "Not a regular file or directory", path)
 
         # Reopen the file just checked, so nothing can be swapped in; without O_NONBLOCK this waits out a lease
         # break. Symlinks were refused above, and the /proc magic link itself would fail O_NOFOLLOW.
         try:
-            return os.open(f'/proc/self/fd/{path_fd}', flags & ~os.O_NOFOLLOW)
+            return os.open(f"/proc/self/fd/{path_fd}", flags & ~os.O_NOFOLLOW)
         except OSError as e:
             e.filename = path
             raise
@@ -55,11 +56,17 @@ def _safe_openat2(path: str, flags: int, dir_fd: int, mode: int = 0o666, resolve
 
 
 @contextmanager
-def safe_open(path: str | bytes, mode: str = 'r', buffering: int = -1,
-              encoding: str | None = None, errors: str | None = None,
-              newline: str | None = None, *,
-              dir_fd: int = truenas_os.AT_FDCWD,
-              resolve: int = 0) -> typing.Generator[typing.IO[typing.Any], None, None]:
+def safe_open(
+    path: str | bytes,
+    mode: str = "r",
+    buffering: int = -1,
+    encoding: str | None = None,
+    errors: str | None = None,
+    newline: str | None = None,
+    *,
+    dir_fd: int = truenas_os.AT_FDCWD,
+    resolve: int = 0,
+) -> typing.Generator[typing.IO[typing.Any], None, None]:
     """Drop-in for open() that opens path as safe_open_raw() does, preventing
     symlink-based TOCTOU attacks.
 
@@ -93,6 +100,7 @@ def safe_open(path: str | bytes, mode: str = 'r', buffering: int = -1,
         - A mode that does not create the file never blocks on a FIFO or opens
           a device node, and waits out a lease break (see safe_open_raw()).
     """
+
     def _opener(p: str, flags: int) -> int:
         return _safe_openat2(p, flags, dir_fd, resolve=resolve)
 
@@ -101,8 +109,9 @@ def safe_open(path: str | bytes, mode: str = 'r', buffering: int = -1,
 
 
 @contextmanager
-def safe_open_raw(path: str, flags: int = os.O_RDONLY, *, dir_fd: int = truenas_os.AT_FDCWD,
-                  mode: int = 0o666, resolve: int = 0) -> typing.Generator[int, None, None]:
+def safe_open_raw(
+    path: str, flags: int = os.O_RDONLY, *, dir_fd: int = truenas_os.AT_FDCWD, mode: int = 0o666, resolve: int = 0
+) -> typing.Generator[int, None, None]:
     """Open path with openat2(RESOLVE_NO_SYMLINKS) and yield the fd, closing it on exit.
 
     Without O_CREAT, only a regular file or directory is opened. Anything else
@@ -139,8 +148,14 @@ def safe_open_raw(path: str, flags: int = os.O_RDONLY, *, dir_fd: int = truenas_
         os.close(fd)
 
 
-def safe_makedirs(path: str | os.PathLike[str], mode: int = 0o777, exist_ok: bool = False, *,
-                  dir_fd: int = truenas_os.AT_FDCWD, resolve: int = 0) -> None:
+def safe_makedirs(
+    path: str | os.PathLike[str],
+    mode: int = 0o777,
+    exist_ok: bool = False,
+    *,
+    dir_fd: int = truenas_os.AT_FDCWD,
+    resolve: int = 0,
+) -> None:
     """Create the directory path and any missing parents, as os.makedirs() does, without following symlinks.
 
     Each missing component is created with mkdirat() relative to an fd for
@@ -175,10 +190,14 @@ def safe_makedirs(path: str | os.PathLike[str], mode: int = 0o777, exist_ok: boo
         raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), path)
 
     resolve |= truenas_os.RESOLVE_NO_SYMLINKS
-    names = [name for name in path.split('/') if name not in ('', '.')]
+    names = [name for name in path.split("/") if name not in ("", ".")]
     try:
-        fd = truenas_os.openat2('/' if path.startswith('/') else '.', os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC,
-                                dir_fd=dir_fd, resolve=resolve)
+        fd = truenas_os.openat2(
+            "/" if path.startswith("/") else ".",
+            os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC,
+            dir_fd=dir_fd,
+            resolve=resolve,
+        )
     except OSError as e:
         e.filename = path
         raise
@@ -196,8 +215,9 @@ def safe_makedirs(path: str | os.PathLike[str], mode: int = 0o777, exist_ok: boo
                     if last and not exist_ok:
                         raise
 
-                next_fd = truenas_os.openat2(name, os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC, dir_fd=fd,
-                                             resolve=resolve)
+                next_fd = truenas_os.openat2(
+                    name, os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC, dir_fd=fd, resolve=resolve
+                )
             except OSError as e:
                 if e.errno == errno.ELOOP:
                     raise SymlinkInPathError(path) from e
@@ -214,13 +234,7 @@ def safe_makedirs(path: str | os.PathLike[str], mode: int = 0o777, exist_ok: boo
 
 
 def atomic_replace(
-    *,
-    temp_path: str,
-    target_file: str,
-    data: bytes,
-    uid: int = 0,
-    gid: int = 0,
-    perms: int = 0o644
+    *, temp_path: str, target_file: str, data: bytes, uid: int = 0, gid: int = 0, perms: int = 0o644
 ) -> None:
     """Atomically replace a file's contents with symlink race protection.
 
@@ -268,12 +282,14 @@ def _temporary_directory_at(dir_fd: int) -> typing.Generator[int, None, None]:
     removed.
     """
     # A random name cannot be guessed in advance, so it will not already exist
-    name = f'tmp{uuid.uuid4().hex}'
+    name = f"tmp{uuid.uuid4().hex}"
     os.mkdir(name, 0o700, dir_fd=dir_fd)
 
     try:
         fd = truenas_os.openat2(
-            name, os.O_DIRECTORY, dir_fd=dir_fd,
+            name,
+            os.O_DIRECTORY,
+            dir_fd=dir_fd,
             resolve=truenas_os.RESOLVE_BENEATH | truenas_os.RESOLVE_NO_SYMLINKS,
         )
         try:
@@ -291,22 +307,43 @@ def _temporary_directory_at(dir_fd: int) -> typing.Generator[int, None, None]:
 
 @typing.overload
 @contextmanager
-def atomic_write(target: str, mode: typing.Literal["w"] = "w", *, tmppath: str | None = None,
-                 uid: int = 0, gid: int = 0, perms: int = 0o644,
-                 noclobber: bool = False) -> typing.Generator[typing.TextIO, None, None]: ...
+def atomic_write(
+    target: str,
+    mode: typing.Literal["w"] = "w",
+    *,
+    tmppath: str | None = None,
+    uid: int = 0,
+    gid: int = 0,
+    perms: int = 0o644,
+    noclobber: bool = False,
+) -> typing.Generator[typing.TextIO, None, None]: ...
 
 
 @typing.overload
 @contextmanager
-def atomic_write(target: str, mode: typing.Literal["wb"], *, tmppath: str | None = None,
-                 uid: int = 0, gid: int = 0, perms: int = 0o644,
-                 noclobber: bool = False) -> typing.Generator[typing.BinaryIO, None, None]: ...
+def atomic_write(
+    target: str,
+    mode: typing.Literal["wb"],
+    *,
+    tmppath: str | None = None,
+    uid: int = 0,
+    gid: int = 0,
+    perms: int = 0o644,
+    noclobber: bool = False,
+) -> typing.Generator[typing.BinaryIO, None, None]: ...
 
 
 @contextmanager
-def atomic_write(target: str, mode: typing.Literal["w", "wb"] = "w", *, tmppath: str | None = None,
-                 uid: int = 0, gid: int = 0, perms: int = 0o644,
-                 noclobber: bool = False) -> typing.Generator[typing.IO[typing.Any], None, None]:
+def atomic_write(
+    target: str,
+    mode: typing.Literal["w", "wb"] = "w",
+    *,
+    tmppath: str | None = None,
+    uid: int = 0,
+    gid: int = 0,
+    perms: int = 0o644,
+    noclobber: bool = False,
+) -> typing.Generator[typing.IO[typing.Any], None, None]:
     """Context manager for atomic file writes with symlink race protection.
 
     Yields a file-like object for writing. On successful context manager exit,
@@ -386,7 +423,7 @@ def atomic_write(target: str, mode: typing.Literal["w", "wb"] = "w", *, tmppath:
                     pass
 
                 if noclobber and existing_stat is not None:
-                    raise FileExistsError(errno.EEXIST, 'Destination exists', target)
+                    raise FileExistsError(errno.EEXIST, "Destination exists", target)
 
                 with safe_open(target_filename, mode, dir_fd=src_dirfd) as f:
                     os.fchown(f.fileno(), uid, gid)
@@ -408,7 +445,7 @@ def atomic_write(target: str, mode: typing.Literal["w", "wb"] = "w", *, tmppath:
                     dst=target_filename,
                     src_dir_fd=src_dirfd,
                     dst_dir_fd=dst_dirfd,
-                    flags=rename_flags
+                    flags=rename_flags,
                 )
         finally:
             if tmp_parent_fd != dst_dirfd:

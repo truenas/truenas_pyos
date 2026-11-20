@@ -17,27 +17,27 @@ instead of raw strings to get typo detection at import time.
 import truenas_pyfilter as tf
 
 # Operators
-tf.FILTER_OP_EQ            # "="
-tf.FILTER_OP_NE            # "!="
-tf.FILTER_OP_GT            # ">"
-tf.FILTER_OP_GE            # ">="
-tf.FILTER_OP_LT            # "<"
-tf.FILTER_OP_LE            # "<="
-tf.FILTER_OP_REGEX         # "~"
-tf.FILTER_OP_IN            # "in"
-tf.FILTER_OP_NOT_IN        # "nin"
-tf.FILTER_OP_REGEX_IN      # "rin"
+tf.FILTER_OP_EQ  # "="
+tf.FILTER_OP_NE  # "!="
+tf.FILTER_OP_GT  # ">"
+tf.FILTER_OP_GE  # ">="
+tf.FILTER_OP_LT  # "<"
+tf.FILTER_OP_LE  # "<="
+tf.FILTER_OP_REGEX  # "~"
+tf.FILTER_OP_IN  # "in"
+tf.FILTER_OP_NOT_IN  # "nin"
+tf.FILTER_OP_REGEX_IN  # "rin"
 tf.FILTER_OP_REGEX_NOT_IN  # "rnin"
-tf.FILTER_OP_STARTSWITH    # "^"
-tf.FILTER_OP_NOT_STARTSWITH # "!^"
-tf.FILTER_OP_ENDSWITH      # "$"
+tf.FILTER_OP_STARTSWITH  # "^"
+tf.FILTER_OP_NOT_STARTSWITH  # "!^"
+tf.FILTER_OP_ENDSWITH  # "$"
 tf.FILTER_OP_NOT_ENDSWITH  # "!$"
-tf.FILTER_OP_CI_PREFIX     # "C"  — prepend to any operator for case-insensitive match
+tf.FILTER_OP_CI_PREFIX  # "C"  — prepend to any operator for case-insensitive match
 
 # order_by prefixes
 tf.FILTER_ORDER_NULLS_FIRST_PREFIX  # "nulls_first:"
-tf.FILTER_ORDER_NULLS_LAST_PREFIX   # "nulls_last:"
-tf.FILTER_ORDER_REVERSE_PREFIX      # "-"
+tf.FILTER_ORDER_NULLS_LAST_PREFIX  # "nulls_last:"
+tf.FILTER_ORDER_REVERSE_PREFIX  # "-"
 ```
 
 ---
@@ -47,9 +47,11 @@ tf.FILTER_ORDER_REVERSE_PREFIX      # "-"
 Pre-compile a query-filters list into a `CompiledFilters` object.
 
 ```python
-filters = truenas_pyfilter.compile_filters([
-    ["uid", "=", 1000],
-])
+filters = truenas_pyfilter.compile_filters(
+    [
+        ["uid", "=", 1000],
+    ]
+)
 ```
 
 **Parameters:**
@@ -81,29 +83,41 @@ filters = truenas_pyfilter.compile_filters([
   import truenas_pyfilter as tf
 
   # Simple AND (implicit): locked=False AND ssh_password_enabled=True
-  tf.compile_filters([
-      ["locked", tf.FILTER_OP_EQ, False],
-      ["ssh_password_enabled", tf.FILTER_OP_EQ, True],
-  ])
+  tf.compile_filters(
+      [
+          ["locked", tf.FILTER_OP_EQ, False],
+          ["ssh_password_enabled", tf.FILTER_OP_EQ, True],
+      ]
+  )
 
   # OR: name="alice" OR name="bob"
-  tf.compile_filters([
-      ["OR", [
-          ["name", tf.FILTER_OP_EQ, "alice"],
-          ["name", tf.FILTER_OP_EQ, "bob"],
-      ]]
-  ])
+  tf.compile_filters(
+      [
+          [
+              "OR",
+              [
+                  ["name", tf.FILTER_OP_EQ, "alice"],
+                  ["name", tf.FILTER_OP_EQ, "bob"],
+              ],
+          ]
+      ]
+  )
 
   # Mixed: (ssh_password_enabled=True AND twofactor=False) OR enabled=True
-  tf.compile_filters([
-      ["OR", [
+  tf.compile_filters(
+      [
           [
-              ["ssh_password_enabled", tf.FILTER_OP_EQ, True],
-              ["twofactor_auth_configured", tf.FILTER_OP_EQ, False],
-          ],
-          ["enabled", tf.FILTER_OP_EQ, True],
-      ]]
-  ])
+              "OR",
+              [
+                  [
+                      ["ssh_password_enabled", tf.FILTER_OP_EQ, True],
+                      ["twofactor_auth_configured", tf.FILTER_OP_EQ, False],
+                  ],
+                  ["enabled", tf.FILTER_OP_EQ, True],
+              ],
+          ]
+      ]
+  )
   ```
 
 **Returns:** `CompiledFilters` — opaque compiled tree, pass directly to
@@ -203,7 +217,7 @@ import truenas_pyfilter
 
 records = [
     {"id": 1, "name": "alice", "uid": 1000},
-    {"id": 2, "name": "bob",   "uid": 1001},
+    {"id": 2, "name": "bob", "uid": 1001},
     {"id": 3, "name": "carol", "uid": 1000},
 ]
 

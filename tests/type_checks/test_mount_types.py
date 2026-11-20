@@ -5,6 +5,7 @@ Each test uses assert_type() to pin the static type mypy must infer,
 particularly for the as_dict overloads. The tests are also valid pytest
 tests that execute at runtime.
 """
+
 from typing import assert_type
 
 import truenas_os
@@ -12,17 +13,17 @@ from truenas_os_pyutils.mount import StatmountResultDict, iter_mountinfo, statmo
 
 
 def test_statmount_default_returns_dict() -> None:
-    result = statmount(path='/')
+    result = statmount(path="/")
     assert_type(result, StatmountResultDict)
 
 
 def test_statmount_as_dict_true_returns_dict() -> None:
-    result = statmount(path='/', as_dict=True)
+    result = statmount(path="/", as_dict=True)
     assert_type(result, StatmountResultDict)
 
 
 def test_statmount_as_dict_false_returns_raw() -> None:
-    result = statmount(path='/', as_dict=False)
+    result = statmount(path="/", as_dict=False)
     assert_type(result, truenas_os.StatmountResult)
 
 

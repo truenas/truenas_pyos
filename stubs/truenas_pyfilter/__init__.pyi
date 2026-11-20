@@ -25,18 +25,15 @@ FILTER_OP_ENDSWITH: str
 FILTER_OP_NOT_ENDSWITH: str
 FILTER_OP_CI_PREFIX: str
 
-
 @final
 class CompiledFilters:
     """Pre-compiled filter tree produced by compile_filters()."""
     def __repr__(self) -> str: ...
 
-
 @final
 class CompiledOptions:
     """Pre-compiled options produced by compile_options()."""
     def __repr__(self) -> str: ...
-
 
 def match(
     item: Any,
@@ -52,7 +49,6 @@ def match(
     """
     ...
 
-
 def tnfilter(
     data: Iterable[Any],
     *,
@@ -66,11 +62,9 @@ def tnfilter(
     """
     ...
 
-
 def compile_filters(filters: list[Any]) -> CompiledFilters:
     """Pre-compile a query-filters list into a CompiledFilters object."""
     ...
-
 
 def compile_options(
     *,

@@ -4,6 +4,7 @@ Type-level tests for truenas_os_pyutils.truenas_shutil.
 Each test uses assert_type() to pin the static type mypy must infer.  The
 tests are also valid pytest tests that execute at runtime.
 """
+
 from pathlib import Path
 from typing import assert_type
 

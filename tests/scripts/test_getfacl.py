@@ -25,351 +25,350 @@ from _truenas_os_scripts._getfacl import (
 
 # ── shared ACL objects ────────────────────────────────────────────────────────
 
-_NFS4_ACL = t.NFS4ACL.from_aces([
-    t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-              t.NFS4Perm.READ_DATA | t.NFS4Perm.WRITE_DATA | t.NFS4Perm.EXECUTE,
-              t.NFS4Who.OWNER),
-    t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0),
-              t.NFS4Perm.WRITE_DATA, t.NFS4Who.EVERYONE),
-])
+_NFS4_ACL = t.NFS4ACL.from_aces(
+    [
+        t.NFS4Ace(
+            t.NFS4AceType.ALLOW,
+            t.NFS4Flag(0),
+            t.NFS4Perm.READ_DATA | t.NFS4Perm.WRITE_DATA | t.NFS4Perm.EXECUTE,
+            t.NFS4Who.OWNER,
+        ),
+        t.NFS4Ace(t.NFS4AceType.DENY, t.NFS4Flag(0), t.NFS4Perm.WRITE_DATA, t.NFS4Who.EVERYONE),
+    ]
+)
 
-_POSIX_ACL = t.POSIXACL.from_aces([
-    t.POSIXAce(t.POSIXTag.USER_OBJ,
-               t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE),
-    t.POSIXAce(t.POSIXTag.GROUP_OBJ, t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
-    t.POSIXAce(t.POSIXTag.OTHER, t.POSIXPerm(0)),
-    t.POSIXAce(t.POSIXTag.USER_OBJ,
-               t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
-    t.POSIXAce(t.POSIXTag.OTHER, t.POSIXPerm(0), default=True),
-])
+_POSIX_ACL = t.POSIXACL.from_aces(
+    [
+        t.POSIXAce(t.POSIXTag.USER_OBJ, t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE),
+        t.POSIXAce(t.POSIXTag.GROUP_OBJ, t.POSIXPerm.READ | t.POSIXPerm.EXECUTE),
+        t.POSIXAce(t.POSIXTag.OTHER, t.POSIXPerm(0)),
+        t.POSIXAce(t.POSIXTag.USER_OBJ, t.POSIXPerm.READ | t.POSIXPerm.EXECUTE, default=True),
+        t.POSIXAce(t.POSIXTag.OTHER, t.POSIXPerm(0), default=True),
+    ]
+)
 
 
 # ── _nfs4_perm_str ────────────────────────────────────────────────────────────
 
+
 def test_nfs4_perm_str_all_set():
     all_perms = (
-        t.NFS4Perm.READ_DATA         | t.NFS4Perm.WRITE_DATA        |
-        t.NFS4Perm.APPEND_DATA       | t.NFS4Perm.READ_NAMED_ATTRS  |
-        t.NFS4Perm.WRITE_NAMED_ATTRS | t.NFS4Perm.EXECUTE           |
-        t.NFS4Perm.DELETE_CHILD      | t.NFS4Perm.DELETE            |
-        t.NFS4Perm.READ_ATTRIBUTES   | t.NFS4Perm.WRITE_ATTRIBUTES  |
-        t.NFS4Perm.READ_ACL          | t.NFS4Perm.WRITE_ACL         |
-        t.NFS4Perm.WRITE_OWNER       | t.NFS4Perm.SYNCHRONIZE
+        t.NFS4Perm.READ_DATA
+        | t.NFS4Perm.WRITE_DATA
+        | t.NFS4Perm.APPEND_DATA
+        | t.NFS4Perm.READ_NAMED_ATTRS
+        | t.NFS4Perm.WRITE_NAMED_ATTRS
+        | t.NFS4Perm.EXECUTE
+        | t.NFS4Perm.DELETE_CHILD
+        | t.NFS4Perm.DELETE
+        | t.NFS4Perm.READ_ATTRIBUTES
+        | t.NFS4Perm.WRITE_ATTRIBUTES
+        | t.NFS4Perm.READ_ACL
+        | t.NFS4Perm.WRITE_ACL
+        | t.NFS4Perm.WRITE_OWNER
+        | t.NFS4Perm.SYNCHRONIZE
     )
-    assert _nfs4_perm_str(all_perms) == 'rwpRWxDdaAcCos'
+    assert _nfs4_perm_str(all_perms) == "rwpRWxDdaAcCos"
 
 
 def test_nfs4_perm_str_none_set():
-    assert _nfs4_perm_str(t.NFS4Perm(0)) == '--------------'
+    assert _nfs4_perm_str(t.NFS4Perm(0)) == "--------------"
 
 
 def test_nfs4_perm_str_read_execute():
     s = _nfs4_perm_str(t.NFS4Perm.READ_DATA | t.NFS4Perm.EXECUTE)
-    assert s[0] == 'r'   # READ_DATA is position 0
-    assert s[5] == 'x'   # EXECUTE   is position 5
-    assert s.count('-') == 12
+    assert s[0] == "r"  # READ_DATA is position 0
+    assert s[5] == "x"  # EXECUTE   is position 5
+    assert s.count("-") == 12
 
 
 # ── _nfs4_flag_str ────────────────────────────────────────────────────────────
+
 
 def test_nfs4_flag_str_all_set():
     # IDENTIFIER_GROUP (g) is intentionally excluded from text output;
     # it is implicit in the 'group:' who prefix, matching FreeBSD getfacl.
     all_flags = (
-        t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT |
-        t.NFS4Flag.NO_PROPAGATE_INHERIT | t.NFS4Flag.INHERIT_ONLY |
-        t.NFS4Flag.SUCCESSFUL_ACCESS | t.NFS4Flag.FAILED_ACCESS |
-        t.NFS4Flag.IDENTIFIER_GROUP | t.NFS4Flag.INHERITED
+        t.NFS4Flag.FILE_INHERIT
+        | t.NFS4Flag.DIRECTORY_INHERIT
+        | t.NFS4Flag.NO_PROPAGATE_INHERIT
+        | t.NFS4Flag.INHERIT_ONLY
+        | t.NFS4Flag.SUCCESSFUL_ACCESS
+        | t.NFS4Flag.FAILED_ACCESS
+        | t.NFS4Flag.IDENTIFIER_GROUP
+        | t.NFS4Flag.INHERITED
     )
-    assert _nfs4_flag_str(all_flags) == 'fdniSFI'
+    assert _nfs4_flag_str(all_flags) == "fdniSFI"
 
 
 def test_nfs4_flag_str_none_set():
-    assert _nfs4_flag_str(t.NFS4Flag(0)) == '-------'
+    assert _nfs4_flag_str(t.NFS4Flag(0)) == "-------"
 
 
 def test_nfs4_flag_str_inherit_subset():
     s = _nfs4_flag_str(t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT)
-    assert s[0] == 'f'
-    assert s[1] == 'd'
-    assert s.count('-') == 5
+    assert s[0] == "f"
+    assert s[1] == "d"
+    assert s.count("-") == 5
 
 
 # ── _nfs4_who_str ─────────────────────────────────────────────────────────────
 
+
 def test_nfs4_who_str_owner():
-    ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                    t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)
-    assert _nfs4_who_str(ace, numeric=True) == 'owner@'
+    ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)
+    assert _nfs4_who_str(ace, numeric=True) == "owner@"
 
 
 def test_nfs4_who_str_group():
-    ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                    t.NFS4Perm.READ_DATA, t.NFS4Who.GROUP)
-    assert _nfs4_who_str(ace, numeric=True) == 'group@'
+    ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.GROUP)
+    assert _nfs4_who_str(ace, numeric=True) == "group@"
 
 
 def test_nfs4_who_str_everyone():
-    ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                    t.NFS4Perm.READ_DATA, t.NFS4Who.EVERYONE)
-    assert _nfs4_who_str(ace, numeric=True) == 'everyone@'
+    ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.EVERYONE)
+    assert _nfs4_who_str(ace, numeric=True) == "everyone@"
 
 
 def test_nfs4_who_str_named_user_numeric():
-    ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                    t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, 1234)
-    assert _nfs4_who_str(ace, numeric=True) == 'user:1234'
+    ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, 1234)
+    assert _nfs4_who_str(ace, numeric=True) == "user:1234"
 
 
 def test_nfs4_who_str_named_group_numeric():
-    ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.IDENTIFIER_GROUP,
-                    t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, 5678)
-    assert _nfs4_who_str(ace, numeric=True) == 'group:5678'
+    ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag.IDENTIFIER_GROUP, t.NFS4Perm.READ_DATA, t.NFS4Who.NAMED, 5678)
+    assert _nfs4_who_str(ace, numeric=True) == "group:5678"
 
 
 # ── _posix_perm_str ───────────────────────────────────────────────────────────
 
+
 def test_posix_perm_str_rwx():
-    assert _posix_perm_str(
-        t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE
-    ) == 'rwx'
+    assert _posix_perm_str(t.POSIXPerm.READ | t.POSIXPerm.WRITE | t.POSIXPerm.EXECUTE) == "rwx"
 
 
 def test_posix_perm_str_read_only():
-    assert _posix_perm_str(t.POSIXPerm.READ) == 'r--'
+    assert _posix_perm_str(t.POSIXPerm.READ) == "r--"
 
 
 def test_posix_perm_str_none():
-    assert _posix_perm_str(t.POSIXPerm(0)) == '---'
+    assert _posix_perm_str(t.POSIXPerm(0)) == "---"
 
 
 # ── _posix_qualifier ──────────────────────────────────────────────────────────
 
+
 def test_posix_qualifier_special_tags_empty():
-    for tag in (t.POSIXTag.USER_OBJ, t.POSIXTag.GROUP_OBJ,
-                t.POSIXTag.MASK, t.POSIXTag.OTHER):
+    for tag in (t.POSIXTag.USER_OBJ, t.POSIXTag.GROUP_OBJ, t.POSIXTag.MASK, t.POSIXTag.OTHER):
         ace = t.POSIXAce(tag, t.POSIXPerm.READ)
-        assert _posix_qualifier(ace, numeric=True) == ''
+        assert _posix_qualifier(ace, numeric=True) == ""
 
 
 def test_posix_qualifier_named_user_numeric():
     ace = t.POSIXAce(t.POSIXTag.USER, t.POSIXPerm.READ, id=1001)
-    assert _posix_qualifier(ace, numeric=True) == '1001'
+    assert _posix_qualifier(ace, numeric=True) == "1001"
 
 
 def test_posix_qualifier_named_group_numeric():
     ace = t.POSIXAce(t.POSIXTag.GROUP, t.POSIXPerm.READ, id=2002)
-    assert _posix_qualifier(ace, numeric=True) == '2002'
+    assert _posix_qualifier(ace, numeric=True) == "2002"
 
 
 # ── _format_nfs4_text ─────────────────────────────────────────────────────────
 
+
 def test_format_nfs4_text_headers_present():
-    out = _format_nfs4_text('/mnt/data/f', _NFS4_ACL, 0, 0, None,
-                            numeric=True, quiet=False)
-    assert '# file: /mnt/data/f' in out
-    assert '# owner:' in out
-    assert '# group:' in out
+    out = _format_nfs4_text("/mnt/data/f", _NFS4_ACL, 0, 0, None, numeric=True, quiet=False)
+    assert "# file: /mnt/data/f" in out
+    assert "# owner:" in out
+    assert "# group:" in out
 
 
 def test_format_nfs4_text_quiet_omits_headers():
-    out = _format_nfs4_text('/x', _NFS4_ACL, 0, 0, None,
-                            numeric=True, quiet=True)
-    assert '# file:'  not in out
-    assert '# owner:' not in out
+    out = _format_nfs4_text("/x", _NFS4_ACL, 0, 0, None, numeric=True, quiet=True)
+    assert "# file:" not in out
+    assert "# owner:" not in out
 
 
 def test_format_nfs4_text_fhandle_included():
-    out = _format_nfs4_text('/x', _NFS4_ACL, 0, 0, 'deadbeef',
-                            numeric=True, quiet=False)
-    assert '# fhandle: deadbeef' in out
+    out = _format_nfs4_text("/x", _NFS4_ACL, 0, 0, "deadbeef", numeric=True, quiet=False)
+    assert "# fhandle: deadbeef" in out
 
 
 def test_format_nfs4_text_fhandle_absent_when_none():
-    out = _format_nfs4_text('/x', _NFS4_ACL, 0, 0, None,
-                            numeric=True, quiet=False)
-    assert '# fhandle:' not in out
+    out = _format_nfs4_text("/x", _NFS4_ACL, 0, 0, None, numeric=True, quiet=False)
+    assert "# fhandle:" not in out
 
 
 def test_format_nfs4_text_ace_lines():
-    out = _format_nfs4_text('/x', _NFS4_ACL, 0, 0, None,
-                            numeric=True, quiet=True)
+    out = _format_nfs4_text("/x", _NFS4_ACL, 0, 0, None, numeric=True, quiet=True)
     lines = out.splitlines()
     assert len(lines) == 2
     # C extension may reorder ACEs (e.g. DENY before ALLOW); check presence
-    assert any(l.startswith('owner@:')    and l.endswith(':allow') for l in lines)
-    assert any(l.startswith('everyone@:') and l.endswith(':deny')  for l in lines)
+    assert any(line.startswith("owner@:") and line.endswith(":allow") for line in lines)
+    assert any(line.startswith("everyone@:") and line.endswith(":deny") for line in lines)
 
 
 # ── _format_posix_text ────────────────────────────────────────────────────────
 
+
 def test_format_posix_text_access_ace_count():
-    out = _format_posix_text('/x', _POSIX_ACL, 0, 0, None,
-                             numeric=True, quiet=True)
-    access = [l for l in out.splitlines() if not l.startswith('default:')]
+    out = _format_posix_text("/x", _POSIX_ACL, 0, 0, None, numeric=True, quiet=True)
+    access = [line for line in out.splitlines() if not line.startswith("default:")]
     assert len(access) == 3
 
 
 def test_format_posix_text_default_ace_count():
-    out = _format_posix_text('/x', _POSIX_ACL, 0, 0, None,
-                             numeric=True, quiet=True)
-    defaults = [l for l in out.splitlines() if l.startswith('default:')]
+    out = _format_posix_text("/x", _POSIX_ACL, 0, 0, None, numeric=True, quiet=True)
+    defaults = [line for line in out.splitlines() if line.startswith("default:")]
     assert len(defaults) == 2
 
 
 def test_format_posix_text_perm_strings():
-    out = _format_posix_text('/x', _POSIX_ACL, 0, 0, None,
-                             numeric=True, quiet=True)
-    assert 'user::rwx'  in out
-    assert 'other::---' in out
+    out = _format_posix_text("/x", _POSIX_ACL, 0, 0, None, numeric=True, quiet=True)
+    assert "user::rwx" in out
+    assert "other::---" in out
 
 
 # ── _nfs4_ace_to_dict ─────────────────────────────────────────────────────────
 
+
 def test_nfs4_ace_to_dict_has_required_keys():
-    ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                    t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)
-    assert set(_nfs4_ace_to_dict(ace, numeric=True)) == {
-        'who', 'perms', 'flags', 'type'
-    }
+    ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)
+    assert set(_nfs4_ace_to_dict(ace, numeric=True)) == {"who", "perms", "flags", "type"}
 
 
 def test_nfs4_ace_to_dict_owner_allow():
-    ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0),
-                    t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)
+    ace = t.NFS4Ace(t.NFS4AceType.ALLOW, t.NFS4Flag(0), t.NFS4Perm.READ_DATA, t.NFS4Who.OWNER)
     d = _nfs4_ace_to_dict(ace, numeric=True)
-    assert d['who']  == 'owner@'
-    assert d['type'] == 'allow'
-    assert 'READ_DATA' in d['perms']
-    assert d['flags'] == []
+    assert d["who"] == "owner@"
+    assert d["type"] == "allow"
+    assert "READ_DATA" in d["perms"]
+    assert d["flags"] == []
 
 
 def test_nfs4_ace_to_dict_deny_with_inherit_flags():
-    ace = t.NFS4Ace(t.NFS4AceType.DENY,
-                    t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT,
-                    t.NFS4Perm.WRITE_DATA, t.NFS4Who.GROUP)
+    ace = t.NFS4Ace(
+        t.NFS4AceType.DENY,
+        t.NFS4Flag.FILE_INHERIT | t.NFS4Flag.DIRECTORY_INHERIT,
+        t.NFS4Perm.WRITE_DATA,
+        t.NFS4Who.GROUP,
+    )
     d = _nfs4_ace_to_dict(ace, numeric=True)
-    assert d['type'] == 'deny'
-    assert 'FILE_INHERIT'      in d['flags']
-    assert 'DIRECTORY_INHERIT' in d['flags']
+    assert d["type"] == "deny"
+    assert "FILE_INHERIT" in d["flags"]
+    assert "DIRECTORY_INHERIT" in d["flags"]
 
 
 # ── _posix_ace_to_dict ────────────────────────────────────────────────────────
 
+
 def test_posix_ace_to_dict_has_required_keys():
     ace = t.POSIXAce(t.POSIXTag.USER_OBJ, t.POSIXPerm.READ)
-    assert set(_posix_ace_to_dict(ace, numeric=True)) == {
-        'tag', 'qualifier', 'perms', 'default'
-    }
+    assert set(_posix_ace_to_dict(ace, numeric=True)) == {"tag", "qualifier", "perms", "default"}
 
 
 def test_posix_ace_to_dict_user_obj():
-    ace = t.POSIXAce(t.POSIXTag.USER_OBJ,
-                     t.POSIXPerm.READ | t.POSIXPerm.WRITE)
+    ace = t.POSIXAce(t.POSIXTag.USER_OBJ, t.POSIXPerm.READ | t.POSIXPerm.WRITE)
     d = _posix_ace_to_dict(ace, numeric=True)
-    assert d['tag']       == 'USER_OBJ'
-    assert d['qualifier'] is None
-    assert d['default']   is False
-    assert 'READ'  in d['perms']
-    assert 'WRITE' in d['perms']
+    assert d["tag"] == "USER_OBJ"
+    assert d["qualifier"] is None
+    assert d["default"] is False
+    assert "READ" in d["perms"]
+    assert "WRITE" in d["perms"]
 
 
 def test_posix_ace_to_dict_named_user_qualifier():
     ace = t.POSIXAce(t.POSIXTag.USER, t.POSIXPerm.READ, id=1001)
-    assert _posix_ace_to_dict(ace, numeric=True)['qualifier'] == '1001'
+    assert _posix_ace_to_dict(ace, numeric=True)["qualifier"] == "1001"
 
 
 def test_posix_ace_to_dict_default_flag():
     ace = t.POSIXAce(t.POSIXTag.OTHER, t.POSIXPerm(0), default=True)
-    assert _posix_ace_to_dict(ace, numeric=True)['default'] is True
+    assert _posix_ace_to_dict(ace, numeric=True)["default"] is True
 
 
 # ── _format_nfs4_json ─────────────────────────────────────────────────────────
 
+
 def test_format_nfs4_json_required_keys():
-    d = _format_nfs4_json('/x', _NFS4_ACL, 0, 0, None, numeric=True)
-    assert {'path', 'uid', 'gid', 'owner', 'group',
-            'acl_type', 'acl_flags', 'trivial', 'aces'} <= set(d)
+    d = _format_nfs4_json("/x", _NFS4_ACL, 0, 0, None, numeric=True)
+    assert {"path", "uid", "gid", "owner", "group", "acl_type", "acl_flags", "trivial", "aces"} <= set(d)
 
 
 def test_format_nfs4_json_acl_type():
-    assert _format_nfs4_json('/x', _NFS4_ACL, 0, 0, None,
-                             numeric=True)['acl_type'] == 'NFS4'
+    assert _format_nfs4_json("/x", _NFS4_ACL, 0, 0, None, numeric=True)["acl_type"] == "NFS4"
 
 
 def test_format_nfs4_json_ace_count():
-    assert len(_format_nfs4_json('/x', _NFS4_ACL, 0, 0, None,
-                                 numeric=True)['aces']) == 2
+    assert len(_format_nfs4_json("/x", _NFS4_ACL, 0, 0, None, numeric=True)["aces"]) == 2
 
 
 def test_format_nfs4_json_fhandle_present_when_given():
-    d = _format_nfs4_json('/x', _NFS4_ACL, 0, 0, 'cafebabe', numeric=True)
-    assert d['fhandle'] == 'cafebabe'
+    d = _format_nfs4_json("/x", _NFS4_ACL, 0, 0, "cafebabe", numeric=True)
+    assert d["fhandle"] == "cafebabe"
 
 
 def test_format_nfs4_json_fhandle_absent_when_none():
-    assert 'fhandle' not in _format_nfs4_json('/x', _NFS4_ACL, 0, 0, None,
-                                              numeric=True)
+    assert "fhandle" not in _format_nfs4_json("/x", _NFS4_ACL, 0, 0, None, numeric=True)
 
 
 # ── _format_posix_json ────────────────────────────────────────────────────────
 
+
 def test_format_posix_json_required_keys():
-    d = _format_posix_json('/x', _POSIX_ACL, 0, 0, None, numeric=True)
-    assert {'path', 'uid', 'gid', 'owner', 'group',
-            'acl_type', 'trivial', 'aces'} <= set(d)
+    d = _format_posix_json("/x", _POSIX_ACL, 0, 0, None, numeric=True)
+    assert {"path", "uid", "gid", "owner", "group", "acl_type", "trivial", "aces"} <= set(d)
 
 
 def test_format_posix_json_acl_type():
-    assert _format_posix_json('/x', _POSIX_ACL, 0, 0, None,
-                              numeric=True)['acl_type'] == 'POSIX'
+    assert _format_posix_json("/x", _POSIX_ACL, 0, 0, None, numeric=True)["acl_type"] == "POSIX"
 
 
 def test_format_posix_json_aces_include_defaults():
-    d = _format_posix_json('/x', _POSIX_ACL, 0, 0, None, numeric=True)
+    d = _format_posix_json("/x", _POSIX_ACL, 0, 0, None, numeric=True)
     # _POSIX_ACL has 3 access + 2 default = 5 total
-    assert len(d['aces']) == 5
-    assert sum(1 for a in d['aces'] if a.get('default')) == 2
+    assert len(d["aces"]) == 5
+    assert sum(1 for a in d["aces"] if a.get("default")) == 2
 
 
 # ── _format_nfs4_text: # ACL flags line ──────────────────────────────────────
 
+
 def test_format_nfs4_text_acl_flags_none_when_zero():
     """No flags set → '# ACL flags: none' in non-quiet output."""
-    out = _format_nfs4_text('/x', _NFS4_ACL, 0, 0, None,
-                            numeric=True, quiet=False)
-    assert '# ACL flags: none' in out
+    out = _format_nfs4_text("/x", _NFS4_ACL, 0, 0, None, numeric=True, quiet=False)
+    assert "# ACL flags: none" in out
 
 
 def test_format_nfs4_text_acl_flags_protected():
     """PROTECTED flag → '# ACL flags: protected' in non-quiet output."""
     acl = t.NFS4ACL.from_aces(list(_NFS4_ACL.aces), t.NFS4ACLFlag.PROTECTED)
-    out = _format_nfs4_text('/x', acl, 0, 0, None, numeric=True, quiet=False)
-    assert '# ACL flags: protected' in out
+    out = _format_nfs4_text("/x", acl, 0, 0, None, numeric=True, quiet=False)
+    assert "# ACL flags: protected" in out
 
 
 def test_format_nfs4_text_acl_flags_auto_inherit():
     """AUTO_INHERIT flag → '# ACL flags: auto-inherit' in non-quiet output."""
     acl = t.NFS4ACL.from_aces(list(_NFS4_ACL.aces), t.NFS4ACLFlag.AUTO_INHERIT)
-    out = _format_nfs4_text('/x', acl, 0, 0, None, numeric=True, quiet=False)
-    assert '# ACL flags: auto-inherit' in out
+    out = _format_nfs4_text("/x", acl, 0, 0, None, numeric=True, quiet=False)
+    assert "# ACL flags: auto-inherit" in out
 
 
 def test_format_nfs4_text_acl_flags_suppressed_when_quiet():
     """quiet=True suppresses all header lines including # ACL flags."""
-    out = _format_nfs4_text('/x', _NFS4_ACL, 0, 0, None,
-                            numeric=True, quiet=True)
-    assert '# ACL flags' not in out
+    out = _format_nfs4_text("/x", _NFS4_ACL, 0, 0, None, numeric=True, quiet=True)
+    assert "# ACL flags" not in out
 
 
 def test_format_nfs4_json_acl_flags_empty_when_zero():
     """No flags set → acl_flags list is empty in JSON output."""
-    d = _format_nfs4_json('/x', _NFS4_ACL, 0, 0, None, numeric=True)
-    assert d['acl_flags'] == []
+    d = _format_nfs4_json("/x", _NFS4_ACL, 0, 0, None, numeric=True)
+    assert d["acl_flags"] == []
 
 
 def test_format_nfs4_json_acl_flags_protected():
     """PROTECTED flag → acl_flags contains 'PROTECTED' in JSON output."""
     acl = t.NFS4ACL.from_aces(list(_NFS4_ACL.aces), t.NFS4ACLFlag.PROTECTED)
-    d = _format_nfs4_json('/x', acl, 0, 0, None, numeric=True)
-    assert 'PROTECTED' in d['acl_flags']
+    d = _format_nfs4_json("/x", acl, 0, 0, None, numeric=True)
+    assert "PROTECTED" in d["acl_flags"]

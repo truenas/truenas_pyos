@@ -53,9 +53,7 @@ ACL_XATTRS = frozenset({_POSIX_ACCESS_XATTR, _POSIX_DEFAULT_XATTR, _ZFS_NATIVE_X
 ACCESS_ACL_XATTRS = frozenset({_POSIX_ACCESS_XATTR, _ZFS_NATIVE_XATTR})
 
 
-def copy_permissions(
-    src_fd: int, dst_fd: int, xattr_list: list[str], mode: int
-) -> None:
+def copy_permissions(src_fd: int, dst_fd: int, xattr_list: list[str], mode: int) -> None:
     """Copy permissions from one file to another.
 
     Args:
@@ -213,11 +211,7 @@ def clonefile(src_fd: int, dst_fd: int) -> int:
     offset = 0
     # Loop until copy_file_range returns 0 to catch any TOCTOU races where
     # data is appended after the initial statx call.
-    while (
-        copied := copy_file_range(
-            src_fd, dst_fd, MAX_RW_SZ, offset_src=offset, offset_dst=offset
-        )
-    ) > 0:
+    while (copied := copy_file_range(src_fd, dst_fd, MAX_RW_SZ, offset_src=offset, offset_dst=offset)) > 0:
         offset += copied
     return offset
 
