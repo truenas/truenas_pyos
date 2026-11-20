@@ -1,13 +1,19 @@
 import errno
 import os
+import pathlib
 import stat
+import subprocess
+import sys
 
 import pytest
+import truenas_os
 from truenas_os_pyutils.io import (
     SymlinkInPathError,
     atomic_replace,
     atomic_write,
+    safe_makedirs,
     safe_open,
+    safe_open_raw,
 )
 
 # ── SymlinkInPathError ────────────────────────────────────────────────────────
@@ -126,6 +132,302 @@ def test_safe_open_dir_fd_symlink_raises(tmp_path):
                 fh.read()
     finally:
         os.close(dirfd)
+
+
+def test_safe_open_fifo_raises(tmp_path):
+    fifo = tmp_path / 'fifo'
+    os.mkfifo(fifo)
+
+    with pytest.raises(OSError) as exc_info:
+        with safe_open(str(fifo)) as fh:
+            fh.read()
+
+    assert exc_info.value.errno == errno.EINVAL
+
+
+def test_safe_open_directory_raises(tmp_path):
+    with pytest.raises(IsADirectoryError):
+        with safe_open(str(tmp_path)) as fh:
+            fh.read()
+
+
+# ── safe_open_raw ─────────────────────────────────────────────────────────────
+
+def test_safe_open_raw_regular_file(tmp_path):
+    f = tmp_path / 'test.txt'
+    f.write_text('data')
+    with safe_open_raw(str(f)) as fd:
+        assert stat.S_ISREG(os.fstat(fd).st_mode)
+        assert not os.get_inheritable(fd)
+        assert os.read(fd, 16) == b'data'
+
+    with pytest.raises(OSError) as exc_info:
+        os.fstat(fd)
+
+    assert exc_info.value.errno == errno.EBADF
+
+
+def test_safe_open_raw_directory(tmp_path):
+    with safe_open_raw(str(tmp_path)) as fd:
+        assert stat.S_ISDIR(os.fstat(fd).st_mode)
+        assert not os.get_inheritable(fd)
+
+
+def test_safe_open_raw_symlink_raises(tmp_path):
+    (tmp_path / 'real').mkdir()
+    (tmp_path / 'real' / 'file.txt').write_text('data')
+    (tmp_path / 'link').symlink_to(tmp_path / 'real')
+
+    for path in ('link', 'link/file.txt'):
+        with pytest.raises(SymlinkInPathError):
+            with safe_open_raw(str(tmp_path / path)):
+                pass
+
+
+@pytest.mark.parametrize('kind,flags', [
+    ('fifo', os.O_RDONLY),
+    ('fifo', os.O_WRONLY),
+    ('socket', os.O_RDONLY),
+    ('chardev', os.O_RDONLY),
+], ids=['fifo-read', 'fifo-write', 'socket', 'chardev'])
+def test_safe_open_raw_special_file_raises(tmp_path, kind, flags):
+    """Anything but a regular file or directory is refused before it is opened:
+    a FIFO does not wait for its other end, and a device's open method does
+    not run."""
+    path = tmp_path / kind
+    if kind == 'fifo':
+        os.mkfifo(path)
+    elif kind == 'socket':
+        os.mknod(path, stat.S_IFSOCK | 0o600)
+    else:
+        path = '/dev/null'
+
+    with pytest.raises(OSError) as exc_info:
+        with safe_open_raw(str(path), flags):
+            pass
+
+    assert exc_info.value.errno == errno.EINVAL
+
+
+# Holds a write lease on argv[1] -- the same kernel object as an NFSv4 write
+# delegation held by knfsd -- and releases it 0.2 s after the break starts.
+# Same holder as tests/test_fsiter.py.
+_LEASE_HOLDER = r'''
+import fcntl, os, signal, sys, time
+fd = os.open(sys.argv[1], os.O_RDWR)
+signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGIO])
+try:
+    fcntl.fcntl(fd, fcntl.F_SETLEASE, fcntl.F_WRLCK)
+except OSError as e:
+    print('nolease', e.errno, flush=True)
+    sys.exit(0)
+print('ready', flush=True)
+if signal.sigtimedwait([signal.SIGIO], 10) is None:
+    print('nobreak', flush=True)
+    sys.exit(1)
+time.sleep(0.2)
+fcntl.fcntl(fd, fcntl.F_SETLEASE, fcntl.F_UNLCK)
+print('released', flush=True)
+'''
+
+
+@pytest.mark.parametrize('nonblock', [False, True], ids=['wait', 'nonblock'])
+def test_safe_open_raw_lease_break(tmp_path, nonblock):
+    """An open that breaks a lease waits for the holder to release it, unless
+    the caller passes O_NONBLOCK."""
+    leased = tmp_path / 'leased'
+    leased.write_bytes(b'x' * 64)
+
+    with subprocess.Popen(
+        [sys.executable, '-c', _LEASE_HOLDER, str(leased)],
+        stdout=subprocess.PIPE, text=True,
+    ) as holder:
+        try:
+            line = holder.stdout.readline()
+            status = line.split()
+            if status[:1] == ['nolease']:
+                pytest.skip(f'no write lease here: {os.strerror(int(status[1]))}')
+            assert status == ['ready'], line
+
+            if nonblock:
+                with pytest.raises(BlockingIOError):
+                    with safe_open_raw(str(leased), os.O_RDONLY | os.O_NONBLOCK):
+                        pass
+            else:
+                with safe_open_raw(str(leased)):
+                    pass
+
+            out, _ = holder.communicate(timeout=20)
+        finally:
+            if holder.poll() is None:
+                holder.kill()
+
+    assert holder.returncode == 0
+    assert out.split() == ['released']
+
+
+# ── safe_makedirs ─────────────────────────────────────────────────────────────
+
+def test_safe_makedirs_creates_parents(tmp_path):
+    target = tmp_path / 'a' / 'b' / 'c'
+    safe_makedirs(str(target), 0o700)
+
+    assert target.is_dir()
+    assert stat.S_IMODE(target.stat().st_mode) == 0o700
+    # Parents get 0o777 less the umask, as os.makedirs() gives them
+    (tmp_path / 'ref').mkdir(0o777)
+    ref_mode = stat.S_IMODE((tmp_path / 'ref').stat().st_mode)
+    assert stat.S_IMODE((tmp_path / 'a').stat().st_mode) == ref_mode
+    assert stat.S_IMODE((tmp_path / 'a' / 'b').stat().st_mode) == ref_mode
+
+
+def test_safe_makedirs_exist_ok(tmp_path):
+    target = str(tmp_path / 'a')
+    safe_makedirs(target)
+    safe_makedirs(target, exist_ok=True)
+
+    with pytest.raises(FileExistsError):
+        safe_makedirs(target)
+
+
+def test_safe_makedirs_dir_fd(tmp_path):
+    dirfd = os.open(str(tmp_path), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        safe_makedirs('a/b', dir_fd=dirfd)
+    finally:
+        os.close(dirfd)
+
+    assert (tmp_path / 'a' / 'b').is_dir()
+
+
+def test_safe_makedirs_symlink_creates_nothing(tmp_path):
+    """A symlink in the path fails the call before anything is created where it
+    points, where os.makedirs() would create link/a/b inside elsewhere."""
+    elsewhere = tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    (tmp_path / 'link').symlink_to(elsewhere)
+
+    for path in ('link', 'link/a/b'):
+        with pytest.raises(SymlinkInPathError):
+            safe_makedirs(str(tmp_path / path), exist_ok=True)
+
+    assert list(elsewhere.iterdir()) == []
+
+
+def test_safe_makedirs_file_in_path_raises(tmp_path):
+    (tmp_path / 'file').write_text('data')
+
+    with pytest.raises(NotADirectoryError) as exc_info:
+        safe_makedirs(str(tmp_path / 'file' / 'a'))
+
+    assert exc_info.value.filename == str(tmp_path / 'file' / 'a')
+
+    with pytest.raises(FileExistsError):
+        safe_makedirs(str(tmp_path / 'file'), exist_ok=True)
+
+
+@pytest.mark.parametrize('path', ['', '/', '.', 'file', 'file/a', 'dir', 'new/sub', pathlib.Path('new/sub')])
+@pytest.mark.parametrize('exist_ok', [False, True])
+def test_safe_makedirs_matches_os_makedirs(tmp_path, monkeypatch, path, exist_ok):
+    results = []
+    for fn in (os.makedirs, safe_makedirs):
+        cwd = tmp_path / fn.__name__
+        cwd.mkdir()
+        (cwd / 'file').write_text('data')
+        (cwd / 'dir').mkdir()
+        monkeypatch.chdir(cwd)
+        try:
+            fn(path, exist_ok=exist_ok)
+            results.append(sorted(str(p.relative_to(cwd)) for p in cwd.rglob('*')))
+        except OSError as e:
+            results.append([type(e), e.errno, e.filename])
+
+    assert results[0] == results[1]
+
+
+# ── resolve ───────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def base_fd(tmp_path):
+    (tmp_path / 'base').mkdir()
+    (tmp_path / 'base' / 'inside').write_text('inside')
+    (tmp_path / 'outside').write_text('outside')
+    fd = os.open(str(tmp_path / 'base'), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        yield fd
+    finally:
+        os.close(fd)
+
+
+def test_safe_open_resolve_beneath(tmp_path, base_fd):
+    with safe_open('inside', dir_fd=base_fd, resolve=truenas_os.RESOLVE_BENEATH) as fh:
+        assert fh.read() == 'inside'
+
+    with safe_open('../outside', dir_fd=base_fd) as fh:
+        assert fh.read() == 'outside'
+
+    for path in ('../outside', str(tmp_path / 'outside')):
+        with pytest.raises(OSError) as exc_info:
+            with safe_open(path, dir_fd=base_fd, resolve=truenas_os.RESOLVE_BENEATH) as fh:
+                fh.read()
+
+        assert exc_info.value.errno == errno.EXDEV
+
+
+def test_safe_open_raw_resolve_beneath(tmp_path, base_fd):
+    for flags in (os.O_RDONLY, os.O_RDWR | os.O_CREAT):
+        with pytest.raises(OSError) as exc_info:
+            with safe_open_raw('../created', flags, dir_fd=base_fd, resolve=truenas_os.RESOLVE_BENEATH):
+                pass
+
+        assert exc_info.value.errno == errno.EXDEV
+
+    assert not (tmp_path / 'created').exists()
+
+
+def test_safe_open_resolve_keeps_no_symlinks(tmp_path, base_fd):
+    (tmp_path / 'base' / 'link').symlink_to('inside')
+
+    with pytest.raises(SymlinkInPathError):
+        with safe_open('link', dir_fd=base_fd, resolve=truenas_os.RESOLVE_IN_ROOT) as fh:
+            fh.read()
+
+
+def test_safe_open_raw_resolve_no_xdev():
+    root_fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with safe_open_raw('proc/version', dir_fd=root_fd):
+            pass
+
+        with pytest.raises(OSError) as exc_info:
+            with safe_open_raw('proc/version', dir_fd=root_fd, resolve=truenas_os.RESOLVE_NO_XDEV):
+                pass
+
+        assert exc_info.value.errno == errno.EXDEV
+    finally:
+        os.close(root_fd)
+
+
+def test_safe_makedirs_resolve_beneath(tmp_path, base_fd):
+    safe_makedirs('a/b', dir_fd=base_fd, resolve=truenas_os.RESOLVE_BENEATH)
+    assert (tmp_path / 'base' / 'a' / 'b').is_dir()
+
+    for path in ('../escaped', 'a/../c', str(tmp_path / 'absolute')):
+        with pytest.raises(OSError) as exc_info:
+            safe_makedirs(path, dir_fd=base_fd, resolve=truenas_os.RESOLVE_BENEATH)
+
+        assert exc_info.value.errno == errno.EXDEV
+        assert exc_info.value.filename == path
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['base', 'outside']
+    assert sorted(p.name for p in (tmp_path / 'base').iterdir()) == ['a', 'inside']
+
+
+def test_safe_makedirs_resolve_no_xdev():
+    with pytest.raises(OSError) as exc_info:
+        safe_makedirs('/proc/not-created', resolve=truenas_os.RESOLVE_NO_XDEV)
+
+    assert exc_info.value.errno == errno.EXDEV
 
 
 # ── atomic_replace ────────────────────────────────────────────────────────────

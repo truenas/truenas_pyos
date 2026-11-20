@@ -7,7 +7,7 @@ yielded values. The tests are also valid pytest tests that execute at runtime.
 from pathlib import Path
 from typing import IO, Any, BinaryIO, TextIO, assert_type
 
-from truenas_os_pyutils.io import SymlinkInPathError, atomic_write, safe_open
+from truenas_os_pyutils.io import SymlinkInPathError, atomic_write, safe_open, safe_open_raw
 
 
 def test_safe_open_yields_io(tmp_path: Path) -> None:
@@ -15,6 +15,11 @@ def test_safe_open_yields_io(tmp_path: Path) -> None:
     (tmp_path / 'test.txt').write_text('hello')
     with safe_open(f_path) as f:
         assert_type(f, IO[Any])
+
+
+def test_safe_open_raw_yields_int(tmp_path: Path) -> None:
+    with safe_open_raw(str(tmp_path)) as fd:
+        assert_type(fd, int)
 
 
 def test_atomic_write_default_mode_yields_text_io(tmp_path: Path) -> None:
